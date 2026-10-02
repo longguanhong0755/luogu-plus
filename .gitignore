@@ -1,0 +1,23 @@
+# --- 依赖（npm install 还原）---
+node_modules/
+
+# --- 构建/发布产物（scripts/build-dist.sh 输出到 LuoguLabPkg，不进仓库）---
+dist/
+out/
+pkg/
+*.asar
+*.asar.bak*
+
+# --- 账号清单：运行时填真实邮箱/密码，绝不入库 ---
+tools/out/
+tools/accounts-to-add.txt
+
+# --- 探针与调试产物 ---
+*.log
+*.tmp
+
+# --- 编辑器与系统 ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,323 @@
+/* ============================================================
+   LuoguLab — 材质唯一文件（material.css）
+
+   全仓库唯一允许声明"面"的地方：面底色、模糊、高光、发丝线、投影、壁纸层，
+   以及材质的选择器登记表。外壳（chrome.html）、弹层（popup.html）用 <link>
+   引入；页面侧由主进程把本文件与 inject.css / ext.css 拼接后注入
+   （main.js stylesFor），三层加载的是同一份字节，不存在第二份拷贝。
+
+   变量由主进程 materialVars() / materialPayload() 一次推导后内联下发：
+   10 个 --lg-glass-*（面底色 ×4 档、正文承载档、发丝线、高光、sheen、
+   模糊链、投影），皮肤只改变**取值**（flat=纯色面+细线，liquid=模糊+高光），
+   不改变这里的任何一条规则——"外面的框"和"里面的块"因此不可能再是两种料。
+
+   层序（外壳、页面、弹层三处完全一致）：
+     壁纸 →（压暗）→ blur(wall) [+ 面的 saturate/brightness] → 面底色 → 高光
+   弹层是独立 WebContentsView，backdrop-filter 折射不到它底下（v3.4.2 结论），
+   所以弹层按窗口几何重画一遍壁纸当背景（.lg-fake）——壁纸是"窗口几何的
+   固定画"，重画的与真背景是同一张、同一几何，观感与其它层一致。
+
+   别名：--surface / --surface-2 / --hairline 是历史名字，指向同一份值
+   （供 hover/描边这类局部状态消费）。任何文件都不许再声明材质，只有这里可以。
+   ============================================================ */
+
+/* ---------- 0. 别名与兜底：第二套名字全部指向同一份值 ---------- */
+:root {
+  --surface: var(--lg-glass-card, rgba(255, 255, 255, 0.92));
+  --surface-2: color-mix(in srgb, var(--lg-glass-soft, rgba(255, 255, 255, 0.92)) 92%, var(--ink, #18181b));
+  --hairline: var(--lg-glass-line, rgba(24, 24, 27, 0.14));
+}
+
+/* ---------- 1. 面：唯一配方（.lg-face = 面本身，.lg-face-b = 边框/高光/投影） ----------
+   层级由使用方设一个局部变量决定：--lg-face（底色）/ --lg-face-hi / --lg-face-sheen
+   / --lg-face-drop / --lg-face-line，不设就是卡片档。皮肤差异全在变量里。 */
+.lg-face {
+  background-color: var(--lg-face, var(--lg-glass-card)) !important;
+  background-image: linear-gradient(180deg, var(--lg-face-sheen, var(--lg-glass-sheen)), rgba(255, 255, 255, 0) 42%) !important;
+  backdrop-filter: var(--lg-face-blur, var(--lg-glass-blur)) !important;
+  -webkit-backdrop-filter: var(--lg-face-blur, var(--lg-glass-blur)) !important;
+}
+.lg-face-b {
+  border: 1px solid var(--lg-face-line, var(--lg-glass-line)) !important;
+  box-shadow: inset 0 1px 0 var(--lg-face-hi, var(--lg-glass-hi)), var(--lg-face-drop, var(--lg-glass-drop)) !important;
+}
+
+/* ---------- 2. 壁纸层：唯一公式 ----------
+   几何由主进程下发：--lg-wall-x/y = 层左上角相对本视图原点的偏移（= 负的视图
+   偏移），--lg-wall-w/h = 整个窗口的宽高。页面 = 视图内负偏移 + 窗口尺寸；
+   外壳 = 0 + 窗口尺寸；弹层副本 = 负的自身坐标 + 窗口尺寸。三层画的是同一张
+   画、同一几何，背板因此完全相同。
+   --lg-zoom（页面缩放系数，主进程随视图矩形一起下发）只被页面设置：
+   CSS px 在页面上会被浏览器的页面缩放放大，所以把整套墙纸几何除以 z，
+   物理像素上仍然严丝合缝地等于"窗口几何的固定画"——缩放页面时背景不跟着
+   放大/位移（外壳/弹层不设这个变量，默认 1，公式与原先逐字相同）。 */
+.lg-wallpaper {
+  position: fixed;
+  /* 权威几何是主进程推下来的 --lg-wall-x/y/w/h（负的视图偏移 + 整个窗口宽高）。
+     首屏还没收到时用 inset 兜底：left/top = -inset，宽高 = 视图 + inset
+     （页面视图贴右下的经典形态）。外壳/弹层没有 inset 变量，兜底即 100vw/100vh。 */
+  left: calc(var(--lg-wall-x, calc(-1 * var(--lg-inset-x, 0px))) / var(--lg-zoom, 1));
+  top: calc(var(--lg-wall-y, calc(-1 * var(--lg-inset-y, 0px))) / var(--lg-zoom, 1));
+  width: calc(var(--lg-wall-w, calc(100% + var(--lg-inset-x, 0px))) / var(--lg-zoom, 1));
+  height: calc(var(--lg-wall-h, calc(100% + var(--lg-inset-y, 0px) + var(--lg-footer, 0px))) / var(--lg-zoom, 1));
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--lg-wall-image, none),
+    linear-gradient(var(--lg-bg-base, #f7f7f8), var(--lg-bg-base, #f7f7f8));
+  background-size: cover, cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* 压暗画在层内（::after）——滤镜作用于"壁纸 + 压暗"的合成，与"玻璃背后
+     是压暗过的壁纸"这条链一致；压暗是纯色，模糊/饱和对它不可见。 */
+  /* --lg-wall-extra 是给"暗色整页反转"这类整层滤镜留的插槽（inject.css 用它
+     把反转并进这条链，而不是另写一条 filter 把模糊顶掉） */
+  filter: var(--lg-wall-extra, ) blur(calc(var(--lg-wall-blur, 0px) / var(--lg-zoom, 1))) saturate(100%);
+  transform: translate3d(calc(var(--par-x, 0px) / var(--lg-zoom, 1)), calc(var(--par-y, 0px) / var(--lg-zoom, 1)), 0) scale(1.04);
+  will-change: transform;
+}
+.lg-wallpaper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(10, 10, 12, var(--lg-wall-dim, 0));
+}
+.lg-wallpaper > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+html[data-lg-bgvideo="1"] .lg-wallpaper > video { display: block; }
+html[data-lg-bgvideo="1"] .lg-wallpaper { background-image: none; }
+
+/* 弹层副本：同一公式 + 按自身在窗口里的坐标取负偏移。壁纸之后跟"玻璃模糊链"
+   （blur/saturate/brightness），因为这里没有真 backdrop-filter 可用；压在
+   压暗之上再叠面色（::after），层序与真玻璃一致。 */
+.lg-fake {
+  isolation: isolate;
+  overflow: hidden;
+}
+.lg-fake::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--pop-x, 0px));
+  top: calc(-1 * var(--pop-y, 0px));
+  width: var(--lg-wall-w, 100vw);
+  height: var(--lg-wall-h, 100vh);
+  z-index: -2;
+  pointer-events: none;
+  /* 第一层是压暗（画在壁纸之上、滤镜之前——与外壳 .lg-wallpaper 的 ::after
+     位置一致），第二层壁纸，第三层基色兜底 */
+  background-image: linear-gradient(rgba(10, 10, 12, var(--lg-wall-dim, 0)), rgba(10, 10, 12, var(--lg-wall-dim, 0))),
+    var(--lg-wall-image, none),
+    linear-gradient(var(--lg-bg-base, #f7f7f8), var(--lg-bg-base, #f7f7f8));
+  background-size: cover, cover, cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(var(--lg-wall-blur, 0px)) var(--lg-glass-blur);
+  transform: translate3d(var(--par-x, 0px), var(--par-y, 0px), 0) scale(1.04);
+}
+.lg-fake::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-color: var(--lg-face, var(--lg-glass-card));
+  background-image: linear-gradient(180deg, var(--lg-face-sheen, var(--lg-glass-sheen)), rgba(255, 255, 255, 0) 42%);
+}
+
+/* ============================================================
+   3. 外壳层登记表（html[data-lg-shell="1"]）
+   ============================================================ */
+
+/* 顶栏 / 竖栏 / 坞组 / 页内查找条：薄档面。单边发丝线（哪一边有线）是形态，
+   留在 chrome.css 里用相同线色画。 */
+html[data-lg-shell="1"] #top,
+html[data-lg-shell="1"] #vtab,
+html[data-lg-shell="1"] .dock-group,
+html[data-lg-shell="1"] .dock-foot,
+html[data-lg-shell="1"] #findbar {
+  background-color: var(--lg-glass-bg) !important;
+  background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+html[data-lg-shell="1"] .dock-group,
+html[data-lg-shell="1"] .dock-foot,
+html[data-lg-shell="1"] #findbar {
+  border: 1px solid var(--lg-glass-line) !important;
+}
+/* 坞本体是容器，不吃面：面在 .dock-group / .dock-foot 上 */
+html[data-lg-shell="1"] #dock {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+/* 选中/悬停/状态面：同一配方、中间档。悬停类状态只吃底色与高光（无边框），
+   选中类状态再加上发丝线与投影——层级差一格，料是同一份。 */
+html[data-lg-shell="1"] .tab.active,
+html[data-lg-shell="1"] .vtab.active,
+html[data-lg-shell="1"] .icon-btn:hover,
+html[data-lg-shell="1"] .icon-btn.on,
+html[data-lg-shell="1"] #dock a:hover,
+html[data-lg-shell="1"] #dock a.active,
+html[data-lg-shell="1"] #tab-new:hover,
+html[data-lg-shell="1"] #vtab-new:hover,
+html[data-lg-shell="1"] #vtab-set:hover,
+html[data-lg-shell="1"] .wbtn:hover {
+  background-color: var(--lg-glass-bg-2) !important;
+  background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+}
+html[data-lg-shell="1"] .tab.active,
+html[data-lg-shell="1"] .vtab.active,
+html[data-lg-shell="1"] #user-chip {
+  border: 1px solid var(--lg-glass-line) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+/* 地址栏：面 + 发丝线（聚焦时线色用高光档；位置/圆角在 chrome.css） */
+html[data-lg-shell="1"] #omnibox {
+  background-color: var(--lg-glass-bg-2) !important;
+  background-image: none !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi) !important;
+}
+html[data-lg-shell="1"] #omnibox:focus-within { border-color: var(--lg-glass-hi) !important; }
+
+/* ============================================================
+   4. 弹层登记表（html[data-lg-popup="1"]）
+   独立视图：面 = 假壁纸背景 + 与面色同源的同值上色（.lg-fake，配方见第 2 节）。
+   popup.js 渲染完给面元素打 .lg-fake（命令面板的面在 .pal-box 上、速览在顶栏
+   上、其余菜单就是根本身），框架用 .lg-face-b——与外壳/页面同一份变量。
+   ============================================================ */
+/* 命令面板：全屏遮罩是调光层，不吃面 */
+html[data-lg-popup="1"] #pop-root > #palette {
+  background-color: color-mix(in srgb, var(--ink) 26%, transparent) !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+/* 悬停浮层（垂直栏拂出）：整条模式——与外壳 #vtab 逐像素一致的那条侧栏。
+   料与形状都对齐第 3 节的外壳登记：同一组变量、单边发丝线、无圆角；
+   投影只留顶部高光那一条，不带外投影——常驻那条的外投影被网页视图盖住
+   根本看不见，浮层要是有投影就"不像"了（悬停与常驻必须长得一模一样）。 */
+html[data-lg-popup="1"] #tab-flyout {
+  --lg-face: var(--lg-glass-bg);
+  border: none !important;
+  border-right: 1px solid var(--lg-glass-line) !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi) !important;
+}
+
+/* ============================================================
+   5. 应用本地页登记表（首页 / 设置 / 历史：html[data-lg-local="1"]）
+   ============================================================ */
+html[data-lg-ext="1"][data-lg-local="1"] .card,
+html[data-lg-ext="1"][data-lg-local="1"] .lg-card,
+html[data-lg-ext="1"][data-lg-local="1"] .nav {
+  background-color: var(--lg-glass-card) !important;
+  background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  border-radius: var(--lg-radius, 12px) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+/* 内块（控件表面）：同一块玻璃减淡一档——外部面的颜色仍只来自 --lg-glass-card */
+/* 首页快速链接：同一份面（本地页登记表的一员） */
+html[data-lg-ext="1"][data-lg-local="1"] .h-links a {
+  background-color: var(--lg-glass-card) !important;
+  background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  border-radius: 10px !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+html[data-lg-ext="1"][data-lg-local="1"] .seg,
+html[data-lg-ext="1"][data-lg-local="1"] .seg button.active,
+html[data-lg-ext="1"][data-lg-local="1"] .btn,
+html[data-lg-ext="1"][data-lg-local="1"] input:not([type="range"]):not([type="color"]),
+html[data-lg-ext="1"][data-lg-local="1"] select,
+html[data-lg-ext="1"][data-lg-local="1"] .key-cap,
+html[data-lg-ext="1"][data-lg-local="1"] .sp-cell,
+html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
+  background-color: color-mix(in srgb, var(--lg-glass-card) 55%, transparent) !important;
+  border-color: var(--lg-glass-line) !important;
+}
+
+/* ============================================================
+   6. 洛谷页登记表（INJECT_CSS 只注入洛谷站，选择器不必再套作用域前缀）
+   Ⅰ 面：卡片/面板/容器 = 面色 + 同一把模糊链 + 发丝线 + 顶部高光；
+   Ⅱ 内块：同一份玻璃减淡（颜色仍从 --lg-glass-card 派生，单一来源）；
+   Ⅲ 白纱清除：站点 frosted 主题的 ::before 白纱（含它自带的 blur）把玻璃
+      盖成实心——"外面玻璃、里面实心"的真正根源。凡是贴了玻璃的面都清掉它。
+   兜底：inject.js 的 sweepGlassSurfaces() 给"未知类名但实心"的面自动贴
+   lg-glass / lg-glass-soft / lg-noveil（站点改版也照样吃进来）。
+   ============================================================ */
+.l-card,
+.lg-article,
+.lg-glass,
+.am-panel,
+.am-well,
+.lside,
+.lg-index-content .am-slider {
+  background-color: var(--lg-glass-card) !important;
+  background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+.lg-glass-soft,
+input.am-form-field,
+textarea,
+select {
+  background-color: color-mix(in srgb, var(--lg-glass-card) 55%, transparent) !important;
+  background-image: none !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border-color: var(--lg-glass-line) !important;
+}
+.l-card::before,
+.l-card::after,
+.am-panel::before,
+.am-panel::after,
+.lg-noveil::before,
+.lg-noveil::after,
+.lg-glass::before,
+.lg-glass::after {
+  background: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.dropdown > .dropdown-content,
+.dropdown-content,
+.am-modal-dialog,
+.lfe-popper,
+.notification-toast-stack > * {
+  background-color: var(--lg-glass-bg) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+#lg-quicksearch,
+#lg-problem-tools {
+  background: var(--lg-glass-bg) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}

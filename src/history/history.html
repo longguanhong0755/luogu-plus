@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Luogu++ 历史</title>
+  <link rel="stylesheet" href="../settings/settings.css" />
+  <link rel="stylesheet" href="history.css" />
+</head>
+<body>
+  <div class="wrap wide">
+    <header>
+      <h1>浏览历史</h1>
+      <span class="sub">只保存在本机 · 当前 <span id="h-count">0</span> 条记录</span>
+    </header>
+
+    <div class="seg" id="h-tabs">
+      <button data-v="history" class="active">历史</button>
+      <button data-v="downloads">下载</button>
+    </div>
+
+    <section class="card" id="pane-history">
+      <div class="row-line">
+        <input type="text" id="h-q" placeholder="搜索标题或网址" spellcheck="false" autocomplete="off" />
+        <button class="btn" id="h-clear">清空历史</button>
+      </div>
+      <div id="h-list" class="list"></div>
+    </section>
+
+    <section class="card" id="pane-downloads" hidden>
+      <div class="row-line">
+        <span class="hint inline" id="d-dir"></span>
+        <button class="btn" id="d-clear">清除已完成记录</button>
+      </div>
+      <div id="d-list" class="list"></div>
+    </section>
+  </div>
+  <script src="history.js"></script>
+</body>
+</html>

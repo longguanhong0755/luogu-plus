@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Luogu++</title>
+  <link rel="stylesheet" href="home.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="h-clock" id="clock">--:--</div>
+    <div class="h-date" id="date"></div>
+
+    <!-- 大搜索框：与 omnibox 同一套解析语义（映射词 / URL / 题号 / UID / 搜索词） -->
+    <div class="h-search card" id="sec-search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <input id="q" type="text" spellcheck="false" autocomplete="off"
+             placeholder="网址 / 题号 / UID / 搜索词 / 映射词" />
+      <button id="go" title="前往 (Enter)">前往</button>
+    </div>
+    <div class="h-resolve" id="resolve"></div>
+
+    <!-- 考试倒计时：从底部双卡挪到搜索正下方（用户要求"优化到中间来"），
+         条目横向药丸排布，开页第一眼就能看到最近的一场 -->
+    <div class="h-recent card h-cdmid" id="sec-countdowns">
+      <div class="h-card-head">
+        <span>考试倒计时</span>
+        <button id="cd-add" title="添加倒计时">+ 添加</button>
+      </div>
+      <div class="h-list" id="countdowns"></div>
+      <div class="h-cd-form" id="cd-form" hidden>
+        <input type="text" id="cd-name" placeholder="名称（如 NOIP）" maxlength="24" />
+        <input type="date" id="cd-date" />
+        <button id="cd-save">保存</button>
+      </div>
+    </div>
+
+    <!-- 快捷入口：与左侧坞同一份自定义数据（不含首页自身） -->
+    <div class="h-links" id="links"></div>
+
+    <!-- 最近访问 -->
+    <div class="h-recent card" id="sec-recent">
+      <div class="h-card-head">
+        <span>最近访问</span>
+        <button id="open-history" title="查看全部 (Ctrl+H)">全部</button>
+      </div>
+      <div class="h-recent-list" id="recent"></div>
+    </div>
+
+    <!-- 近期比赛（洛谷数据）：倒计时上移后独占整行 -->
+    <div class="h-duo" id="sec-contests">
+      <div class="h-recent card">
+        <div class="h-card-head">
+          <span>近期比赛</span>
+          <button id="open-contests" title="打开洛谷比赛列表">全部</button>
+        </div>
+        <div class="h-list" id="contests"></div>
+      </div>
+    </div>
+
+    <div class="h-foot" id="sec-foot">Ctrl+T 新标签页 · Ctrl+滚轮 缩放页面 · Ctrl+F 页内查找 · Ctrl+Shift+S 截图 · F2 设置 · Ctrl+Alt+L 全局唤起</div>
+  </div>
+  <script src="home.js"></script>
+</body>
+</html>

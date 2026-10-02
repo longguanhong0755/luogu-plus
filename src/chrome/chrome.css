@@ -1,0 +1,1145 @@
+/* ============================================================
+   LuoguLab v4 — 应用层外壳样式（chrome 层，本地页面）
+   视觉：黑白单色 / 线条风 / 极简。中央透明留给页面视图。
+   布局：双行顶栏（标签条 + 浏览器式工具行）+ 左侧坞，无页脚。
+   ============================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* 只定义骨架与派生色。**面**（--surface / --surface-2 / --hairline）不在这里
+     定义——它们是 material.css 里指向 --lg-glass-* 的别名，材质只有一个来源。
+     配色预设（applyConfig 下发内联变量）换掉基色后，派生色自动跟随。 */
+  --ink-dim: color-mix(in srgb, var(--ink) 62%, var(--surface));
+  --ink-faint: color-mix(in srgb, var(--ink) 34%, var(--surface));
+  --accent: #18181b;
+  --lg-radius: 8px;
+  --lg-sans: "MiSans", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --lg-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --header-h: 76px;   /* 标签条 34 + 工具行 42 */
+  --dock-w: 56px;
+  --vtab-w: 212px;    /* 垂直标签栏展开宽度（与主进程 VTAB_W 对齐） */
+  --vtab-rail: 46px;  /* 折叠窄条宽度（与主进程 VTAB_RAIL 对齐） */
+  --vtab-edge: 4px;   /* 紧凑模式左缘热区宽度（与主进程 VTAB_EDGE 对齐） */
+  /* 顶栏/底坞/页面共用的实际分界线：applyConfig 写入主进程 layout 的
+     inset().x（紧凑=4 / 窄条=46 / 展开=212）。三个值只可能来自这一处。 */
+  --vtab-cur: 46px;
+  --bdock-h: 56px;    /* 垂直模式底部坞条高度（与主进程 BDOCK_H 对齐） */
+}
+/* 兜底：applyConfig 尚未执行（或没拿到预设变量）时的暗色 */
+html[data-theme="dark"] {
+  --bg-base: #101013;
+  --ink: #e7e7ea;
+  --accent: #e7e7ea;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  /* 底色由壁纸层（#wall.lg-wallpaper 的基色兜底层）提供，不是第二个来源：
+     以前 flat 皮肤下这里是不透明的 --bg-base，把壁纸整个盖住，外壳的面就
+     合成在"纯色"上、页面的面合成在"壁纸"上——同配置两种观感的一半原因在
+     这里。液态玻璃当年正是靠 `html[data-glass="liquid"] body{transparent}`
+     打了个补丁绕开它，现在两种皮肤同一条路。 */
+  background: transparent;
+  font-family: var(--lg-sans);
+  color: var(--ink);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+/* 壁纸层是真实元素（chrome.html 的 #wall.lg-wallpaper），公式在 material.css：
+   外壳、页面、弹层三层共用同一个 class 与同一组变量，几何/滤镜/视差不可能
+   各写一套。这里不再有 body::before/::after。 */
+
+/* ================= 顶栏 ================= */
+#top {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--header-h);
+  z-index: 10;
+  /* 面（底色/模糊/高光/投影）来自 material.css 的外壳登记表；
+     单边发丝线是布局，用别名消费同一份线色。 */
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* --- 标签条（Edge 式：活动标签一块浅色圆角牌，其余标签裸文字） --- */
+#tabstrip {
+  display: flex;
+  align-items: flex-end;
+  height: 34px;
+  padding: 5px 138px 0 8px; /* 右侧 138px = 三个 46px 窗口按钮，标签不许钻到按钮底下 */
+  gap: 5px;
+  -webkit-app-region: drag;
+  border-bottom: 1px solid var(--hairline);
+}
+#tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  max-width: calc(100% - 60px);
+  overflow: hidden;
+}
+/* 标签多到保底宽度也放不下时允许横滚（滚轮纵转横在 chrome.js），
+   总比把最右的标签裁没强——裁掉的标签点都点不到 */
+#tabs.scroll { overflow-x: auto; scrollbar-width: none; }
+#tabs.scroll::-webkit-scrollbar { display: none; }
+.tab {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  flex: none;           /* 宽度由 fitTabs() 显式给（Chrome 式等比收窄），不许 flex 再动 */
+  min-width: 0;
+  max-width: 200px;
+  margin-bottom: 3px;
+  padding: 0 7px 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+  position: relative;
+}
+/* 窄到 76px 以下的纯图标态：标题/关闭/徽章全收，只留图标——
+   用户要求"标签再多图标也一直可见"。关标签用中键或右键菜单 */
+.tab.tiny { padding: 0; justify-content: center; gap: 0; }
+.tab.tiny .t-title, .tab.tiny .t-close, .tab.tiny .t-badge { display: none; }
+.tab:not(.active):hover { color: var(--ink); background: var(--surface-2); }
+/* 活动标签与非活动标签拉开明度差（用户给的 Edge 截图同款）：浅色圆角牌，
+   液态玻璃下换成玻璃变量——活动页那块和外壳其它玻璃面同源同色 */
+.tab.active {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--surface-2);
+  /* 面的材质与投影由 material.css 登记表统一给（选中 = 一块面） */
+}
+.tab .t-icon { width: 13px; height: 13px; flex: none; display: grid; place-items: center; }
+.tab .t-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tab .t-icon img { width: 12px; height: 12px; border-radius: 3px; }
+.tab .t-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .t-close {
+  width: 15px; height: 15px;
+  border: none; border-radius: 4px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  flex: none;
+  display: grid; place-items: center;
+}
+.tab .t-close:hover { background: rgba(0, 0, 0, 0.14); color: var(--ink); }
+html[data-theme="dark"] .tab .t-close:hover { background: rgba(255, 255, 255, 0.18); color: var(--ink); }
+.tab.special .t-icon svg { stroke-width: 2.2; }
+.tab.loading .t-title { opacity: 0.5; }
+.tab.loading .t-icon { animation: lg-spin 1s steps(8) infinite; }
+@keyframes lg-spin { to { transform: rotate(360deg); } }
+
+#tab-new {
+  -webkit-app-region: no-drag;
+  width: 22px; height: 22px;
+  margin-bottom: 4px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-size: 14px;
+  cursor: pointer;
+  flex: none;
+}
+#tab-new:hover { background: var(--surface-2); color: var(--ink); }
+/* 右上角永远留一块可拖拽空白（用户要求）：标签再多也不许把它吃没 */
+#strip-pad { flex: 1 1 0%; min-width: 110px; }
+
+/* 垂直模式的标题行（Edge 式）：当前标签的图标 + 网页描述，居中显示。
+   水平模式整行不显示——水平的当前标签在标签条上本来就看得见。
+   标题是纯文字（不吃面、不画卡片）：就是 Edge 竖标签那条窗口标题。 */
+#titlerow { display: none; }
+#vtab-current {
+  display: flex; align-items: center; gap: 7px;
+  min-width: 0; max-width: min(56vw, 560px);
+  height: 28px;
+  padding: 0 8px;
+  color: var(--ink);
+  font-size: 12.5px; font-weight: 600;
+}
+
+#vtab-current .vc-icon { width: 13px; height: 13px; flex: none; display: grid; place-items: center; }
+#vtab-current .vc-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#vtab-current .vc-icon img { width: 12px; height: 12px; border-radius: 3px; }
+#vtab-current .vc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#vtab-current.loading .vc-icon { animation: lg-spin 1s steps(8) infinite; }
+
+/* --- 工具行（浏览器式） --- */
+#navrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 0 0 8px; /* 右侧归零：窗口三键贴住窗口最右上角（要求"放在最右上角"） */
+  -webkit-app-region: drag;
+}
+#navrow a,
+#navrow button,
+#navrow input,
+#navrow #omnibox,
+#navrow #histbtns,
+#navrow #actions {
+  -webkit-app-region: no-drag;
+}
+/* 左上角 Luogu++ 字样按用户要求撤掉（.vtitle 元素已删，样式一并清） */
+/* 折叠成窄条时只留展开箭头一颗按钮 */
+body.rail #vtab-head { justify-content: center; padding-left: 0; }
+
+/* ---------- 窗口控制按钮（自绘：系统 overlay 会压住账号芯片）
+   绝对定位在顶栏右上角：水平模式与标签条同高（34px），垂直模式与工具行同高（44px）。
+   之前放在工具行 #actions 末尾，用户看到的"按钮没在最右上角"就是那一版。 ---------- */
+#wctl {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 34px;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  z-index: 3;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+.wbtn {
+  width: 46px;
+  height: 100%; /* 撑满所在行：贴边、全高的标准标题栏按钮 */
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s, color 0.12s;
+}
+.wbtn:hover { background: var(--surface-2); color: var(--ink); }
+.wbtn svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.wbtn.wclose:hover { background: var(--surface-2); color: var(--ink); box-shadow: inset 0 0 0 1px var(--hairline); }
+/* 玻璃皮肤下按钮也走玻璃语言 */
+
+
+#histbtns { display: flex; align-items: center; gap: 2px; flex: none; }
+.icon-btn {
+  width: 30px; height: 30px;
+  border: none; border-radius: 6px;
+  display: grid; place-items: center;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+/* hidden 属性必须压过 .icon-btn 的 display:grid——否则"有下载才出现"的按钮会一直挂着 */
+[hidden] { display: none !important; }
+.icon-btn.on { color: var(--ink); background: var(--surface-2); }
+.icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+.icon-btn:disabled { opacity: 0.32; cursor: default; }
+.icon-btn:disabled:hover { background: transparent; color: var(--ink-dim); }
+.icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* omnibox：地址 + 搜索 + 映射词，三合一 */
+#omnibox {
+  flex: 1;
+  min-width: 160px;
+  display: flex; align-items: center; gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+#omnibox:focus-within { border-color: var(--ink); }
+#omnibox svg { width: 13px; height: 13px; fill: none; stroke: var(--ink-faint); stroke-width: 2; flex: none; }
+#omni-input {
+  flex: 1; min-width: 0;
+  border: none; outline: none;
+  background: transparent;
+  font-family: var(--lg-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+#omni-input::placeholder { color: var(--ink-faint); font-family: var(--lg-sans); }
+
+#actions { display: flex; align-items: center; gap: 5px; margin-left: 2px; flex: none; }
+
+#user-chip {
+  display: flex; align-items: center; gap: 7px;
+  height: 30px;
+  padding: 0 10px 0 4px;
+  border-radius: 15px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 12px; font-weight: 600;
+  max-width: 170px;
+  transition: border-color 0.12s;
+}
+#user-chip:hover { border-color: var(--ink-dim); }
+#user-chip img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; background: var(--surface-2); filter: grayscale(12%); }
+#user-chip .uname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#user-chip .uname.anon { font-weight: 500; color: var(--ink-dim); }
+
+/* --- 加载指示线（工具行底部，任一标签加载时出现） --- */
+#loadbar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+body.loading #loadbar { opacity: 1; }
+#loadbar::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 40%;
+  background: var(--ink);
+  animation: lg-load 1.1s ease-in-out infinite;
+}
+@keyframes lg-load {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+/* ================= 侧坞（四个位置可选，见设置页「侧坞」卡片） =================
+   位置由 body[data-dock] 决定（applyConfig 按 cfg.dockPos 写；默认"跟随布局"
+   = 水平布局左侧 / 垂直布局底部）：
+     left/right = 竖列（顶栏之下通高，悬浮胶囊整体居中）；
+     top/bottom = 横条（跨内容区，页面由主进程 inset() 让出同一条）。
+   左右边界吃 --vtab-cur（侧栏分界线）——坞永远在内容区一侧，不钻到侧栏底下，
+   也不会在页面区留下空档（坞外壳与页面 inset 同一份 cfg 算出来）。 */
+#dock {
+  position: fixed;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  scrollbar-width: none;
+}
+#dock::-webkit-scrollbar { display: none; }
+body[data-dock="left"] #dock,
+body[data-dock="right"] #dock {
+  top: var(--header-h);
+  bottom: 0;
+  width: var(--dock-w);
+  flex-direction: column;
+  padding: 12px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+body[data-dock="left"] #dock { left: var(--vtab-cur, 0px); right: auto; }
+body[data-dock="right"] #dock { left: auto; right: 0; }
+body[data-dock="top"] #dock,
+body[data-dock="bottom"] #dock {
+  left: var(--vtab-cur, 0px);
+  right: 0;
+  height: var(--bdock-h);
+  flex-direction: row;
+  padding: 0 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+body[data-dock="top"] #dock { top: var(--header-h); bottom: auto; }
+body[data-dock="bottom"] #dock { top: auto; bottom: 0; }
+/* 侧栏在右侧时镜像：坞的右边界 = 侧栏分界线（顶栏也是这么让的） */
+body[data-layout="vertical"][data-side="right"][data-dock="right"] #dock { right: var(--vtab-cur, 0px); }
+body[data-layout="vertical"][data-side="right"][data-dock="top"] #dock,
+body[data-layout="vertical"][data-side="right"][data-dock="bottom"] #dock { left: 0; right: var(--vtab-cur, 0px); }
+/* 横条里的组/脚横排，图标与分隔线跟着转向 */
+body[data-dock="top"] .dock-group,
+body[data-dock="top"] .dock-foot,
+body[data-dock="bottom"] .dock-group,
+body[data-dock="bottom"] .dock-foot { flex-direction: row; }
+body[data-dock="top"] #dock a,
+body[data-dock="bottom"] #dock a { width: 34px; height: 34px; }
+body[data-dock="top"] #dock .sep,
+body[data-dock="bottom"] #dock .sep { width: 1px; height: 20px; margin: 0 4px; }
+.dock-group, .dock-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  border-radius: 16px;
+
+  flex: none;
+}
+.dock-foot { margin-top: 0; }
+#dock a {
+  position: relative;
+  width: 38px; height: 38px;
+  border-radius: 9px;
+  display: grid; place-items: center;
+  color: var(--ink-dim);
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+  flex: none;
+}
+#dock a svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#dock a:hover { background: var(--surface-2); color: var(--ink); }
+#dock a.active { background: var(--surface-2); color: var(--ink); }
+#dock a.active::before {
+  content: "";
+  position: absolute; left: -5px; top: 9px; bottom: 9px;
+  width: 2px;
+  background: var(--ink);
+}
+#dock a.special.active::before { width: 2px; }
+#dock .sep { width: 20px; height: 1px; margin: 4px 0; background: var(--hairline); flex: none; }
+
+/* ================= 垂直标签栏（Edge 式） ================= */
+/* 外壳侧栏（#vtab）与悬停浮层（#tab-flyout，弹出层里的一份同构拷贝）共用这一块。
+   两处逐像素同构 → 悬停展开只是横向加宽、不重排：同一标签在窄条与展开态里的
+   行中心 y 完全一致，鼠标贴哪一行、点下去还是哪一行。 */
+#vtab, #tab-flyout {
+  flex-direction: column;
+  padding: 8px 8px 10px;
+  font-size: 12.5px;
+}
+#vtab {
+  display: none;
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: var(--vtab-w);
+  border-right: 1px solid var(--hairline);
+  z-index: 11;
+}
+/* 浮层是"展开后的侧栏"：宽度吃同一个 --vtab-w（主进程 inset 的唯一值） */
+#tab-flyout { display: flex; width: var(--vtab-w); }
+/* 右缘拖宽手柄（Edge 能拖宽窄）：只在常驻展开时可用（窄条/紧凑没有可拖的宽度） */
+#vtab-resize {
+  display: none;
+  position: absolute;
+  top: 0; bottom: 0;
+  right: -2px;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 12;
+  -webkit-app-region: no-drag;
+}
+body[data-layout="vertical"] #vtab-resize { display: block; }
+body.rail #vtab-resize,
+body.compact #vtab-resize,
+#tab-flyout #vtab-resize { display: none; }
+#vtab-resize.dragging { background: var(--hairline); }
+/* 头部两种形态同高 44px：列表起点 y 在窄条与展开态一致（悬停加宽不重排）。
+   左：标签页操作 ⌄；右：展开/收起箭头（= 常驻展开开关，原「钉住」）。 */
+#vtab-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding-left: 2px;
+  -webkit-app-region: drag;
+  flex: none;
+}
+#vtab-head .icon-btn { -webkit-app-region: no-drag; }
+#vtab-head .icon-btn { width: 26px; height: 26px; }
+#vtab-head #btn-vpin { margin-left: auto; }
+#vtab-head .icon-btn svg { width: 15px; height: 15px; }
+
+#vtabs {
+  /* flex-basis auto：外壳里靠 flex 撑满定高，浮层里按内容收（面板被夹住时
+     再收缩滚动）——两处同一份声明，几何才对得上 */
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+#vtabs::-webkit-scrollbar { display: none; }
+
+/* 钉住标签：与普通标签同一套行（图标 + 标题 + 徽标，没有 ×）——窄条态与
+   展开态的行高/行序完全一致，悬停加宽才不会"点错行"。 */
+#vtab-pins {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+  /* 钉很多时不把下面的标签列表挤到 0：封顶自己滚 */
+  max-height: 40vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+#vtab-pins::-webkit-scrollbar { display: none; }
+#vtab-pins:empty { display: none; }
+/* 钉住徽标：这行没有 ×，用一枚小钉子说明"已钉住" */
+.vtab .t-pin { flex: none; display: grid; place-items: center; color: var(--ink-faint); }
+.vtab .t-pin svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 休眠标签：整体变淡（一眼看出"没加载"），徽章是 💤 */
+.vtab.sleeping, .tab.sleeping { opacity: 0.5; }
+.tab .t-sleep, .vtab .t-sleep { font-size: 10px; flex: none; }
+
+/* 紧凑模式（Zen Compact）：垂直栏整个收没，只留 4px 热区条。
+   悬停热区浮出完整侧栏（走弹出层浮层，不在这里画）。 */
+#compact-edge {
+  display: none;
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  z-index: 70;
+}
+body.compact #compact-edge { display: block; }
+body.compact #vtab { display: none !important; }
+
+.vtab {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  flex: none;
+  padding: 0 6px 0 8px;
+  border-radius: 7px;
+  border-left: 2px solid transparent;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.vtab:hover { background: var(--surface-2); color: var(--ink); }
+.vtab.active { background: var(--surface-2); color: var(--ink); font-weight: 600; border-left-color: var(--ink); }
+/* 拖动落点：插入位置线（落点行的上/下缘）+ 放置区高亮（钉住区 / 分组块） */
+.vtab.drop-before::after,
+.vtab.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 4px; right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink);
+  z-index: 3;
+}
+.vtab.drop-before::after { top: -1.5px; }
+.vtab.drop-after::after { bottom: -1.5px; }
+#vtab-pins.drop-zone {
+  outline: 1px dashed var(--hairline);
+  outline-offset: 2px;
+  border-radius: 9px;
+}
+.vtab.drop-zone { background: var(--surface-2); }
+.vgchip.drop-zone { outline: 1px dashed var(--gc, var(--hairline)); outline-offset: 1px; }
+/* 液态玻璃下活动项换成玻璃面（与水平标签活动牌同源同变量） */
+
+.vtab .t-icon { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
+.vtab .t-icon svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.vtab .t-icon img { width: 13px; height: 13px; border-radius: 3px; }
+.vtab .t-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vtab .t-close {
+  width: 18px; height: 18px;
+  border: none; border-radius: 4px;
+  background: transparent; color: var(--ink-faint);
+  font-size: 12px; line-height: 1; cursor: pointer;
+  flex: none; display: grid; place-items: center;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.vtab:hover .t-close, .vtab.active .t-close { opacity: 1; }
+.vtab .t-close:hover { background: rgba(0, 0, 0, 0.14); color: var(--ink); }
+html[data-theme="dark"] .vtab .t-close:hover { background: rgba(255, 255, 255, 0.18); }
+.vtab.loading .t-title { opacity: 0.5; }
+.vtab.loading .t-icon { animation: lg-spin 1s steps(8) infinite; }
+
+#vtab-new {
+  -webkit-app-region: no-drag;
+  display: flex; align-items: center; gap: 8px;
+  height: 34px; flex: none;
+  margin-top: 4px;
+  padding: 0 8px;
+  border: none; border-radius: 7px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+#vtab-new:hover { background: var(--surface-2); color: var(--ink); }
+#vtab-new .plus { width: 14px; text-align: center; font-size: 15px; line-height: 1; flex: none; }
+
+/* 设置：垂直模式的常驻入口（水平模式由左侧坞左下角那颗齿轮负责） */
+#vtab-set {
+  -webkit-app-region: no-drag;
+  display: flex; align-items: center; gap: 8px;
+  height: 34px; flex: none;
+  margin-top: 4px;
+  padding: 0 8px;
+  border: none; border-radius: 7px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+#vtab-set:hover { background: var(--surface-2); color: var(--ink); }
+#vtab-set .vico { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
+#vtab-set .vico svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 折叠窄条：行内布局与展开态逐像素一致，只是文字/徽标不显示——用 opacity
+   而不是 display:none：图标位置一动，悬停加宽时就会横跳。侧栏左右内边距也与
+   展开态相同（8px），加宽动画才是"图标原地不动、标题淡入"。 */
+body.rail #vtab { width: var(--vtab-rail); }
+body.rail #vtab .vtxt,
+body.rail #vtab .t-title,
+body.rail #vtab .t-badge { opacity: 0; }
+/* 窄条头部只留向下的三角（标签页操作）——"钉住"那颗不在折叠态出现（用户要求：
+   折叠态左上角只有向下的三角）。头部总高仍与展开态同为 44px，列表起点 y 才对
+   得上，悬停加宽不重排。 */
+body.rail #vtab-head {
+  flex-direction: column;
+  justify-content: center;
+  padding-left: 0;
+  gap: 4px;
+}
+body.rail #vtab-head .icon-btn { margin: 0; width: 30px; height: 20px; }
+body.rail #vtab-head #btn-vpin { display: none; }
+/* 窄条里的关闭按钮：悬停时在图标右上角冒出一颗小 ×（原来直接藏掉，
+   窄条上根本关不了标签）。定位在按钮盒内部，不会被列表的滚动裁剪。 */
+body.rail .vtab { position: relative; }
+body.rail .vtab .t-close {
+  display: grid;
+  position: absolute;
+  right: 0; top: 0;
+  width: 15px; height: 15px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  font-size: 10px;
+  opacity: 0;
+  z-index: 2;
+}
+body.rail .vtab:hover .t-close { opacity: 1; }
+/* 悬停浮层开着时：外壳窄条整条隐去（visibility 不改布局——菜单锚点、--vtab-cur、
+   页面 inset 全按原样算）。浮层就是那条侧栏，两层玻璃叠着会透出窄条的图标与
+   按钮、窄条还会在面板之外继续画（"两块拼不上"的根）。 */
+body.rail.flyout-open #vtab,
+body.compact.flyout-open #compact-edge { visibility: hidden; }
+
+/* ================= 垂直布局：顶栏让出左侧 ================= */
+/* 顶栏两行（用户要求的形态）：38px 标题行 + 42px 工具行 = 80px，
+   页面 inset 的 y 由主进程按同一个常数让位（VHEAD_H）。 */
+body[data-layout="vertical"] { --header-h: 80px; }
+body[data-layout="vertical"] #titlerow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  /* 右侧 138px = 三颗 46px 窗口按钮：标题在"侧栏右缘 → 三键左缘"之间居中 */
+  padding: 0 138px 0 12px;
+  -webkit-app-region: drag;
+}
+body[data-layout="vertical"] #vtab { display: flex; }
+/* left 一律吃 --vtab-cur（主进程 inset 的唯一值）：紧凑模式的 4px 也走它，
+   不再有"页面 4px、顶栏 46px"的两套账 */
+body[data-layout="vertical"] #top { left: var(--vtab-cur); }
+body[data-layout="vertical"] #tabstrip { display: none; }
+/* 标签条隐藏后工具行升到最顶，窗口三键跟着长到 44px，仍然是窗口最右上角 */
+body[data-layout="vertical"] #wctl { height: 38px; }
+body[data-layout="vertical"] #navrow { height: 42px; padding-left: 10px; padding-right: 138px; }
+/* 横条坞的选中指示：贴内缘一道短线（竖列坞是外侧竖线，随方向转） */
+body[data-dock="bottom"] #dock a.active::before {
+  left: 8px; right: 8px; top: auto; bottom: -4px;
+  width: auto; height: 2px;
+}
+body[data-dock="top"] #dock a.active::before {
+  left: 8px; right: 8px; bottom: auto; top: -4px;
+  width: auto; height: 2px;
+}
+body[data-dock="right"] #dock a.active::before {
+  left: auto; right: -5px; top: 9px; bottom: 9px;
+  width: 2px; height: auto;
+}
+
+/* 侧栏在右侧（Edge 支持左右）：外壳镜像——顶栏/底坞让出右边、侧栏贴右缘。
+   几何仍吃主进程 inset（x=0 / right=侧栏宽），这里只翻面。 */
+body[data-layout="vertical"][data-side="right"] #vtab {
+  left: auto; right: 0;
+  border-right: none;
+  border-left: 1px solid var(--hairline);
+  top: var(--header-h, 44px); /* 让开右上角的窗口三键 */
+}
+body[data-layout="vertical"][data-side="right"] #top { left: 0; right: var(--vtab-cur); }
+body[data-layout="vertical"][data-side="right"] #vtab-resize { right: auto; left: -2px; }
+/* 浮层翻面：贴右缘（与常驻右侧条同矩形）、发丝线在左、展开动画从右往左揭幕。
+   圆角与外投影都没有——与外壳那条一致。 */
+body[data-side="right"] #pop-root > #tab-flyout {
+  border-right: none !important;
+  border-left: 1px solid var(--hairline) !important;
+  border-radius: 0 !important;
+}
+body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-widen-r; }
+@keyframes lg-tf-widen-r {
+  from { clip-path: inset(0 0 0 calc(var(--vtab-w) - var(--vtab-rail))); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+/* ================= 分屏分割条（条数随布局变，1~3 根） ================= */
+/* 嵌在页面视图之间的缝里（那里没有视图覆盖，外壳才收得到鼠标事件）。
+   位置与尺寸由主进程 chrome:split 推下来（left/top/width/height 内联）；
+   纵条拖列字段（colRatio/colRatio2），横条拖行字段（rowRatio/rowRatio2）。 */
+.sb-bar {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+.sb-bar[hidden] { display: none; }
+.sb-bar.sb-v { align-items: stretch; justify-content: center; cursor: col-resize; }
+.sb-bar.sb-h { align-items: center; justify-content: stretch; cursor: row-resize; }
+.sb-bar.sb-v .sb-line { width: 2px; background: var(--hairline); transition: background 0.12s; }
+.sb-bar.sb-h .sb-line { height: 2px; background: var(--hairline); transition: background 0.12s; }
+.sb-bar:hover .sb-line,
+.sb-bar.drag .sb-line { background: var(--ink-faint); }
+/* 分屏中的标签带一个小标（水平条与垂直栏通用） */
+.tab .t-split,
+.vtab .t-split { width: 12px; height: 12px; flex: none; display: grid; place-items: center; color: var(--ink-faint); }
+.tab .t-split svg,
+.vtab .t-split svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+/* ================= 标签分组（Edge Tab Groups） ================= */
+/* 组牌：连续同组标签前面的一块色牌。点击折叠/展开，右键开组面板。
+   --gc 由 JS 按组色内联；折叠时带成员计数（标签只剩这一块牌）。 */
+.gchip,
+.vgchip {
+  --gc: #8a8d91;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+.gchip { height: 24px; align-self: center; padding: 0 7px; border-radius: 7px; margin: 0 1px; }
+.gchip:hover,
+.vgchip:hover { background: var(--surface-2); }
+.g-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gc); flex: none; }
+.g-name {
+  font-size: 12px;
+  color: var(--ink);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.g-name:empty { display: none; }
+.g-count {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ink-faint);
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+.gchip.collapsed .g-count,
+.vgchip.collapsed .g-count { color: var(--ink); }
+/* 垂直栏里的组牌：整行，与标签左对齐 */
+.vgchip { height: 26px; padding: 0 10px; margin: 3px 6px 0; border-radius: 8px; }
+/* 分组成员标签：底部压一条组色线（Edge 的组色贯穿效果；水平条用） */
+.tab.grouped { box-shadow: inset 0 -2.5px 0 var(--gc); }
+/* ---------- 垂直栏的 Edge 式组块：组头一行 + 成员缩进 + 左侧连续组色线 ----------
+   整组包在 .vgroup 里：左缘一条 3px 组色线从头贯到尾（Edge 的样子），
+   组头（色点 + 组名 + 折叠三角 + 计数）单独一行，成员行缩进对齐。
+   组名双击就地改名（见 chrome.js 的 wireGroupHead）。 */
+.vgroup {
+  --gc: #8a8d91;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 3px 0 2px;
+  border-left: 3px solid var(--gc);
+  border-radius: 2px 8px 8px 2px;
+  padding-left: 3px;
+}
+.vghead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  flex: none;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+.vghead:hover { background: var(--surface-2); }
+.vghead .g-arrow { width: 10px; height: 10px; flex: none; display: grid; place-items: center; color: var(--ink-dim); }
+.vghead .g-arrow svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.12s; }
+.vgroup.collapsed .g-arrow svg { transform: rotate(-90deg); }
+.vghead .g-name { font-size: 12px; color: var(--ink); max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vghead .g-name:empty::after { content: "未命名组"; color: var(--ink-faint); }
+.vghead .g-name[contenteditable="true"] { outline: 1px solid var(--ink); outline-offset: 1px; border-radius: 3px; cursor: text; }
+.vghead .g-count { font-size: 11px; line-height: 16px; color: var(--ink-faint); background: var(--surface-2); border-radius: 8px; padding: 0 6px; flex: none; }
+.vgroup.collapsed .g-count { color: var(--ink); }
+/* 组内成员：缩进（组色线由 .vgroup 的左缘负责，贯穿整组） */
+.vgroup .vtab { padding-left: 12px; }
+.vgroup.drop-zone { outline: 1px dashed var(--gc); outline-offset: 1px; }
+/* 多选（Edge：Ctrl+点加选 / Shift+点连选 → 右键建组） */
+.vtab.sel, .tab.sel { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--ink-faint); }
+/* 窄条里的组：只留色线 + 色点（组名/计数不可见），缩进压到最小——
+   46px 的栏里 3+3 的组框加 12px 缩进会把图标挤出可视区 */
+body.rail #vtab .vgroup { border-left-width: 2px; padding-left: 0; }
+body.rail #vtab .vgroup .vtab { padding-left: 8px; }
+body.rail #vtab .vghead .g-name,
+body.rail #vtab .vghead .g-count { opacity: 0; }
+/* 分组面板（弹出层渲染，结构与账号/下载菜单一致） */
+#group-menu {
+  position: fixed;
+  z-index: 40;
+  width: 224px;
+  padding: 6px;
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+#group-menu[hidden] { display: none; }
+.gm-namerow { display: flex; gap: 5px; padding: 2px 2px 6px; }
+.gm-namerow .grp-name {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12.5px;
+  outline: none;
+  user-select: text;
+}
+.gm-namerow .grp-name:focus { border-color: var(--ink-faint); }
+.gm-ok {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: none;
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+.gm-ok:hover { background: var(--hairline); }
+.gm-colors { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 6px; }
+.gm-color {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--gc);
+  cursor: pointer;
+  padding: 0;
+}
+.gm-color.sel { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--gc); }
+.gm-item { width: 100%; }
+
+/* ================= 标签页操作菜单（Edge 式） ================= */
+#tabmore-menu {
+  position: fixed;
+  z-index: 40;
+  width: 224px;
+  padding: 6px;
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+#tabmore-menu[hidden] { display: none; }
+#tabmore-menu { width: 264px; }
+.tm-check { width: 15px; flex: none; font-size: 11px; color: var(--ink); }
+.tm-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Edge 式行：左图标 + 文案 + 右侧快捷键 / 展开箭头 */
+.tm-item .tm-ico { width: 15px; height: 15px; flex: none; display: grid; place-items: center; color: var(--ink-dim); }
+.tm-item .tm-ico svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tm-item .tm-hint { flex: none; color: var(--ink-faint); font-size: 11px; margin-left: 8px; }
+.tm-item .tm-arrow { flex: none; color: var(--ink-faint); display: grid; place-items: center; transition: transform 0.12s; }
+.tm-item .tm-arrow svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tm-item.tm-open .tm-arrow { transform: rotate(90deg); }
+/* 展开区的子行（打开的标签 / 最近关闭） */
+.tm-sub { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 2px 12px; }
+.tm-subitem { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; border: none; border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.tm-subitem:hover { background: var(--surface-2); }
+.tm-subitem .t-icon { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
+.tm-subitem .t-icon svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.tm-subitem .t-icon img { width: 13px; height: 13px; border-radius: 3px; }
+.tm-subitem .tm-label { font-size: 12px; }
+.tm-empty { padding: 4px 8px 6px; color: var(--ink-faint); font-size: 11.5px; }
+/* no-drag 必须有：#tabstrip 整体是窗口拖拽区，按钮不豁免的话点击会被系统
+   当成拖动吞掉（"左上角向下箭头点不动"的根因） */
+#tabs-more { flex: none; margin: 4px 3px 4px 6px; -webkit-app-region: no-drag; }
+
+/* 垂直栏悬停浮层：弹出层（浮在所有网页视图之上）里渲染的"展开后的侧栏"——
+   与 #vtab 同一份结构与同一份 CSS（行高 / 内边距 / 头尾按钮逐像素一致），
+   盖住窄条 = Edge 的整条展开；页面 inset 仍按窄条算，展开不收排。
+   整条模式（fullH）：高度铺满浮层视图 = 从窗口最顶到最底（右侧模式从 44 起），
+   与点箭头常驻展开的外壳 #vtab 完全同矩形——矩形由主进程裁定，不按内容收。 */
+#tab-flyout {
+  height: 100%;
+  box-sizing: border-box; /* 100% 含内边距：整条高度必须精确等于主进程裁定的矩形 */
+  overflow: hidden;
+}
+/* 弹出层里的浮层：去掉菜单式整圈描边、圆角与外投影——浮层就是那条侧栏本身，
+   形状必须与常驻展开一致（方角、贴边、单边发丝线）；投影走 material.css 的
+   同一条配方（与外壳 #vtab 同值）。具体度压过 popup.css 的 #pop-root > * 强制规则。 */
+#pop-root > #tab-flyout {
+  border: none !important;
+  border-right: 1px solid var(--hairline) !important;
+  border-radius: 0 !important;
+}
+/* 首次打开：从窄条宽度"长"到完整展开宽度——就是 Edge 那条侧栏长出来的样子
+   （整条从窗口最顶到最底，横向揭幕）。用 clip-path 揭幕而不是动画 width：
+   面板的布局宽度恒为 --vtab-w，弹层视图的尺寸不受动画影响（量到 46 会把视图
+   缩水、面板被裁），动画期间也没有"面板还没铺满视图"的透明死区。只在首帧播
+   一次（popup.js 量完尺寸后打类），之后的重绘不重播，不闪。 */
+#pop-root > #tab-flyout.tf-anim { animation: lg-tf-widen 150ms cubic-bezier(0.2, 0.7, 0.3, 1); }
+#pop-root > #tab-flyout.tf-anim .t-title,
+#pop-root > #tab-flyout.tf-anim .t-badge,
+#pop-root > #tab-flyout.tf-anim .vtxt,
+#pop-root > #tab-flyout.tf-anim .vghead .g-name { animation: lg-tf-fade 150ms ease-out; }
+@keyframes lg-tf-widen {
+  from { clip-path: inset(0 calc(var(--vtab-w) - var(--vtab-rail)) 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+@keyframes lg-tf-fade { from { opacity: 0; } }
+/* 浮层里的行：× 常驻可见（窄条上要悬停才出，展开态不必再藏） */
+#tab-flyout .vtab .t-close { opacity: 1; }
+#tab-flyout .vgchip { margin: 4px 0 3px; }
+
+/* ================= 账号下拉 ================= */
+#account-menu {
+  position: fixed;
+  z-index: 40;
+  width: 264px;
+  padding: 6px;
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+#account-menu[hidden] { display: none; }
+.am-head {
+  padding: 5px 9px 6px;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+}
+#am-list { display: flex; flex-direction: column; gap: 1px; }
+.am-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none; border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.am-item:hover { background: var(--surface-2); }
+.am-item .am-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.am-item .am-mail { color: var(--ink-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+.am-item .am-tick { color: var(--ink); flex: none; font-size: 11px; }
+.am-sep { height: 1px; margin: 6px 4px; background: var(--hairline); }
+.am-manage { color: var(--ink-dim); }
+.am-empty { padding: 9px; color: var(--ink-faint); font-size: 12px; }
+.am-empty.am-err { color: var(--ink); font-weight: 600; }
+/* 切换进度 / 验证码面板（菜单内联） */
+.am-job { display: flex; flex-direction: column; gap: 8px; padding: 9px; }
+.am-job-msg { color: var(--ink-dim); font-size: 12px; }
+.am-job-cap {
+  width: 132px; height: 44px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--surface-2);
+}
+.am-job-row { display: flex; gap: 6px; }
+.am-job-input {
+  flex: 1; min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  outline: none;
+}
+.am-job-input:focus { border-color: var(--ink); }
+.am-job-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
+.am-job-btn:hover { border-color: var(--ink); }
+.am-job-btn.quiet { color: var(--ink-faint); }
+.am-logout { color: var(--ink-dim); font-size: 12px; }
+#user-chip .caret {
+  width: 0; height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid var(--ink-faint);
+  flex: none;
+}
+
+/* ---------- 命令面板 ---------- */
+#palette {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--ink) 26%, transparent);
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+}
+#palette[hidden] { display: none; }
+.pal-box {
+  width: min(560px, 88vw);
+  border-radius: calc(var(--lg-radius, 8px) + 2px);
+  overflow: hidden;
+}
+#pal-input {
+  width: 100%;
+  padding: 13px 15px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  outline: none;
+}
+#pal-list { max-height: 46vh; overflow-y: auto; }
+/* 搜索标签页（Ctrl+Shift+A）：Edge 那种大列表——更高、每行带图标 + 标题 + 网址 */
+#palette.pal-tabs .pal-box { width: min(640px, 92vw); }
+#palette.pal-tabs #pal-list { max-height: 62vh; }
+.pal-head {
+  position: sticky;
+  top: 0;
+  padding: 7px 15px 6px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--ink-faint);
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+}
+.pal-item .t-icon { flex: none; width: 16px; height: 16px; display: grid; place-items: center; }
+.pal-item .t-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.pal-item .t-icon img { width: 14px; height: 14px; border-radius: 3px; }
+.pal-item .pal-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 15px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.pal-item .pal-hint { margin-left: auto; font-size: 11px; color: var(--ink-faint); font-family: var(--lg-mono); }
+.pal-item.on {
+  background: color-mix(in srgb, var(--ink) 10%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.pal-item.on .pal-hint { color: var(--ink-dim); }
+.pal-empty { padding: 16px; text-align: center; font-size: 12.5px; color: var(--ink-faint); }
+
+/* ---------- 标签页徽标（静音 / 缩放）与拖拽排序 ---------- */
+.t-badge { flex: none; color: var(--ink-faint); line-height: 1; }
+.t-badge svg {
+  width: 12px; height: 12px;
+  display: block;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.t-zoom { font-family: var(--lg-mono); font-size: 10px; letter-spacing: -0.03em; }
+.tab.dragging, .vtab.dragging { opacity: 0.5; }
+body.dragging, body.dragging * { cursor: grabbing !important; }
+
+/* 动效开关：一处关掉，外壳内的过渡与动画全停 */
+html[data-anim="0"] *,
+html[data-anim="0"] *::before,
+html[data-anim="0"] *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
+/* 液态玻璃 / 素面的全部材质声明都在 src/material.css（唯一材质文件）：
+   外壳的面、选中态、地址栏、页内查找条、弹层……由那里的选择器登记表统一
+   套用同一份配方。本文件只保留布局、形态与文字。 */
+html[data-lg-bgvideo="1"] #wall { background-image: none; }
+
+/* ---------- 钉住的标签：水平条里只留图标窄条 ----------
+   （垂直栏的钉住标签在 #vtab-pins 图标网格、悬停浮层是普通行——都显示标题，
+   所以这条只作用于水平标签条） */
+.tab.pinned .t-title { display: none; }
+.tab.pinned { width: 40px; min-width: 40px; padding: 0 4px; justify-content: center; gap: 4px; }
+
+/* ---------- 页内查找条（Ctrl+F） ---------- */
+#findbar {
+  position: fixed;
+  top: calc(var(--header-h) + 2px);
+  right: 170px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+#findbar[hidden] { display: none; }
+#find-input {
+  width: 210px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+#find-count {
+  font-size: 11px;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  text-align: center;
+  white-space: nowrap;
+}
+#findbar button {
+  width: 24px; height: 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+#findbar button:hover { color: var(--ink); border-color: var(--ink); }

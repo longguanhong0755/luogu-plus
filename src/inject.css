@@ -1,0 +1,791 @@
+/* ============================================================
+   洛谷琉璃 v4 (LuoguLab) — 页面美化注入层
+   视觉：黑白单色 / 线条风 / 极简。页面视图只保留纯内容。
+   所有 CSS 变量由 inject.js 以内联样式下发（单一事实来源）。
+   选择器来源：2026-09 对 www.luogu.com.cn 真实 DOM 的实扒结果
+   ============================================================ */
+
+/* ---------- 隐藏洛谷原生 chrome（外壳由应用层接管） ---------- */
+.top-bar,
+nav.sidebar.lside,
+.user-nav.rside,
+footer,
+.lg-footer {
+  display: none !important;
+}
+/* 原生布局为固定顶栏/侧栏留的偏移全部收回 */
+.main-container.lside-nav,
+.main-container.rside-nav {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  margin-top: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  padding-top: 0 !important;
+}
+#app.lfe-body > .main-container {
+  margin-top: 0 !important;
+}
+
+/* ---------- 背景层：默认素面（壁纸可选） ---------- */
+html, body {
+  background: var(--lg-bg-base, #f7f7f8) !important;
+}
+/* 设置了壁纸时页面背景必须透明，否则壁纸完全看不到 */
+html[data-lg-wall="1"],
+html[data-lg-wall="1"] body,
+html[data-lg-wall="1"] #app,
+html[data-lg-wall="1"] #app-old {
+  background: transparent !important;
+}
+
+/* 壁纸层：#lg-glass-bg 由 inject.js 打上 .lg-wallpaper 类，几何/cover/滤镜/
+   压暗/视差全部来自 material.css 的唯一公式（与外壳 #wall、弹层副本逐字相同）。
+   页面只负责把视图矩形写成 --lg-wall-x/y/w/h（见 inject.js applyViewRect）。
+   这里是"视口裁剪壳"：fixed + 负偏移 + 视差变换的壁纸层左沿会伸出视图边界、
+   在外壳区域再画一遍，套一层 overflow:hidden 的壳把它裁干净。 */
+#lg-glass-clip {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateZ(0);
+}
+
+/* 页面骨架放透明，露出背景层 */
+#app.lfe-body,
+.main-container,
+.main-container main,
+.main-container footer,
+#app-old,
+.columba-content-wrap,
+.columba-content-wrap header,
+.sidebar-container,
+.columba-content-wrap > .side,
+.columba-content-wrap > .main,
+.theme-page,
+.theme-frosted,
+.theme-page::before,
+.theme-frosted::before {
+  background-image: none !important;
+  background-color: transparent !important;
+}
+
+/* 卡片 / 弹层 / 面板的面：material.css 的洛谷页登记表统一给（与外壳、本地页、
+   弹层同一条配方；flat=素面值、liquid=玻璃值）。这里**不再有第二种料**——
+   以前这一段的 "rgba(站点 tint, 旧卡片档)" 与 liquid 段各写一套，
+   flat 皮肤下页面卡片与外壳材质分家的原因就在这类地方。 */
+
+.columba-content-wrap .l-card {
+  padding: 14px 16px;
+}
+
+/* ---------- 排版 ---------- */
+body {
+  font-family: var(--lg-sans) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.lfe-marked {
+  line-height: 1.85 !important;
+  font-size: 15.5px;
+  letter-spacing: 0.01em;
+}
+.lfe-marked p { margin: 0.7em 0; }
+.lfe-marked img,
+.lfe-marked-wrap img { border-radius: calc(var(--lg-radius) - 4px); }
+
+/* 题面表格：细线 + 行悬停（单色） */
+.lfe-marked table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  overflow: hidden;
+  border-radius: calc(var(--lg-radius) - 4px);
+  font-size: 14.5px;
+}
+.lfe-marked table th {
+  background: rgba(0, 0, 0, 0.035) !important;
+}
+html[data-lg-theme="dark"] .lfe-marked table th {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+.lfe-marked table tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.02) !important;
+}
+html[data-lg-theme="dark"] .lfe-marked table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+.lfe-marked table tr:hover td {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+html[data-lg-theme="dark"] .lfe-marked table tr:hover td {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* 代码块：面 + 细线，等宽字体 */
+.lfe-marked pre,
+.lfe-marked pre code,
+.card pre,
+pre.code {
+  background-color: var(--lg-glass-soft) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  border-radius: calc(var(--lg-radius) - 2px) !important;
+  font-family: var(--lg-mono) !important;
+  font-size: 13.5px !important;
+  line-height: 1.65 !important;
+}
+code, .inline-code, .lfe-marked code {
+  font-family: var(--lg-mono);
+  border-radius: 5px;
+}
+
+/* ---------- IDE (Monaco) ---------- */
+.code-editor-container {
+  border-radius: var(--lg-radius);
+  overflow: hidden;
+  border: 1px solid var(--lg-glass-line);
+  box-shadow: none !important;
+}
+.code-editor-container .editor-background {
+  background-color: var(--lg-glass-card) !important;
+}
+.code-editor-container .editor-top-bar {
+  background: var(--lg-glass-card) !important;
+  border-bottom: 1px solid var(--lg-glass-line) !important;
+}
+.editor-tab {
+  border-radius: 6px 6px 0 0;
+}
+.monaco-editor,
+.monaco-editor-background,
+.monaco-editor .margin {
+  background-color: var(--lg-glass-card) !important;
+}
+.CodeMirror {
+  background: var(--lg-glass-card) !important;
+  border-radius: calc(var(--lg-radius) - 2px);
+}
+
+/* ---------- 滚动条：方形细杆 ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 132, 0.4);
+  border-radius: 2px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 132, 0.65);
+  background-clip: padding-box;
+}
+
+/* ---------- 内容去色（默认 0=原色；仅当滑杆>0 时才挂灰度滤镜） ---------- */
+html[data-lg-desat="1"] .main-container,
+html[data-lg-desat="1"] .columba-content-wrap {
+  filter: grayscale(var(--lg-desat, 0));
+}
+
+/* ---------- 页面配色 · 暗色：整页重绘 ----------
+   此前只在 .main-container 上反转，html/body 仍是浅色 → 用户看到"切换没反应"。
+   现在反转挂在 <html> 上，整页（含骨架底色、文字、边框、按钮）一起变暗；
+   图片/视频/画布/Monaco 再反转一次还原，文字用 hue-rotate 保持原色相。 */
+html[data-lg-repaint="1"] {
+  filter: invert(1) hue-rotate(180deg) grayscale(var(--lg-desat, 0));
+  background: #ffffff !important;
+}
+html[data-lg-repaint="1"] img,
+html[data-lg-repaint="1"] video,
+html[data-lg-repaint="1"] canvas,
+html[data-lg-repaint="1"] svg image,
+html[data-lg-repaint="1"] .monaco-editor,
+html[data-lg-repaint="1"] .CodeMirror,
+html[data-lg-repaint="1"] .lfe-marked-wrap img {
+  filter: invert(1) hue-rotate(180deg);
+}
+/* 壁纸层不另写 filter（那会把 material.css 的 blur 顶掉）：反转并进唯一那条
+   滤镜链的插槽里 */
+html[data-lg-repaint="1"] #lg-glass-bg {
+  --lg-wall-extra: invert(1) hue-rotate(180deg);
+}
+/* 反转后 :hover/焦点等高亮不要变成刺眼反色 */
+html[data-lg-repaint="1"] ::selection {
+  background: #d4d4d8;
+  color: #18181b;
+}
+
+/* ---------- 页面控件线条化 ---------- */
+.am-btn,
+.lform-size-middle,
+.lform-size-small,
+.lform-input,
+input[type="text"],
+input[type="password"],
+input[type="search"],
+textarea,
+select {
+  border-radius: 6px !important;
+}
+.lfe-caption.tags .tag,
+.tags .tag {
+  border-radius: 5px !important;
+}
+
+/* ---------- 洁净模式：隐藏广告与推广 ---------- */
+html[data-lg-clean="1"] ins.adsbygoogle,
+html[data-lg-clean="1"] iframe[src*="googlesyndication"],
+html[data-lg-clean="1"] iframe[src*="doubleclick"],
+html[data-lg-clean="1"] iframe[src*="adsserver"],
+html[data-lg-clean="1"] iframe[src*="/ad/"],
+html[data-lg-clean="1"] .lg-banner,
+html[data-lg-clean="1"] .ad-banner,
+html[data-lg-clean="1"] [class*="advert"],
+html[data-lg-clean="1"] [id^="googad"],
+html[data-lg-clean="1"] .lg-index-content .am-slider,
+html[data-lg-clean="1"] .mm-player-container {
+  display: none !important;
+}
+/* 清扫器标记的商业推广卡（关闭洁净模式立即还原） */
+html[data-lg-clean="1"] [data-lg-promo="1"] {
+  display: none !important;
+}
+
+/* 上面把首页促销轮播（.lg-index-content .am-slider）清掉之后，它所在的
+   .am-u-md-8 列会塌成 712px 宽、0 高的空壳——用户截图里"首页那一大片空白"
+   就是它。这里把空壳整列收掉，让同一排剩下的那一列（运势/打卡）顶满整行，
+   内容再居中收窄，读起来还是原来那一块，不留洞。
+   注意选择器必须从 .lg-article > .am-g 起算并配 > .am-slider：
+   只写 .am-g > [class*="am-u-"]:has(.am-slider) 会连外层 .am-u-md-12
+   一起命中（它也"含有"轮播），整张欢迎卡都会被藏掉。
+   用 :has() 按结构判断、不写死 .lg-punch：洛谷在这块会轮换"运势"和"欢迎回来"。 */
+html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]:has(> .am-slider) {
+  display: none !important;
+}
+html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g:has(> [class*="am-u-"] > .am-slider) > [class*="am-u-"]:not(:has(> .am-slider)) {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+/* 只有在"左列真的空了"（欢迎块没能住进来）时才把运势列居中收窄 */
+html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g:has(> [class*="am-u-"] > .am-slider) > .lg-punch {
+  box-sizing: border-box !important;
+  padding-left: 18% !important;
+  padding-right: 18% !important;
+}
+
+/* 壁纸模式下 Highcharts 的绘图区是透明的（洛谷没设 plotBackgroundColor），
+   背后的壁纸直接透上来，一块彩色模糊看着就是个洞。给绘图区一层很淡的纸色，
+   图表才读得出"这是一张图表"。只在有壁纸时挂，素面模式不动。
+   液态玻璃下改用同一份玻璃变量的淡档（不再是会衬成实心的 0.42 白）。 */
+html[data-lg-wall="1"] .highcharts-plot-background {
+  fill: var(--lg-glass-bg-2, rgba(255, 255, 255, 0.14)) !important;
+}
+html[data-lg-glass="liquid"] .highcharts-background {
+  fill: transparent !important;
+}
+html[data-lg-wall="1"] .highcharts-grid-line {
+  stroke: rgba(var(--lg-ink, 24, 24, 27), 0.10) !important;
+}
+
+/* ---------- 动效尊重系统偏好 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .card, .l-card, .lg-article {
+    transition: none !important;
+  }
+}
+
+/* ============================================================
+   精简模式（全站总开关，默认关）：公告 / 推荐 / 页脚弹窗 / 顶部装饰
+   ============================================================ */
+html[data-lg-declutter="1"] [data-lg-declutter="1"],
+html[data-lg-declutter="1"] [class*="announce"],
+html[data-lg-declutter="1"] [class*="notice-bar"],
+html[data-lg-declutter="1"] [class*="recommend"],
+html[data-lg-declutter="1"] [class*="footer-pop"],
+html[data-lg-declutter="1"] [class*="float-ad"],
+html[data-lg-declutter="1"] [data-lg-promo="1"] {
+  display: none !important;
+}
+/* 压缩顶部装饰：首页大横幅与小标题只留功能，不留视觉开销 */
+html[data-lg-declutter="1"] .columba-content-wrap > header,
+html[data-lg-declutter="1"] .lg-index-content > header {
+  min-height: 0 !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+html[data-lg-declutter="1"] .theme-page::before,
+html[data-lg-declutter="1"] .theme-frosted::before {
+  display: none !important;
+}
+
+/* ============================================================
+   原生筛选行末尾的计数徽章（筛选行增强唯一挂上去的控件）
+   ============================================================ */
+#lg-listtools-count {
+  align-self: center;
+  color: #71717a;
+  font-family: var(--lg-sans);
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   快速搜索框（列表页独立开关）
+   ============================================================ */
+#lg-quicksearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0 12px;
+  height: 38px;
+  border: 1px solid var(--lg-glass-line);
+  border-radius: var(--lg-radius, 8px);
+  background: var(--lg-glass-card);
+}
+#lg-quicksearch svg {
+  width: 15px; height: 15px;
+  flex: none;
+  fill: none;
+  stroke: #a1a1aa;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+#lg-quicksearch input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--lg-ink, #18181b);
+  font-family: var(--lg-sans);
+  font-size: 13.5px;
+}
+#lg-quicksearch input::placeholder { color: #a1a1aa; }
+
+/* ============================================================
+   题目页增强：分屏编辑器入口 + 样例复制
+   ============================================================ */
+#lg-problem-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+}
+#lg-problem-tools .lg-pt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 31px;
+  padding: 0 11px;
+  border: 1px solid var(--lg-glass-line);
+  border-radius: 6px;
+  background: var(--lg-glass-card);
+  color: var(--lg-ink, #18181b);
+  font-family: var(--lg-sans);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+#lg-problem-tools .lg-pt-btn:hover { border-color: var(--lg-accent, #18181b); }
+#lg-problem-tools .lg-pt-btn svg {
+  width: 14px; height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- IDE 页面适配（/ide，Monaco 外围单色化） ---------- */
+/* 顶栏与底部 I/O 面板容器跟随主题着色 */
+.editor-top-bar,
+.editor-bottom-bar,
+.io-editor-container,
+.input-editor-container,
+.output-editor-container {
+  background: var(--lg-glass-card) !important;
+}
+/* 代码页签：去白块，改线框 */
+.editor-tabs .editor-tab,
+.editor-tab.editor-title {
+  background: transparent !important;
+  color: var(--lg-ink, #18181b) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--lg-glass-line)) !important;
+  border-radius: 6px !important;
+}
+/* 语言选择器（C++11 下拉） */
+.combo-wrapper.lang-select .text,
+.editor-actions-container .text {
+  background: transparent !important;
+  color: var(--lg-ink, #18181b) !important;
+}
+.lang-select select,
+.combo-wrapper select,
+.editor-actions-container select {
+  background: var(--lg-glass-card) !important;
+  color: var(--lg-ink, #18181b) !important;
+  border: 1px solid var(--lg-glass-line)) !important;
+  border-radius: 6px !important;
+}
+/* 输入/输出文本域 */
+.io-editor-container textarea,
+.input-editor-container textarea,
+.output-editor-container textarea {
+  background: var(--lg-glass-card) !important;
+  color: var(--lg-ink, #18181b) !important;
+  border: 1px solid var(--lg-glass-line)) !important;
+  border-radius: 6px !important;
+}
+/* Monaco 光标行：浅黄高亮改为发丝线 */
+.monaco-editor .current-line {
+  background: transparent !important;
+  border: 1px solid var(--lg-glass-line)) !important;
+}
+/* IDE 内按钮一律去彩色 */
+.ide button,
+.ide .ui.button {
+  filter: grayscale(1) !important;
+}
+
+/* ============================================================
+   配色预设 / 细粒度调项（由 apply() 下发属性与变量驱动）
+   ============================================================ */
+
+/* 动效开关：关掉后页面内所有过渡与动画立即停 */
+html[data-lg-anim="0"] *,
+html[data-lg-anim="0"] *::before,
+html[data-lg-anim="0"] *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+
+/* 代码块一键复制：悬停才显形，平时不打扰阅读 */
+pre[data-lg-copyable="1"] { position: relative; }
+.lg-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 9px;
+  font-family: var(--lg-sans, sans-serif);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--lg-ink, #18181b);
+  background: var(--lg-glass-card);
+  border: 1px solid var(--lg-glass-line);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+pre[data-lg-copyable="1"]:hover .lg-code-copy { opacity: 1; }
+.lg-code-copy:hover { border-color: var(--lg-accent, #18181b); color: var(--lg-accent, #18181b); }
+
+/* 难度标签灰阶化（洛谷新前端用 class 里带 difficulty 的徽章） */
+html[data-lg-diff="mono"] [class*="difficulty" i],
+html[data-lg-diff="mono"] [data-difficulty],
+html[data-lg-diff="mono"] .lg-tag {
+  filter: grayscale(1) !important;
+}
+
+/* 视频壁纸：<video> 是 .lg-wallpaper 的子元素，槽位/显示由 material.css
+    （html[data-lg-bgvideo="1"] .lg-wallpaper > video）统一给。 */
+
+/* 面的材质（卡片/面板/内块/白纱清除/下拉浮层/应用控件）全部搬进
+   src/material.css 的洛谷页登记表：与外壳、本地页、弹层的配方是同一份文本、
+   同一组变量（flat=纯色面+细线，liquid=模糊+高光+投影）。本文件只留站点
+   适配（透明化、字体、滚动条、工具条样式）。 */
+
+/* 强调色：应用接管的控件以它标示悬停/选中，正文文字仍走墨色 */
+#lg-quicksearch button:hover {
+  border-color: var(--lg-accent, #18181b) !important;
+  color: var(--lg-accent, #18181b) !important;
+}
+html:not([data-lg-page="native"]) a:hover {
+  color: var(--lg-accent, #18181b);
+}
+
+/* ============================================================
+   首页欢迎块 / 划词题号面板 / 随机跳题 / 问题搜索
+   （均由 inject.js 生成，配色只消费外壳下发的变量）
+   ============================================================ */
+
+/* ---------- 首页欢迎块 ----------
+   它现在住在首页欢迎卡的左列（原促销轮播那一格），和右侧的运势并排在同一块
+   玻璃卡里 —— 所以自己不能再画一层卡面，只要撑满这格、内容居中。 */
+/* 欢迎块所在的那一列必须和同排的运势列等高，否则左下方会留一大块空白。
+   AmazeUI 这一排是 float 栅格，列的 align-self 不起作用 —— 直接把这一排
+   改成 flex 行，两列才会被一起拉伸到行高（宽度仍由 am-u-md-* 的百分比决定）。 */
+html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: stretch !important;
+}
+html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]:has(#lg-hello) {
+  display: flex !important;
+  align-items: stretch !important;
+}
+#lg-hello {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  min-height: 116px;
+  padding: 14px 16px;
+  /* 内嵌一层很淡的纸色：一是和右侧运势拉开层次，二是卡片的 backdrop-filter
+     在部分合成路径下会把这块内容一起糊掉，自带底色能保证它始终读得出来 */
+  background: var(--lg-glass-soft);
+  border: 1px solid var(--lg-glass-line);
+  border-radius: var(--lg-radius, 10px);
+}
+#lg-hello .lg-hello-av {
+  width: 46px; height: 46px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--lg-glass-line);
+}
+#lg-hello .lg-hello-body { min-width: 0; }
+#lg-hello .lg-hello-title {
+  font-size: 17px; font-weight: 700; line-height: 1.4;
+  color: var(--lg-ink, #18181b);
+}
+#lg-hello .lg-hello-sub {
+  margin-top: 4px;
+  font-size: 13px; line-height: 1.6;
+  color: var(--lg-ink, #18181b); opacity: 0.6;
+}
+
+/* ---------- 划词题号面板 ---------- */
+.lg-pid-tip {
+  position: absolute;
+  z-index: 2147483000;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  max-width: 420px;
+  padding: 6px 8px;
+  border: 1px solid var(--lg-glass-line);
+  border-radius: var(--lg-radius, 8px);
+  background: var(--lg-glass-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+  font-family: var(--lg-sans);
+}
+.lg-pid-tip .lg-pid-label {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--lg-ink, #18181b);
+  opacity: 0.55;
+  padding-right: 2px;
+}
+.lg-pid-tip .lg-pid-go {
+  appearance: none;
+  cursor: pointer;
+  padding: 3px 9px;
+  font-family: var(--lg-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lg-ink, #18181b);
+  background: transparent;
+  border: 1px solid var(--lg-glass-line);
+  border-radius: calc(var(--lg-radius, 8px) - 2px);
+}
+.lg-pid-tip .lg-pid-go:hover {
+  color: rgba(var(--lg-tint, 255, 255, 255), 1);
+  background: var(--lg-accent, #18181b);
+  border-color: var(--lg-accent, #18181b);
+}
+
+/* ---------- 首页问题搜索 ---------- */
+.lg-search-go,
+.lg-search-rand {
+  font-family: var(--lg-sans) !important;
+  border-radius: calc(var(--lg-radius, 8px) - 2px) !important;
+  border: 1px solid var(--lg-glass-line)) !important;
+  background: transparent !important;
+  color: var(--lg-ink, #18181b) !important;
+  box-shadow: none !important;
+}
+.lg-search-go:hover,
+.lg-search-rand:hover {
+  background: var(--lg-accent, #18181b) !important;
+  border-color: var(--lg-accent, #18181b) !important;
+  color: rgba(var(--lg-tint, 255, 255, 255), 1) !important;
+}
+
+/* ---------- 按难度随机跳题 ---------- */
+#lg-random {
+  position: fixed; inset: 0; z-index: 2147483001;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  font-family: var(--lg-sans);
+}
+.lg-random-card {
+  width: min(520px, calc(100vw - 48px));
+  padding: 20px 22px 18px;
+  border: 1px solid var(--lg-glass-line);
+  border-radius: var(--lg-radius, 8px);
+  background: var(--lg-glass-card);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+}
+.lg-random-title {
+  font-size: 15px; font-weight: 700;
+  color: var(--lg-ink, #18181b);
+  margin-bottom: 16px;
+}
+.lg-random-row { margin-bottom: 14px; }
+.lg-random-label {
+  font-size: 11px; letter-spacing: 0.04em;
+  color: var(--lg-ink, #18181b); opacity: 0.55;
+  margin-bottom: 7px;
+}
+.lg-random-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.lg-random-opt {
+  appearance: none; cursor: pointer;
+  padding: 4px 10px;
+  font-size: 12px; line-height: 1.6;
+  color: var(--lg-ink, #18181b);
+  background: transparent;
+  border: 1px solid var(--lg-glass-line);
+  border-radius: calc(var(--lg-radius, 8px) - 3px);
+}
+.lg-random-opt:hover { border-color: var(--lg-accent, #18181b); }
+.lg-random-opt.on {
+  color: rgba(var(--lg-tint, 255, 255, 255), 1);
+  background: var(--lg-accent, #18181b);
+  border-color: var(--lg-accent, #18181b);
+}
+.lg-random-hint {
+  margin-top: 10px;
+  font-family: var(--lg-sans);
+  font-size: 11.5px;
+  color: var(--lg-ink-faint, rgba(128, 128, 138, 0.9));
+}
+.lg-random-acts {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 18px;
+}
+.lg-random-btn {
+  appearance: none; cursor: pointer;
+  padding: 6px 18px;
+  font-family: var(--lg-sans); font-size: 13px;
+  color: var(--lg-ink, #18181b);
+  background: transparent;
+  border: 1px solid var(--lg-glass-line);
+  border-radius: calc(var(--lg-radius, 8px) - 2px);
+}
+.lg-random-btn:hover { border-color: var(--lg-accent, #18181b); }
+.lg-random-btn.primary {
+  /* 主按钮走"浅底 + 描边"而不是 accent 实心填充：没设主题色时 accent
+     就是墨色，实心填充=亮色页面上一块黑，两种模式下都突兀 */
+  color: var(--lg-ink, #18181b);
+  background: var(--lg-glass-soft);
+  border: 1.5px solid var(--lg-accent, #18181b);
+  font-weight: 600;
+}
+.lg-random-btn.primary:hover { background: var(--lg-glass-soft); }
+.lg-random-btn:disabled { opacity: 0.55; cursor: default; }
+
+/* ==================== 阅读模式（纯纸面，非玻璃面） ====================
+   .lg-fake/.lg-face 那套是"玻璃面"；阅读视图故意做成素纸面（长时间阅读），
+   用固定色 + 明暗两套，不吃材质变量。 */
+#lg-reader {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow-y: auto;
+  background: #fbfbfc;
+  color: #1b1b1f;
+  font-family: var(--lg-sans), "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  line-height: 1.85;
+}
+html[data-lg-page="dark"] #lg-reader { background: #17171a; color: #e9e9ec; }
+#lg-reader.lg-reader-dark { background: #17171a; color: #e9e9ec; }
+#lg-reader .lg-reader-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: inherit;
+  border-bottom: 1px solid rgba(128, 128, 140, 0.3);
+  font-size: 12px;
+}
+#lg-reader .lg-reader-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.72; }
+#lg-reader .lg-reader-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgba(128, 128, 140, 0.4);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#lg-reader .lg-reader-btn:hover { border-color: currentColor; }
+#lg-reader .lg-reader-body { max-width: 720px; margin: 0 auto; padding: 28px 22px 80px; }
+#lg-reader .lg-reader-body img { max-width: 100%; height: auto; }
+#lg-reader .lg-reader-body pre { overflow-x: auto; padding: 10px; background: rgba(128, 128, 140, 0.12); border-radius: 8px; }
+#lg-reader .lg-reader-body h1, #lg-reader .lg-reader-body h2, #lg-reader .lg-reader-body h3 { line-height: 1.4; }
+
+/* ==================== 翻译（划词气泡 + 整页悬浮条） ====================
+   面本身走 .lg-face（material.css 的唯一配方），这里只排形态。 */
+#lg-tr-bubble {
+  position: fixed;
+  z-index: 2147483001;
+  width: min(320px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-family: var(--lg-sans), "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--lg-ink, #1b1b1f);
+}
+#lg-tr-bubble .lg-tr-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+#lg-tr-bubble .lg-tr-src { flex: 1; min-width: 0; opacity: 0.6; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lg-tr-bubble .lg-tr-x {
+  flex: none;
+  width: 18px; height: 18px;
+  border: none; border-radius: 5px;
+  background: transparent; color: inherit; opacity: 0.6;
+  cursor: pointer; font-size: 12px; line-height: 1;
+}
+#lg-tr-bubble .lg-tr-x:hover { opacity: 1; background: rgba(128, 128, 140, 0.18); }
+#lg-tr-bubble .lg-tr-err { color: #c0392b; }
+#lg-tr-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 2147483001;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-family: var(--lg-sans), "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  font-size: 12.5px;
+  color: var(--lg-ink, #1b1b1f);
+}
+#lg-tr-bar .lg-tr-info { min-width: 92px; }
+#lg-tr-bar .lg-tr-btn {
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid rgba(128, 128, 140, 0.42);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+#lg-tr-bar .lg-tr-btn:hover { border-color: currentColor; }

@@ -1,0 +1,109 @@
+/* LuoguLab — 历史 / 书签 / 下载 页。沿用设置页的单色线条风。 */
+.wrap.wide { max-width: 720px; }
+
+.row-line {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.row-line input[type="text"] {
+  flex: 1;
+  padding: 8px 11px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 7px;
+  outline: none;
+}
+.row-line input[type="text"]:focus { border-color: var(--ink); }
+.hint.inline { flex: 1; margin: 0; font-size: 11.5px; color: var(--ink-faint); }
+
+.list { display: flex; flex-direction: column; }
+
+.h-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--hairline);
+}
+.h-row:last-child { border-bottom: 0; }
+.h-row:hover { background: var(--surface-2); }
+
+.h-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.h-title {
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h-url {
+  font-family: var(--lg-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.h-time {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.h-del {
+  flex: none;
+  width: 24px; height: 24px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.h-del:hover { border-color: var(--ink); color: var(--ink); }
+/* 下载动作是文字按钮（暂停/继续/取消/重试/另存为/移除）：宽度自适应 */
+.h-del.h-act { width: auto; height: 24px; padding: 0 8px; font-size: 12px; }
+
+/* 历史按日期分组的小标题（今天 / 昨天 / 日期） */
+.h-day {
+  padding: 10px 4px 4px;
+  font-size: 11.5px;
+  letter-spacing: 0.4px;
+  color: var(--ink-faint);
+}
+.h-day:first-child { padding-top: 2px; }
+
+.dl-bar {
+  height: 3px;
+  margin-top: 4px;
+  background: var(--hairline);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dl-bar i { display: block; height: 100%; background: var(--ink); }
+
+.empty-state {
+  padding: 22px 6px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}

@@ -1,0 +1,19 @@
+{
+  "name": "luogu-glass",
+  "productName": "LuoguLab",
+  "version": "3.8.0",
+  "description": "LuoguLab — 洛谷编程工作台，单色线条风的洛谷桌面客户端",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "bash scripts/build-dist.sh",
+    "gen:icon": "node scripts/gen-icon.js",
+    "lint:material": "node scripts/lint-material.js"
+  },
+  "author": "user",
+  "license": "MIT",
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^39.8.10"
+  }
+}

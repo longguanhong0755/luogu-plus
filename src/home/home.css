@@ -1,0 +1,323 @@
+/* ============================================================
+   Luogu++ — 应用首页（本地起始页）
+   单色 / 线条 / 玻璃。壁纸层与玻璃变量由注入层（ext.css + apply）
+   下发，这里只管布局与数据。
+   ============================================================ */
+:root {
+  --h-ink: #18181b;
+  --h-ink-dim: rgba(24, 24, 27, 0.62);
+  --h-ink-faint: rgba(24, 24, 27, 0.4);
+  /* 线与面引用全应用同一份材质变量（inject.js 贴到根；flat=素面值、
+     liquid=玻璃值）。首页不再自带一杯"0.92 白 + 0.12 黑线"的私料。 */
+  --h-line: var(--lg-glass-line, rgba(0, 0, 0, 0.12));
+  --h-face: var(--lg-glass-card, rgba(255, 255, 255, 0.92));
+}
+html[data-theme="dark"] {
+  --h-ink: #e7e7ea;
+  --h-ink-dim: rgba(231, 231, 234, 0.62);
+  --h-ink-faint: rgba(231, 231, 234, 0.4);
+  --h-line: var(--lg-glass-line, rgba(255, 255, 255, 0.14));
+  --h-face: var(--lg-glass-card, rgba(28, 28, 32, 0.92));
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  color: var(--h-ink);
+  font-size: 14px;
+  overflow-y: auto;
+}
+.wrap {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 48px 24px 28px;
+}
+
+/* ---------- 时钟 ---------- */
+.h-clock {
+  font-family: var(--lg-mono, Consolas, monospace);
+  font-size: 58px;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+/* 时钟字体风格（设置页可改）：等宽是默认；sans 用全应用同一套无衬线；
+   serif 走系统衬线族，中西文各自落到平台自带的衬线体 */
+.h-clock.f-sans {
+  font-family: var(--lg-sans, "MiSans", "PingFang SC", sans-serif);
+  font-weight: 200;
+  letter-spacing: 0.02em;
+}
+.h-clock.f-serif {
+  font-family: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+.h-date {
+  margin-top: -8px;
+  font-size: 13px;
+  color: var(--h-ink-dim);
+  letter-spacing: 0.12em;
+}
+
+/* ---------- 通用玻璃卡（ext.css 给 .card 上玻璃面） ---------- */
+.card {
+  background: var(--h-face);
+  border: 1px solid var(--h-line);
+  border-radius: 12px;
+}
+
+/* ---------- 搜索框 ---------- */
+.h-search {
+  width: min(620px, 92vw);
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 16px;
+}
+.h-search:focus-within { border-color: var(--h-ink); }
+.h-search svg {
+  width: 17px; height: 17px;
+  flex: none;
+  fill: none;
+  stroke: var(--h-ink-faint);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.h-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--h-ink);
+  font: inherit;
+  font-size: 15px;
+}
+.h-search input::placeholder { color: var(--h-ink-faint); }
+.h-search button {
+  flex: none;
+  height: 34px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--h-ink);
+  background: transparent;
+  border: 1px solid var(--h-line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.h-search button:hover { border-color: var(--h-ink); }
+
+/* 解析预览：输入时提示这条输入会被当成什么 */
+.h-resolve {
+  min-height: 18px;
+  margin-top: -10px;
+  font-size: 12px;
+  color: var(--h-ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(620px, 92vw);
+}
+
+/* ---------- 快捷入口 ---------- */
+.h-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: min(620px, 92vw);
+}
+.h-links a {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--h-ink-dim);
+  text-decoration: none;
+  /* 面的材质（底色/模糊/高光/线/投影）由 material.css 的本地页登记表统一给：
+     这一块与卡片、外壳、洛谷页是同一条配方、同一组变量。这里只留形态。 */
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.h-links a:hover { color: var(--h-ink); border-color: var(--h-ink); }
+.h-links a svg {
+  width: 15px; height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- 最近访问 ---------- */
+.h-recent {
+  width: min(620px, 92vw);
+  padding: 14px 16px 10px;
+}
+.h-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--h-ink-faint);
+}
+.h-card-head button {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: normal;
+  color: var(--h-ink-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.h-card-head button:hover { color: var(--h-ink); text-decoration: underline; }
+.h-recent-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 18px;
+}
+.h-recent-list a {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 2px;
+  font-size: 13px;
+  color: var(--h-ink-dim);
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.h-recent-list a:hover { color: var(--h-ink); border-bottom-color: var(--h-line); }
+.h-recent-list .t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.h-recent-list .h {
+  flex: none;
+  font-size: 11px;
+  color: var(--h-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.h-empty {
+  grid-column: 1 / -1;
+  padding: 10px 2px;
+  font-size: 12.5px;
+  color: var(--h-ink-faint);
+}
+
+/* ---------- 底部提示 ---------- */
+.h-foot {
+  font-size: 11.5px;
+  color: var(--h-ink-faint);
+  letter-spacing: 0.06em;
+}
+
+/* ---------- 考试倒计时（搜索正下方正中：横向药丸排） ---------- */
+.h-cdmid { width: min(620px, 92vw); }
+.h-cdmid .h-list {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.h-cdmid .h-list a {
+  border: 1px solid var(--h-line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  align-items: center;
+  gap: 7px;
+}
+.h-cdmid .h-list a:hover { border-bottom-color: var(--h-line); border-color: var(--h-ink); }
+.h-cdmid .h-list .h { margin-left: 0; }
+.h-cdmid .h-list a:hover .h-del { display: block; }
+.h-cdmid .h-empty { text-align: center; padding: 4px 2px 6px; }
+.h-cdmid .h-cd-form { justify-content: center; }
+
+/* ---------- 双卡区（近期比赛独占一行；倒计时已上移到搜索下方） ---------- */
+.h-duo {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  width: min(620px, 92vw);
+}
+.h-list { display: flex; flex-direction: column; }
+.h-list a {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 2px;
+  font-size: 13px;
+  color: var(--h-ink-dim);
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+}
+.h-list a:hover { color: var(--h-ink); border-bottom-color: var(--h-line); }
+.h-list .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h-list .h {
+  flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--h-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.h-list .h.soon { color: #b4232a; font-weight: 600; }
+.h-list .h.past { opacity: 0.6; }
+.h-list .h-del {
+  flex: none;
+  width: 18px; height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--h-ink-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+}
+.h-list a:hover .h-del { display: block; }
+.h-list .h-del:hover { color: var(--h-ink); }
+.h-cd-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+/* 作者样式的 display:flex 会压过 UA 的 [hidden]{display:none}——不补这条，
+   添加倒计时的表单永远关不掉（与设置页图标面板同一类坑） */
+.h-cd-form[hidden] { display: none; }
+.h-cd-form input {
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--h-ink);
+  background: transparent;
+  border: 1px solid var(--h-line);
+  border-radius: 7px;
+  outline: none;
+}
+#cd-name { flex: 1; }
+.h-cd-form button {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--h-ink);
+  background: transparent;
+  border: 1px solid var(--h-line);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.h-cd-form button:hover { border-color: var(--h-ink); }

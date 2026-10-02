@@ -1,0 +1,71 @@
+/* ============================================================
+   LuoguLab — 材质单一来源守卫（material-lint）
+
+   规则：除了 src/material.css，任何 CSS/JS 都不许声明"面"。
+   检查 src 目录下所有 css/js；命中即报错（v35test 里也会跑一遍，
+   改歪立刻红）。这不是风格洁癖：历史上"外面一套、里面一套"的每一次
+   复发，都是某处又手写了一份 rgba/backdrop-filter/面子配方。
+
+   允许的例外：src/material.css（唯一材质文件）、main.js 里的探针字符串
+   （探针只消费 .lg-face 类，不写配方）、本文件自身。
+   ============================================================ */
+"use strict";
+const fs = require("fs");
+const path = require("path");
+
+/* 命中即违规：这些只能出现在 material.css 里 */
+const FORBIDDEN = [
+  { re: /backdrop-filter\s*:/i, why: "面的模糊链只能在 material.css 声明" },
+  { re: /-webkit-backdrop-filter\s*:/i, why: "面的模糊链只能在 material.css 声明" },
+  { re: /inset\s+0\s+1px\s+0\s+var\(--/i, why: "顶部高光是材质配方的一部分" },
+  { re: /linear-gradient\(\s*180deg\s*,\s*var\(--lg-glass-sheen/i, why: "sheen 配方只能在 material.css" },
+  { re: /color-mix\(\s*in\s+srgb\s*,\s*var\(--lg-glass-card/i, why: "内块档配方只能在 material.css" },
+  { re: /--glass-(bg|bg-2|panel|line|hi|sheen|blur|drop)\s*:/i, why: "旧外壳词汇已废弃（唯一词汇是 --lg-glass-*）" },
+  { re: /--lg-glass-[a-z0-9-]+\s*:/i, why: "材质变量只能由主进程下发，CSS 不许声明" },
+  { re: /--lg-alpha-(bar|card)\s*:/i, why: "已并入 faceAlpha，不许再下发" },
+  { re: /--surface\s*:\s*(?!var\(--lg-glass)/i, why: "--surface 必须是指向 --lg-glass-* 的别名" },
+  { re: /--hairline\s*:\s*(?!var\(--lg-glass)/i, why: "--hairline 必须是指向 --lg-glass-* 的别名" },
+  { re: /--surface-2\s*:\s*(?!color-mix\(in srgb, var\(--lg-glass-soft)/i, why: "--surface-2 必须从 --lg-glass-soft 派生" },
+  { re: /data-glass\s*=\s*"(liquid|flat)"\s*\]/i, why: "材质不许再按皮肤分叉（皮肤只改变量取值）" },
+];
+/* 免检文件：唯一材质文件；本文件（规则里写着这些模式） */
+const ALLOW = new Set(["material.css", "material-lint.js"]);
+
+function stripComments(text, isCss) {
+  let s = text.replace(/\/\*[\s\S]*?\*\//g, "");
+  if (!isCss) s = s.replace(/^[ 	]*\/\/.*$/gm, "");
+  return s;
+}
+function walk(dir, out) {
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      if (ent.name === "node_modules" || ent.name.startsWith(".")) continue;
+      walk(p, out);
+    } else if (/\.(css|js)$/i.test(ent.name)) out.push(p);
+  }
+  return out;
+}
+/* 返回 [{file, line, why, text}]；clean 为空 = 通过 */
+function scan(rootDir) {
+  const files = walk(rootDir, []);
+  const bad = [];
+  for (const f of files) {
+    const base = path.basename(f);
+    if (ALLOW.has(base)) continue;
+    const isCss = /\.css$/i.test(f);
+    const raw = fs.readFileSync(f, "utf8");
+    const text = stripComments(raw, isCss);
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      for (const rule of FORBIDDEN) {
+        if (rule.re.test(lines[i])) {
+          bad.push({ file: path.relative(rootDir, f), line: i + 1, why: rule.why, text: lines[i].trim().slice(0, 120) });
+          break;
+        }
+      }
+    }
+  }
+  return bad;
+}
+module.exports = { scan, FORBIDDEN };

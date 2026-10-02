@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Luogu++ 设置</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div class="shell">
+    <!-- 左侧分组导航：11 张卡片平铺太长，改成按用途分组、一次只看一组 -->
+    <nav class="nav">
+      <div class="nav-head">
+        <span class="nav-logo">Luogu++</span>
+        <span class="nav-sub">设置</span>
+      </div>
+      <div id="nav-list"></div>
+      <div class="nav-foot">
+        <button class="btn" id="btn-reset">恢复默认</button>
+        <button class="btn primary" id="btn-relaunch">重启应用</button>
+      </div>
+    </nav>
+
+    <main class="pane" id="pane">
+      <header class="pane-head">
+        <h1 id="pane-title">配色</h1>
+        <span class="sub" id="pane-sub">改动即时生效，无需重启</span>
+      </header>
+
+      <!-- ==================== 配色 ==================== -->
+      <!-- v3.5.1 起"页面配色"三态与中性基色/强调色都撤了（用户要求）：全应用
+           只认一个主题色，页面不再允许"原色"造成里外两套色；明暗由主进程
+           统一裁决（resolvedTheme），玻璃与色块全部从主题色一派派生。 -->
+      <section class="card" data-nav="外观/配色" data-title="配色"
+        data-sub="全应用只认这一个颜色：外壳、洛谷页面、DeepSeek 的玻璃都从它派生">
+        <h2>主题色</h2>
+        <p class="hint">
+          挑一个颜色，洛谷页面与应用外壳的所有色块都会跟着它走——卡片底、页面底、
+          文字、边框按不同比例朝它混色，所以任何色相都能自动适配，明暗两套都成立。
+          选「中性」则回到纯黑白。
+        </p>
+        <div class="seed-row">
+          <div class="swatches" id="seed-swatches"></div>
+          <input type="color" id="c-seed" title="自定义主题色" />
+        </div>
+        <label class="slider">
+          <span>混色浓度</span>
+          <input type="range" id="s-seedstrength" min="0" max="100" step="5" />
+          <output id="o-seedstrength"></output>
+        </label>
+        <p class="hint">浓度越高，色块越"实"；0 等于关掉主题色。文字始终按最低比例混，保证读得清。</p>
+        <div class="seed-preview" id="seed-preview"></div>
+      </section>
+
+      <!-- ==================== 玻璃与质感 ==================== -->
+      <section class="card" data-nav="外观/玻璃与质感" data-title="玻璃与质感"
+        data-sub="液态玻璃、圆角、边框与不透明度">
+        <h2>玻璃皮肤</h2>
+        <div class="seg" id="seg-glass">
+          <button data-v="flat">线条素面</button>
+          <button data-v="liquid">液态玻璃</button>
+        </div>
+        <p class="hint">液态玻璃 = 半透明底 + 背景折射 + 顶部镜面高光 + 边缘光 + 柔和投影，外壳与洛谷页面一起换。配合壁纸效果最好。</p>
+        <label class="slider">
+          <span>玻璃浓度</span>
+          <input type="range" id="s-glasstint" min="0" max="100" step="2" />
+          <output id="o-glasstint"></output>
+        </label>
+        <label class="slider">
+          <span>折射饱和度</span>
+          <input type="range" id="s-glasssat" min="100" max="300" step="10" />
+          <output id="o-glasssat"></output>
+        </label>
+        <p class="hint">浓度 0 最透（几乎只剩折射与高光），100 最实。</p>
+      </section>
+
+      <section class="card" data-nav="外观/玻璃与质感" data-title="玻璃与质感">
+        <h2>形状与线条</h2>
+        <label class="slider">
+          <span>圆角 R</span>
+          <input type="range" id="s-radius" min="0" max="28" step="1" />
+          <output id="o-radius"></output>
+        </label>
+        <label class="slider">
+          <span>边框强度</span>
+          <input type="range" id="s-border" min="40" max="300" step="10" />
+          <output id="o-border"></output>
+        </label>
+        <label class="slider">
+          <span>面不透明度</span>
+          <input type="range" id="s-facealpha" min="30" max="100" step="1" />
+          <output id="o-facealpha"></output>
+        </label>
+        <label class="slider">
+          <span>毛玻璃模糊</span>
+          <input type="range" id="s-blur" min="0" max="40" step="2" />
+          <output id="o-blur"></output>
+        </label>
+        <label class="switch-row">
+          <span>页面动效（过渡与动画）</span>
+          <input type="checkbox" id="ck-anim" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">圆角 R 同时作用于外壳与洛谷页面卡片；玻璃风格建议 12–20。只改应用皮肤，不动洛谷自己的数据与功能。</p>
+      </section>
+
+      <!-- ==================== 窗口与布局 ==================== -->
+      <section class="card" data-nav="外观/窗口与布局" data-title="窗口与布局"
+        data-sub="界面大小与标签栏形态">
+        <h2>窗口外观</h2>
+        <label class="slider">
+          <span>界面大小</span>
+          <input type="range" id="s-uiscale" min="80" max="140" step="5" />
+          <output id="o-uiscale"></output>
+        </label>
+        <p class="hint">只缩放应用外壳（标签栏 / 工具行），不影响洛谷页面。</p>
+        <label class="switch-row">
+          <span>IDE 页保持洛谷原生配色</span>
+          <input type="checkbox" id="ck-ide" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">开启时 /ide 编辑器页完全不套主题与滤镜，避免代码配色被改坏。</p>
+      </section>
+
+      <section class="card" data-nav="外观/窗口与布局" data-title="窗口与布局">
+        <h2>标签栏形态</h2>
+        <label class="switch-row">
+          <span>垂直标签栏（Edge 式左侧栏）</span>
+          <input type="checkbox" id="ck-vtab" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">开启：标签竖排在左侧（可折叠成窄条，悬停浮出完整列表），左侧图标坞撤下，
+          栏最下方改为固定的洛谷快捷入口（首页 / 题库 / 题单 / 比赛 / 记录 / 讨论 / 文章 / 私信 / 通知 / 我的主页）。<br />关闭：回到顶部标签条 + 左侧图标坞。</p>
+        <div class="row-line">
+          <span class="hint inline">侧栏位置</span>
+          <div class="seg" id="seg-vtabside">
+            <button data-v="left">左侧</button>
+            <button data-v="right">右侧</button>
+          </div>
+        </div>
+        <p class="hint">右侧模式：垂直标签栏贴窗口右缘（Edge 也支持左右）。展开时拖侧栏边缘可调宽度（160~400px）。</p>
+        <div class="row-line">
+          <span class="hint inline">关闭重复标签时保留</span>
+          <div class="seg" id="seg-dedupe">
+            <button data-v="active">当前激活页</button>
+            <button data-v="first">最靠前的</button>
+            <button data-v="mru">最近用过的</button>
+          </div>
+        </div>
+        <p class="hint">「整理标签页 → 关闭重复标签」的保留策略。判定忽略 #锚点、末尾斜杠、www. 与 http(s) 差异；
+          钉住、本地页与分屏中的标签不会被关。整理后可随时「撤销」。</p>
+      </section>
+
+      <!-- ==================== 自定义 CSS ==================== -->
+      <section class="card" data-nav="外观/自定义 CSS" data-title="自定义 CSS"
+        data-sub="高级：给所有页面追加自己的样式">
+        <h2>自定义 CSS</h2>
+        <textarea class="code-area" id="ta-usercss" spellcheck="false"
+          placeholder="/* 写在这里的样式会注入到每个页面（含首页 / 设置 / 历史 / 洛谷页），保存即时生效。&#10;   例：把洛谷正文字号调大&#10;   body { font-size: 15px !important; } */"></textarea>
+        <p class="hint">改动即时生效，不需要重启。写坏了把文本框清空即可恢复。洛谷页慎用 <code>*</code> 这类全局选择器——可能把页面功能样式一起覆盖。</p>
+      </section>
+
+      <!-- ==================== 侧坞 ==================== -->
+      <section class="card" data-nav="外观/侧坞" data-title="侧坞"
+        data-sub="左侧图标坞的内容与顺序，支持站外链接">
+        <h2>侧坞图标</h2>
+        <div class="row-line">
+          <span class="hint inline">坞的位置</span>
+          <div class="seg" id="seg-dockpos">
+            <button data-v="auto">跟随布局</button>
+            <button data-v="left">左</button>
+            <button data-v="bottom">下</button>
+            <button data-v="top">上</button>
+            <button data-v="right">右</button>
+          </div>
+        </div>
+        <div id="dock-list"></div>
+        <div class="row-line">
+          <button class="btn" id="btn-dock-add">添加一项</button>
+          <button class="btn" id="btn-dock-reset">恢复默认</button>
+        </div>
+        <p class="hint">链接写全网址（如 https://www.luogu.com.cn/discuss，站内跳转）或站外网址（新标签打开），
+          也兼容洛谷路径（/problem/list）、地址栏映射词、@home（应用首页）/ @ide（IDE）。改动即时生效。</p>
+      </section>
+
+      <!-- ==================== 壁纸 ==================== -->
+      <section class="card" data-nav="外观/壁纸" data-title="壁纸"
+        data-sub="壁纸集合：导入多张随意挑，支持随机 / 顺序自动轮换">
+        <h2>背景壁纸</h2>
+        <div class="wp-row">
+          <div class="wp-preview" id="wp-preview"></div>
+          <div class="wp-actions">
+            <button class="btn primary" id="btn-wall-import">导入壁纸…</button>
+            <button class="btn" id="btn-wall-next">换一张</button>
+            <button class="btn" id="btn-clear">清除当前</button>
+            <button class="btn" id="btn-wall-dedupe">清理重复</button>
+          </div>
+        </div>
+        <div class="row-line">
+          <span class="hint inline">播放模式</span>
+          <div class="seg" id="seg-wpmode">
+            <button data-v="single">固定一张</button>
+            <button data-v="shuffle">随机</button>
+            <button data-v="loop">顺序循环</button>
+          </div>
+        </div>
+        <label class="slider">
+          <span>自动轮换间隔</span>
+          <input type="range" id="s-wprot" min="0" max="60" step="5" />
+          <output id="o-wprot"></output>
+        </label>
+        <p class="hint">可一次导入多张组成壁纸集合；0 分钟 = 不自动换，随机 / 顺序模式下启动时也会自动换一张。导入时内容相同的文件会自动去重。</p>
+        <div class="wp-grid" id="wp-grid"></div>
+        <label class="slider">
+          <span>壁纸压暗</span>
+          <input type="range" id="s-dim" min="0" max="80" step="5" />
+          <output id="o-dim"></output>
+        </label>
+        <label class="slider">
+          <span>壁纸模糊</span>
+          <input type="range" id="s-wblur" min="0" max="30" step="1" />
+          <output id="o-wblur"></output>
+        </label>
+        <label class="switch-row">
+          <span>视频壁纸静音</span>
+          <input type="checkbox" id="ck-wpmute" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>壁纸视差（鼠标移动时轻微跟随）</span>
+          <input type="checkbox" id="ck-wppar" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">支持图片与视频（mp4 / webm）。壁纸在「亮色 / 暗色 / 液态玻璃」下可见；「原色」模式完全不干预洛谷页面。</p>
+      </section>
+
+      <!-- ==================== 页面整理 ==================== -->
+      <section class="card" data-nav="页面/页面整理" data-title="页面整理"
+        data-sub="把广告、公告与推荐模块收掉">
+        <h2>页面整理</h2>
+        <label class="switch-row">
+          <span>隐藏广告与推广</span>
+          <input type="checkbox" id="ck-clean" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">藏掉广告位、首页轮播与侧栏商业推广卡。</p>
+        <label class="switch-row">
+          <span>页面精简（全站总开关）</span>
+          <input type="checkbox" id="ck-declutter" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">公告条、推荐模块、页脚弹窗、顶部装饰一并收掉。</p>
+      </section>
+
+      <!-- ==================== 搜索引擎 ==================== -->
+      <section class="card" data-nav="页面/搜索" data-title="搜索" data-sub="地址栏与首页用哪家搜索引擎">
+        <h2>搜索引擎</h2>
+        <div class="seg" id="seg-engine">
+          <button data-v="luogu">洛谷</button>
+          <button data-v="bing">必应</button>
+          <button data-v="baidu">百度</button>
+          <button data-v="google">Google</button>
+          <button data-v="ddg">DuckDuckGo</button>
+          <button data-v="custom">自定义</button>
+        </div>
+        <div class="map-row" id="row-engine-custom" hidden>
+          <input type="text" id="in-engine-custom" placeholder="https://example.com/search?q=%s" spellcheck="false" />
+        </div>
+        <p class="hint">地址栏搜索回退、首页搜索框、地址栏联想里的「搜索」行都用这一家。洛谷引擎走站内导航（仍锁洛谷域）；
+          其余引擎在新标签里打开，不套洛谷主题。<code>%s</code> 是关键词占位符（自定义模板必须含它）。</p>
+      </section>
+
+      <!-- ==================== 效率功能 ==================== -->
+      <section class="card" data-nav="页面/效率功能" data-title="效率功能"
+        data-sub="列表工具、快捷搜索、代码复制、分屏编辑器">
+        <h2>效率功能</h2>
+        <label class="switch-row">
+          <span>快捷搜索</span>
+          <input type="checkbox" id="ck-quick" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">兜底地址栏（题号 / UID / 关键词 / 映射词）之外，列表页顶部再加一个就地筛选框。</p>
+        <label class="switch-row">
+          <span>列表页快捷操作</span>
+          <input type="checkbox" id="ck-listtools" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">题目列表的原生筛选行增强：关键词输入即筛当前列表（不必回车），行尾显示本页条数。</p>
+        <label class="switch-row">
+          <span>代码块一键复制</span>
+          <input type="checkbox" id="ck-codecopy" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">鼠标移到洛谷的代码块上，右上角出现「复制」。题解、样例、他人代码都能一键拿走。</p>
+        <label class="switch-row">
+          <span>难度徽章灰阶化</span>
+          <input type="checkbox" id="ck-diffmono" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">把洛谷的难度色阶压成灰阶，配合黑白线条风使用。</p>
+        <label class="switch-row">
+          <span>题目页分屏编辑器</span>
+          <input type="checkbox" id="ck-problem" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">题目页顶部出现「分屏编辑器」：右边并排开洛谷 IDE，左边留题面，不用来回切标签（Ctrl+I 仍可直接开 IDE 标签页）。旁边的「复制全部样例」一键把样例搬进剪贴板。</p>
+        <label class="switch-row">
+          <span>恢复上次的标签</span>
+          <input type="checkbox" id="ck-restore" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">下次启动时把上次的全部标签页原样开回来（含当前活动标签）。</p>
+        <label class="slider">
+          <span>标签自动休眠</span>
+          <input type="range" id="s-tabsleep" min="0" max="120" step="5" />
+          <output id="o-tabsleep"></output>
+        </label>
+        <p class="hint">后台闲置超过这时长的标签自动卸载（标签位保留、标题带 💤，点回去才重新加载），省内存。0 = 不自动休眠。活动标签、拼合组、钉住的、正在放声音的不会睡；右键标签也可手动「休眠此标签页」。</p>
+      </section>
+
+      <!-- ==================== 首页与题号 ==================== -->
+      <section class="card" data-nav="页面/首页与题号" data-title="首页与题号"
+        data-sub="欢迎块、题号识别、问题搜索与每日运势">
+        <h2>首页</h2>
+        <label class="switch-row">
+          <span>首页欢迎块</span>
+          <input type="checkbox" id="ck-hello" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">首页顶部加一条：你的头像 + 问候 + 每天换一句的吐槽。</p>
+        <label class="switch-row">
+          <span>逆天改运（每天都是大吉）</span>
+          <input type="checkbox" id="ck-lucky" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">
+          把每日签到的运势改成「§ 大吉 §」，宜/忌两列一并换成鼓励文案。
+          实现对齐 Luogu-Plus：改写 <code>.lg-punch-result</code> 与 <code>.am-u-sm-6</code>。
+          运势节点只在今日已打卡后出现，打完卡即被改写。
+        </p>
+      </section>
+
+      <section class="card" data-nav="页面/首页与题号" data-title="首页与题号">
+        <h2>题号与搜索</h2>
+        <label class="switch-row">
+          <span>划词识别题号</span>
+          <input type="checkbox" id="ck-pid" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">
+          选中任意文字，只要里面有题号（P / B / CF / SP / AT / UVA / U，以及 4 位以上纯数字），
+          就弹出面板列出全部题号，点一下在新标签打开。规则与 Luogu-Plus 的 Problem Jumper 一致。
+        </p>
+        <label class="switch-row">
+          <span>问题搜索优化</span>
+          <input type="checkbox" id="ck-bsearch" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">
+          首页那个「问题跳转」盒子改成「问题搜索」：回车或点搜索时，4 位以上纯数字按 P 题号、
+          数字+字母按 CF 题号直达，认不出来才走全文搜索。「随机跳题」升级成可按难度与来源
+          （洛谷 / CF / SPOJ / AtCoder / UVa）抽题。
+        </p>
+      </section>
+
+      <!-- ==================== 应用首页 ==================== -->
+      <section class="card" data-nav="页面/应用首页" data-title="应用首页"
+        data-sub="板块显隐与时钟样式，改完首页立刻跟上">
+        <h2>时钟</h2>
+        <label class="switch-row">
+          <span>显示大时钟</span>
+          <input type="checkbox" id="ck-hp-clock" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>时钟显示秒</span>
+          <input type="checkbox" id="ck-hp-seconds" />
+          <i class="knob"></i>
+        </label>
+        <div class="row-line">
+          <span class="hint inline">时钟字体</span>
+          <div class="seg" id="seg-hp-font">
+            <button data-v="mono">等宽</button>
+            <button data-v="sans">无衬线</button>
+            <button data-v="serif">衬线</button>
+          </div>
+        </div>
+        <label class="slider">
+          <span>时钟字号</span>
+          <input type="range" id="s-hp-size" min="40" max="96" step="1" />
+          <output id="o-hp-size"></output>
+        </label>
+      </section>
+
+      <section class="card" data-nav="页面/应用首页" data-title="应用首页">
+        <h2>板块显隐</h2>
+        <label class="switch-row">
+          <span>日期行</span>
+          <input type="checkbox" id="ck-hp-date" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>搜索框</span>
+          <input type="checkbox" id="ck-hp-search" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>考试倒计时</span>
+          <input type="checkbox" id="ck-hp-countdowns" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>快捷入口</span>
+          <input type="checkbox" id="ck-hp-links" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>最近访问</span>
+          <input type="checkbox" id="ck-hp-recent" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>近期比赛</span>
+          <input type="checkbox" id="ck-hp-contests" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>底部快捷键提示</span>
+          <input type="checkbox" id="ck-hp-footer" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">只藏不删：数据都在，重新打开开关就回来。改完首页实时生效，不用刷新。</p>
+      </section>
+
+      <!-- ==================== 账号 ==================== -->
+      <section class="card" data-nav="账号/账号管理" data-title="账号管理"
+        data-sub="多账号独立会话，切换即整体换登录态">
+        <h2>已保存账号</h2>
+        <div id="acct-list"></div>
+        <p class="hint">每个账号使用独立的会话分区（cookie 互不干扰）。点「切换」会把所有已打开的洛谷标签页整体切到该账号；登录态未过期时自动进入，无需再输密码。</p>
+      </section>
+
+      <section class="card" data-nav="账号/账号管理" data-title="账号管理">
+        <h2>添加账号（验证成功才会保存）</h2>
+        <div class="acct-form">
+          <input type="text" id="acct-email" placeholder="洛谷账号（邮箱）" spellcheck="false" autocomplete="off" />
+          <input type="password" id="acct-pass" placeholder="密码（只存本机）" autocomplete="off" />
+          <button class="btn primary" id="btn-acct-add">验证并添加</button>
+        </div>
+        <div id="acct-flow" hidden>
+          <div class="flow-status" id="flow-status"></div>
+          <img id="flow-captcha" hidden alt="验证码" />
+          <div class="acct-form" id="flow-answer-row" hidden>
+            <input type="text" id="flow-answer" placeholder="输入图中验证码" spellcheck="false" autocomplete="off" />
+            <button class="btn" id="btn-flow-ok">提交验证码</button>
+          </div>
+          <button class="btn" id="btn-flow-cancel">取消</button>
+        </div>
+        <p class="hint">验证流程：程序在后台打开登录页并填好账号密码；图形验证码先用 ddddocr 自动识别（最多 3 次），连续没过才把图放大 4 倍显示在这里让你填。验证通过 → 账号写入本机 <code>%APPDATA%\LuoguLab\accounts.json</code>；失败 → 不会留下任何记录。</p>
+        <p class="hint warn">注意：密码以明文保存在上面那个本机文件里（方便自动登录），请勿把该文件分享出去。</p>
+      </section>
+
+      <!-- ==================== 地址栏映射 ==================== -->
+      <section class="card" data-nav="账号/地址栏映射" data-title="地址栏映射"
+        data-sub="输入映射词即直达对应网址">
+        <h2>地址栏映射</h2>
+        <p class="hint">例：deepseek → https://chat.deepseek.com。站外地址会在应用内新标签打开。</p>
+        <div id="map-list"></div>
+        <button class="btn" id="btn-map-add">添加映射</button>
+      </section>
+
+      <!-- ==================== 翻译 ==================== -->
+      <section class="card" data-nav="其他/翻译" data-title="翻译" data-sub="划词与整页翻译用的服务">
+        <h2>翻译服务</h2>
+        <div class="seg" id="seg-tr">
+          <button data-v="bing">必应（默认）</button>
+          <button data-v="custom">自定义端点</button>
+        </div>
+        <div class="map-row" id="row-tr-custom" hidden>
+          <input type="text" id="in-tr-custom" placeholder="https://example.com/translate?q=%s" spellcheck="false" />
+        </div>
+        <p class="hint">目标语言自动判断：中文 → 英文，其他 → 中文。<code>%s</code> 是待翻译文本（自定义端点走 GET，返回纯文本）。
+          必应为 Edge 同款免费接口，无需密钥；若服务端调整导致失败，会在气泡/悬浮条上明示。</p>
+        <p class="hint">用法：选中文字右键「翻译所选内容」；整页翻译在命令面板（Ctrl+Shift+P）搜「翻译整页」。</p>
+      </section>
+
+      <!-- ==================== 下载 ==================== -->
+      <section class="card" data-nav="其他/下载" data-title="下载" data-sub="保存位置与下载记录">
+        <h2>下载</h2>
+        <label class="switch-row">
+          <span>每次下载都询问保存位置</span>
+          <input type="checkbox" id="ck-dlask" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">关闭（默认）：统一存到「下载/Luogu++」，下载面板里可「另存为」；
+          开启：每次弹系统另存为对话框。下载记录会保留（重启后未下完的标为中断，可「重试」）。</p>
+        <button class="btn" id="btn-open-downloads">打开下载文件夹</button>
+      </section>
+
+      <!-- ==================== 清除浏览数据 ==================== -->
+      <section class="card" data-nav="其他/清除浏览数据" data-title="清除浏览数据"
+        data-sub="缓存、Cookie、历史与下载记录">
+        <h2>清除浏览数据</h2>
+        <label class="switch-row">
+          <span>缓存（网页资源）</span>
+          <input type="checkbox" id="ck-cl-cache" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>Cookie 与站点数据</span>
+          <input type="checkbox" id="ck-cl-cookies" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">含 localStorage / IndexedDB，覆盖默认、站外共享与全部账号分区。
+          ⚠️ 清除会退出洛谷登录态（需重新登录）。</p>
+        <label class="switch-row">
+          <span>浏览历史</span>
+          <input type="checkbox" id="ck-cl-history" />
+          <i class="knob"></i>
+        </label>
+        <label class="switch-row">
+          <span>下载记录（不删已下载的文件）</span>
+          <input type="checkbox" id="ck-cl-downloads" />
+          <i class="knob"></i>
+        </label>
+        <button class="btn primary" id="btn-clear-data">清除所选数据</button>
+        <p class="hint">快捷键 Ctrl+Shift+Delete 可直接打开这一页。</p>
+      </section>
+
+      <!-- ==================== 关于 ==================== -->
+      <section class="card" data-nav="其他/关于与数据" data-title="关于与数据"
+        data-sub="版本、快捷键与本地文件位置">
+        <h2>关于</h2>
+        <div class="about-grid">
+          <div class="about-k">应用</div><div class="about-v">Luogu++ · 洛谷编程工作台</div>
+          <div class="about-k">内核</div><div class="about-v">Electron 39.8.10（便携免安装）</div>
+          <div class="about-k">配置</div><div class="about-v"><code>%APPDATA%\LuoguLab\luogu-glass-config.json</code></div>
+          <div class="about-k">账号</div><div class="about-v"><code>%APPDATA%\LuoguLab\accounts.json</code>（明文）</div>
+          <div class="about-k">历史</div><div class="about-v"><code>%APPDATA%\LuoguLab\history.json</code></div>
+          <div class="about-k">下载</div><div class="about-v">系统「下载」目录下的 <code>Luogu++</code> 子目录</div>
+          <div class="about-k">日志</div><div class="about-v"><code>%APPDATA%\LuoguGlass\luogu-glass-debug.log</code></div>
+        </div>
+        <h2 style="margin-top:22px">快捷键</h2>
+        <div class="keys" id="keys-list"></div>
+        <p class="hint">上表与主进程菜单加速器同源（设置页不再自己抄一份，避免抄错）。页面内另有：<kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd> 后退与前进，<kbd>Ctrl</kbd>+<kbd>Tab</kbd> 轮换标签。</p>
+      </section>
+
+      <footer class="pane-foot">
+        <span class="hint inline">所有改动即时生效。想彻底复原，点左下角「恢复默认」。</span>
+      </footer>
+    </main>
+  </div>
+
+  <div id="toast"></div>
+  <script src="settings.js"></script>
+</body>
+</html>

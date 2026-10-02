@@ -1,0 +1,98 @@
+/* ============================================================
+   Luogu++ — 非洛谷页注入层（应用本地页 + 白名单玻璃站）
+   首页/设置/历史（file://）等本地页：壁纸层、透明化、字体、滚动条。
+   站外 http(s) 页默认原生渲染、一条规则不命中（v3.4.3 起）；
+   白名单玻璃站（data-lg-glasssite，inject.js 维护，目前只有
+   chat.deepseek.com）例外：壁纸层回归 + 可读透明度的令牌重定义，
+   但绝不给人家容器挂 backdrop-filter（v3.4.2 教训，见下方块注释）。
+   洛谷页走完整的 inject.css，不经过这里 —— 洛谷专属的清扫/工具条
+   选择器对外部站毫无意义，还可能误伤人家的类名。
+   变量由 inject.js 的 apply() 以内联样式下发（同一套单一事实来源）。
+   ============================================================ */
+
+/* ---------- 透明化：只对应用本地页 ----------
+   file:// 的首页/设置/历史是我们自己的 UI，html/body 与一级容器放透明，
+   壁纸从边缘和间隙里透出来。站外 http(s) 页一律不动人家的底色：
+   v3.4.2 曾在这里重定义 DeepSeek 的 --dsw-* 设计令牌 + 给 #root 挂
+   backdrop-filter，实测壁纸从整页打穿（登录页整个背景只剩壁纸），
+   且 backdrop-filter 劫持 fixed 元素的包含块（11 个 fixed 里 4 个
+   offsetParent 非空）——人家的页面人家自己画，我们只垫壁纸层。 */
+html[data-lg-ext="1"][data-lg-local="1"],
+html[data-lg-ext="1"][data-lg-local="1"] body {
+  background: transparent !important;
+}
+html[data-lg-ext="1"][data-lg-local="1"] body > :not(#lg-glass-bg) {
+  background: transparent !important;
+}
+
+/* ---------- 白名单玻璃站（data-lg-glasssite="1"，目前只有 DeepSeek） ----------
+   v3.4.2 的教训仍然成立：绝不给人家容器挂 backdrop-filter——它会劫持
+   position:fixed 的包含块（实测 11 个 fixed 错位 4 个）。所以这里只重定义
+   人家的底色令牌，不碰任何类名。
+   令牌统一消费主进程 glassVars() 下发的 --lg-glass-*（inject.js 按人家自己的
+   明暗 dstheme 选 light/dark 那一份）——DeepSeek 的玻璃与洛谷页、外壳同色
+   同算法：底色同源（同一个 tint 混色结果），只是人家容器不能挂 backdrop-filter，
+   没有模糊兜底，所以正文承载面用加厚的 glassSoft/glassSolid 档保持可读。
+   明暗不再分两套写死的色值（v3.5 前是 0.82~0.95 的近不透明白/黑，深色站发白、
+   浅色站发黑都对不上）：变量本身已按 dstheme 解析好。 */
+html[data-lg-glasssite="1"],
+html[data-lg-glasssite="1"] body {
+  background: transparent !important;
+}
+html[data-lg-glasssite="1"] body > :not(#lg-glass-bg) {
+  background: transparent !important;
+}
+html[data-lg-host="chat.deepseek.com"] body {
+  /* 主区域底色：最薄档，壁纸透得出来（"删掉铺满整页的白底层"） */
+  --dsw-alias-bg-base: var(--lg-glass-bg) !important;
+  --dsw-alias-bg-layer-1: var(--lg-glass-soft) !important;
+  --dsw-alias-bg-layer-2: var(--lg-glass-soft) !important;
+  --dsw-alias-bg-layer-3: var(--lg-glass-solid) !important;
+  /* 侧边栏：与洛谷页卡片同源的玻璃（以前是没优化的近不透明白/黑） */
+  --dsw-specific-sidebar-fill: var(--lg-glass-soft) !important;
+  /* 输入框等正文承载面：加厚档保可读 */
+  --dsw-specific-input-major: var(--lg-glass-solid) !important;
+  --dsw-specific-login-input: var(--lg-glass-solid) !important;
+  --dsw-alias-bg-multi-select: var(--lg-glass-solid) !important;
+  --dsw-alias-bg-module-platform: var(--lg-glass-solid) !important;
+  --dsw-alias-button-elevated-fill: var(--lg-glass-solid) !important;
+}
+
+/* 壁纸层 / 视频壁纸：与洛谷页、外壳、弹层同一个 .lg-wallpaper 公式
+   （material.css），这里不再重复几何与滤镜。 */
+
+/* 字体跟随应用（设置页/首页观感统一）。站外页不吃这条：
+   人家用什么字体是人家的排版决定。 */
+html[data-lg-ext="1"][data-lg-local="1"] body {
+  font-family: var(--lg-sans) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 滚动条：方形细杆（与洛谷页一致）。同样只管本地页。 */
+html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar-track { background: transparent; }
+html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 132, 0.4);
+  border-radius: 2px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 132, 0.65);
+  background-clip: padding-box;
+}
+
+/* 本地页面板（卡片 / 设置侧栏 / 内块控件）的选择器登记在 material.css
+   （第 5 节），与外壳、洛谷页共用同一份配方与变量；本文件只留透明化、
+   字体、滚动条这些站点适配。 */
+
+/* 动效开关 */
+html[data-lg-anim="0"] *,
+html[data-lg-anim="0"] *::before,
+html[data-lg-anim="0"] *::after {
+  transition: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
