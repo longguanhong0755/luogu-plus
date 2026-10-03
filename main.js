@@ -696,16 +696,7 @@ function saveTabsState() {
       if (!g || seenGroups.has(g)) continue;
       seenGroups.add(g);
       const ids = g.ids.map((id) => tabOrder.indexOf(id)).filter((x) => x >= 0);
-      if (ids.length >= 2)
-        splitPairs.push({
-          ids,
-          layout: g.layout || null,
-          colRatio: g.colRatio,
-          rowRatio: g.rowRatio,
-          colRatio2: g.colRatio2,
-          rowRatio2: g.rowRatio2,
-          focus: g.focusId ? tabOrder.indexOf(g.focusId) : null,
-        });
+      if (ids.length >= 2) splitPairs.push({ ids, ratio: g.colRatio });
     }
     fs.writeFileSync(
       tabsStatePath(),
@@ -1160,6 +1151,11 @@ function pushViewRect(t, force) {
 
 function layout() {
   if (!mainWin || mainWin.isDestroyed()) return;
+  /* 全屏/IDE 标志的存活校验（R39）：标签已关/已销毁时清掉。以前只有
+     leave-html-full-screen 事件清，标签在全屏时被关掉 → 坞永久隐藏、
+     视图卡在全窗（"东西不见了"的一条）。 */
+  if (htmlFullscreenTabId != null && !tabs.has(htmlFullscreenTabId)) htmlFullscreenTabId = null;
+  if (inPageIdeTabId != null && !tabs.has(inPageIdeTabId)) inPageIdeTabId = null;
   const [w, h] = mainWin.getContentSize();
   const ins = inset();
   const fullW = Math.max(1, w - ins.x - (ins.right || 0));
@@ -1215,95 +1211,52 @@ function layout() {
 }
 
 /* ============================================================
-   分屏拼合（同一窗口最多 4 个网页视图，15 种布局）
-   splits：tabId → 组对象（同组成员共享同一引用）：
-     { ids:[≤4], layout, colRatio, rowRatio, colRatio2, rowRatio2, focusId }
-   layout=null 表示按窗格数取默认（2=等分列，3=主窗格居左，4=2×2 网格）。
-   ids 顺序即窗格顺序：main-* 布局里 ids[0] 永远是主窗格；grid 里
-   ids[0..3] = 左上/右上/右下/左下（顺时针，新成员填右下）。
-   四个比例字段都是 0.15~0.85 的"当前块 vs 剩余"递归比例，哪几个生效
-   由布局决定（每条分割条独占一个字段，互不干扰、独立拖拽）：
-     等分列 cols：colRatio, colRatio2, rowRatio（第三道列缝借用）
-     等分行 rows：rowRatio, rowRatio2, colRatio（第三道行缝借用）
-     网格  grid：colRatio（左右列）+ rowRatio/rowRatio2（左/右列各自的
-                 上下缝——两列可以不一样高）
-     主左/主右：colRatio（主栏宽）+ rowRatio/rowRatio2（副栏内的缝）
-     主上/主下：rowRatio（主栏高）+ colRatio/colRatio2（副栏内的缝）
-   窗格之间留 SPLIT_GAP 的缝：缝里没有被任何视图覆盖，外壳的分割条
-   元素直接收鼠标事件（不用占用弹出层）。focusId 非空 = 聚焦模式：
-   该窗格铺满标签区、其它成员隐藏、分割条全收。组缩到 1 人即解散。
+   分屏（R39 起只做左右两格，1:1 Chromium 开源 split tab 的 side-by-side）
+   splits：tabId → 对对象（两格共享同一引用）：{ ids:[左, 右], colRatio }
+   colRatio = 左格占可用宽的比（0.15~0.85），一条竖缝独占这个字段。
+   两格在 tabOrder 里必须相邻（makeSplitContiguous），且 moveTabInOrder 会把
+   "插到两格之间"的落点吸附到对块外侧（Chromium IsValidInsertionIndex 同款）。
+   一个标签同时只在一个分屏里；关掉任意一格 = 分屏解散、幸存那格回全宽。
+   窗格之间留 SPLIT_GAP 的缝：缝里没有被任何视图覆盖，外壳的分割条元素直接
+   收鼠标事件（不用占用弹出层）。
    ============================================================ */
 const splits = new Map(); // tabId -> group
 const SPLIT_GAP = 6;
-const MAX_SPLIT = 4;
-const SPLIT_LAYOUTS = {
-  2: ["cols", "rows"],
-  3: ["main-left", "main-right", "main-top", "main-bottom", "cols", "rows"],
-  4: ["grid", "main-left", "main-right", "main-top", "main-bottom", "cols", "rows"],
-};
-const SPLIT_LAYOUT_NAMES = {
-  cols: "等分多列",
-  rows: "等分多行",
-  grid: "2×2 网格",
-  "main-left": "主窗格居左",
-  "main-right": "主窗格居右",
-  "main-top": "主窗格居上",
-  "main-bottom": "主窗格居下",
-};
-const SPLIT_DEFAULT_LAYOUT = { 2: "cols", 3: "main-left", 4: "grid" };
-const SPLIT_FIELDS = ["colRatio", "rowRatio", "colRatio2", "rowRatio2"];
 const RATIO_MIN = 0.15;
 const RATIO_MAX = 0.85;
-
-function splitLayoutOf(g) {
-  const list = SPLIT_LAYOUTS[g.ids.length] || [];
-  return g.layout && list.includes(g.layout) ? g.layout : SPLIT_DEFAULT_LAYOUT[g.ids.length] || "cols";
-}
-/* 每个布局的"均分"默认值（递归比例：n 等分 = 1/n, 1/(n-1), …, 1/2） */
-function splitDefaultRatios(n, lay) {
-  const r = { colRatio: 0.5, rowRatio: 0.5, colRatio2: 0.5, rowRatio2: 0.5 };
-  if (lay === "cols") {
-    r.colRatio = 1 / n;
-    r.colRatio2 = n >= 3 ? 1 / (n - 1) : 0.5;
-    r.rowRatio = n >= 4 ? 1 / (n - 2) : 0.5;
-  } else if (lay === "rows") {
-    r.rowRatio = 1 / n;
-    r.rowRatio2 = n >= 3 ? 1 / (n - 1) : 0.5;
-    r.colRatio = n >= 4 ? 1 / (n - 2) : 0.5;
-  } else if (lay === "main-left" || lay === "main-right") {
-    r.colRatio = 0.5;
-    r.rowRatio = n >= 4 ? 1 / (n - 1) : 0.5; // 副栏第一缝：n-1 块均分
-    r.rowRatio2 = 0.5;
-  } else if (lay === "main-top" || lay === "main-bottom") {
-    r.rowRatio = 0.5;
-    r.colRatio = n >= 4 ? 1 / (n - 1) : 0.5;
-    r.colRatio2 = 0.5;
-  }
-  return r;
-}
-/* 成员数变化后收束组状态：布局在新人数下不存在则回默认并重置比例 */
-function splitNormalize(g) {
-  const list = SPLIT_LAYOUTS[g.ids.length];
-  if (!list || !list.includes(g.layout)) {
-    g.layout = null;
-    Object.assign(g, splitDefaultRatios(g.ids.length, splitLayoutOf(g)));
-  }
-  if (g.focusId && !g.ids.includes(g.focusId)) g.focusId = null;
-}
+/* R39：分屏只做**左右两格**（对齐 Chromium 开源 split tab 的 side-by-side）。
+   一个标签同时只在一个分屏里；两格在标签条里必须相邻，且禁止把别的标签插到
+   两格中间（Chromium TabDragContextImpl::IsValidInsertionIndex 同款规则）。
+   旧的 3/4 窗格与布局/聚焦模式整支删除。 */
 
 function splitGroupOf(id) {
   const g = id != null ? splits.get(id) : null;
   return g && g.ids.length > 1 ? g : null;
+}
+/* 把一对分屏在 tabOrder 里排到相邻（Chromium AddToNewSplit："Reorders the tabs
+   so they are contiguous"）。钉住标签在独立前缀里，不参与这条约束。 */
+function makeSplitContiguous(g) {
+  const [a, b] = g.ids;
+  if (!tabs.has(a) || !tabs.has(b)) return;
+  const ta = tabs.get(a);
+  const tb = tabs.get(b);
+  if (ta.pinned || tb.pinned) return;
+  const i = tabOrder.indexOf(a);
+  const j = tabOrder.indexOf(b);
+  if (i < 0 || j < 0 || j === i + 1) return;
+  const rest = tabOrder.filter((id) => id !== b);
+  const k = rest.indexOf(a);
+  if (k < 0) return;
+  rest.splice(k + 1, 0, b);
+  tabOrder = rest;
 }
 function unsplitSilent(id) {
   const g = splits.get(id);
   if (!g) return false;
   g.ids = g.ids.filter((x) => x !== id);
   splits.delete(id);
-  if (g.focusId === id) g.focusId = null;
   // 只剩 1 人不成组：幸存的标签回到单栏全宽
   if (g.ids.length <= 1) for (const m of g.ids) splits.delete(m);
-  else splitNormalize(g);
   return true;
 }
 function unsplit(id) {
@@ -1317,63 +1270,49 @@ function unsplit(id) {
   }
   return true;
 }
+/* 结成一对左右分屏（Chromium AddToNewSplit 同款：已在别的分屏里的标签先移出，
+   然后两格排到相邻、激活发起者） */
 function splitWith(a, b) {
   if (a == null || b == null || a === b || !tabs.has(a) || !tabs.has(b)) return false;
-  const ga = splits.get(a);
-  if (ga && ga.ids.includes(a)) {
-    if (ga.ids.length >= MAX_SPLIT) return false; // 最多 4 窗格
-    unsplitSilent(b); // 一个标签同时只在一组里
-    ga.ids.push(b); // 新成员填末位（grid 的右下 / main-* 的副栏末尾）
-    splits.set(b, ga);
-    splitNormalize(ga); // 人数变了：布局不适用就回默认
-  } else {
-    unsplitSilent(a);
-    unsplitSilent(b);
-    const g = { ids: [a, b], layout: null, focusId: null, ...splitDefaultRatios(2, "cols") };
-    splits.set(a, g);
-    splits.set(b, g);
-  }
+  unsplitSilent(a);
+  unsplitSilent(b);
+  const g = { ids: [a, b], colRatio: 0.5 };
+  splits.set(a, g);
+  splits.set(b, g);
+  makeSplitContiguous(g);
   setActiveTab(a); // 激活发起者：整组同时点亮（可见性 = 全组成员）
-  return true;
-}
-function setSplitRatio(id, ratio, field) {
-  const g = splitGroupOf(id);
-  if (!g) return;
-  // 旧调用传 kind（col/row）；新调用传字段名（colRatio/rowRatio/colRatio2/rowRatio2）
-  const f = field === "col" ? "colRatio" : field === "row" ? "rowRatio" : field || "colRatio";
-  if (!SPLIT_FIELDS.includes(f)) return;
-  if (ratio == null || !isFinite(Number(ratio))) {
-    // null = 双击复位：回当前布局该字段的均分默认（不再是拍脑袋的 0.5）
-    g[f] = splitDefaultRatios(g.ids.length, splitLayoutOf(g))[f];
-  } else {
-    g[f] = clampNum(Number(ratio), RATIO_MIN, RATIO_MAX, 0.5);
-  }
-  layout(); // 内含 pushSplit
-}
-function setSplitLayout(id, lay) {
-  const g = splitGroupOf(id);
-  if (!g) return false;
-  const list = SPLIT_LAYOUTS[g.ids.length] || [];
-  if (!list.includes(lay)) return false;
-  g.layout = lay;
-  Object.assign(g, splitDefaultRatios(g.ids.length, lay)); // 换布局回均分
-  layout();
   scheduleSaveTabs();
   return true;
 }
-function cycleSplitLayout(id) {
+/* 拖比例：只有一根竖缝（colRatio）；null = 双击复位均分 */
+function setSplitRatio(id, ratio, field) {
   const g = splitGroupOf(id);
-  if (!g) return false;
-  const list = SPLIT_LAYOUTS[g.ids.length] || [];
-  const next = list[(list.indexOf(splitLayoutOf(g)) + 1) % list.length];
-  return setSplitLayout(id, next);
+  if (!g) return;
+  if (ratio == null || !isFinite(Number(ratio))) g.colRatio = 0.5;
+  else g.colRatio = clampNum(Number(ratio), RATIO_MIN, RATIO_MAX, 0.5);
+  layout(); // 内含 pushSplit
+  scheduleSaveTabs();
 }
-/* 聚焦（tmux zoom 式）：某窗格铺满标签区，其它成员隐藏；再触发还原 */
-function toggleSplitFocus(id) {
+/* 关闭左格 / 右格（Chromium split_tab_menu_model 的 kCloseStartTab/kCloseEndTab）：
+   关掉一格后分屏自然解散，剩下那格回到全宽 */
+function closeSplitSide(id, side) {
   const g = splitGroupOf(id);
   if (!g) return false;
-  g.focusId = g.focusId === id ? null : id;
-  setActiveTab(g.focusId || id); // 重算可见性与几何
+  const target = side === "left" ? g.ids[0] : g.ids[1];
+  if (target == null || !tabs.has(target)) return false;
+  closeTab(target);
+  return true;
+}
+/* 反转左右位置（Chromium kReversePosition）：交换两格并保持各自当前宽度 */
+function reverseSplit(id) {
+  const g = splitGroupOf(id);
+  if (!g) return false;
+  g.ids = [g.ids[1], g.ids[0]];
+  g.colRatio = clampNum(1 - g.colRatio, RATIO_MIN, RATIO_MAX, 0.5);
+  if (activeTabId != null && tabs.has(activeTabId)) setActiveTab(activeTabId);
+  else layout();
+  pushTabs();
+  scheduleSaveTabs();
   return true;
 }
 
@@ -1402,101 +1341,25 @@ function splitAxis(len, segs) {
   return { sizes, bars };
 }
 
-/* 组的窗格几何（相对标签区左上角）：layout 摆视图、splitRect 摆分割条共用。
-   返回 { panes:[{id,x,y,w,h}], bars:[{field,vertical,x,y,w,h,base,span,invert}] }——
-   invert 表示条在主窗格反侧（主右/主下），外壳换算比例时取 1-raw。 */
+/* 组的窗格几何（相对标签区左上角）：只做左右两格（Chromium side-by-side）。
+   返回 { panes:[{id,x,y,w,h}], bars:[一根竖缝] }；比例语义 = 左格占可用宽的比。 */
 function splitPanes(g, tabW, fullH) {
-  const n = g.ids.length;
-  const lay = splitLayoutOf(g);
-  const [a, b, c, d] = g.ids;
-  const panes = [];
-  const bars = [];
-  // 聚焦模式：聚焦窗格铺满，无分割条（其它成员由可见性逻辑隐藏）
-  if (g.focusId && g.ids.includes(g.focusId)) {
-    return { panes: [{ id: g.focusId, x: 0, y: 0, w: tabW, h: fullH }], bars };
-  }
-  const mkBar = (field, vertical, x, y, w, h, base, span, invert) =>
-    bars.push({ field, vertical, x, y, w, h, base, span, invert: !!invert });
-
-  if (lay === "cols" || lay === "rows") {
-    // 等分列/行：一条轴递归切（第三道缝借用对方字段，见头注）
-    const fields = lay === "cols" ? ["colRatio", "colRatio2", "rowRatio"] : ["rowRatio", "rowRatio2", "colRatio"];
-    const ax = splitAxis(lay === "cols" ? tabW : fullH, fields.slice(0, n - 1).map((f) => ({ field: f, ratio: g[f] })));
-    let off = 0;
-    for (let i = 0; i < n; i++) {
-      panes.push(
-        lay === "cols"
-          ? { id: g.ids[i], x: off, y: 0, w: ax.sizes[i], h: fullH }
-          : { id: g.ids[i], x: 0, y: off, w: tabW, h: ax.sizes[i] }
-      );
-      off += ax.sizes[i] + SPLIT_GAP;
-    }
-    for (const bb of ax.bars) {
-      if (lay === "cols") mkBar(bb.field, true, bb.off, 0, SPLIT_GAP, fullH, bb.base, bb.span);
-      else mkBar(bb.field, false, 0, bb.off, tabW, SPLIT_GAP, bb.base, bb.span);
-    }
-    return { panes, bars };
-  }
-
-  if (lay === "grid") {
-    // 2×2：左右两列各有一根自己的横缝（rowRatio 左列 / rowRatio2 右列，可不一样高）
-    const cols = splitAxis(tabW, [{ field: "colRatio", ratio: g.colRatio }]);
-    const rowsL = splitAxis(fullH, [{ field: "rowRatio", ratio: g.rowRatio }]);
-    const rowsR = splitAxis(fullH, [{ field: "rowRatio2", ratio: g.rowRatio2 }]);
-    const wL = cols.sizes[0];
-    const wR = cols.sizes[1];
-    const xR = wL + SPLIT_GAP;
-    panes.push(
-      { id: a, x: 0, y: 0, w: wL, h: rowsL.sizes[0] },
-      { id: b, x: xR, y: 0, w: wR, h: rowsR.sizes[0] },
-      { id: c, x: xR, y: rowsR.sizes[0] + SPLIT_GAP, w: wR, h: rowsR.sizes[1] },
-      { id: d, x: 0, y: rowsL.sizes[0] + SPLIT_GAP, w: wL, h: rowsL.sizes[1] }
-    );
-    mkBar("colRatio", true, cols.bars[0].off, 0, SPLIT_GAP, fullH, cols.bars[0].base, cols.bars[0].span);
-    mkBar("rowRatio", false, 0, rowsL.bars[0].off, wL, SPLIT_GAP, rowsL.bars[0].base, rowsL.bars[0].span);
-    mkBar("rowRatio2", false, xR, rowsR.bars[0].off, wR, SPLIT_GAP, rowsR.bars[0].base, rowsR.bars[0].span);
-    return { panes, bars };
-  }
-
-  // main-*：ids[0] 是主窗格（占满一根整边），其余在对面区域里沿另一根轴均布
-  const horizontal = lay === "main-left" || lay === "main-right"; // 主窗格竖通
-  const mainFirst = lay === "main-left" || lay === "main-top"; // 主窗格在低坐标端
-  const mainField = horizontal ? "colRatio" : "rowRatio";
-  const subFields = horizontal ? ["rowRatio", "rowRatio2"] : ["colRatio", "colRatio2"];
-  const mainLen = horizontal ? tabW : fullH;
-  const subLen = horizontal ? fullH : tabW;
-  const usableMain = Math.max(2, mainLen - SPLIT_GAP);
-  const mainSize = Math.max(1, Math.round(usableMain * clampNum(g[mainField], RATIO_MIN, RATIO_MAX, 0.5)));
-  const subSize = Math.max(1, usableMain - mainSize);
-  const subOff = mainFirst ? mainSize + SPLIT_GAP : 0;
-  const mainOff = mainFirst ? 0 : subSize + SPLIT_GAP;
-  panes.push(
-    horizontal
-      ? { id: a, x: mainOff, y: 0, w: mainSize, h: fullH }
-      : { id: a, x: 0, y: mainOff, w: tabW, h: mainSize }
-  );
-  // 主/副分界条：主在低坐标端时比例=raw，在高坐标端时比例=1-raw（invert）
-  if (horizontal) mkBar(mainField, true, mainFirst ? mainSize : subSize, 0, SPLIT_GAP, fullH, 0, usableMain, !mainFirst);
-  else mkBar(mainField, false, 0, mainFirst ? mainSize : subSize, tabW, SPLIT_GAP, 0, usableMain, !mainFirst);
-  const sub = splitAxis(subLen, subFields.slice(0, n - 2).map((f) => ({ field: f, ratio: g[f] })));
-  let off = 0;
-  for (let i = 1; i < n; i++) {
-    panes.push(
-      horizontal
-        ? { id: g.ids[i], x: subOff, y: off, w: subSize, h: sub.sizes[i - 1] }
-        : { id: g.ids[i], x: off, y: subOff, w: sub.sizes[i - 1], h: subSize }
-    );
-    off += sub.sizes[i - 1] + SPLIT_GAP;
-  }
-  for (const bb of sub.bars) {
-    if (horizontal) mkBar(bb.field, false, subOff, bb.off, subSize, SPLIT_GAP, bb.base, bb.span);
-    else mkBar(bb.field, true, bb.off, subOff, SPLIT_GAP, subSize, bb.base, bb.span);
-  }
+  const [a, b] = g.ids;
+  const ax = splitAxis(tabW, [{ field: "colRatio", ratio: g.colRatio }]);
+  const panes = [
+    { id: a, x: 0, y: 0, w: ax.sizes[0], h: fullH },
+    { id: b, x: ax.sizes[0] + SPLIT_GAP, y: 0, w: ax.sizes[1], h: fullH },
+  ];
+  const bars = [{
+    field: "colRatio", vertical: true, invert: false,
+    x: ax.bars[0].off, y: 0, w: SPLIT_GAP, h: fullH,
+    base: ax.bars[0].base, span: ax.bars[0].span,
+  }];
   return { panes, bars };
 }
 
-/* 分割条的几何（外壳按它摆分割条池并换算拖拽比例）；
-   分屏未激活/被抽屉挂起时为 null；聚焦模式 bars 为空——外壳藏条。 */
+/* 分割条的几何（外壳按它摆分割条池并换算拖拽比例）；分屏未激活/被抽屉挂起时为
+   null。R39 起只有一根竖缝（左右分屏），invert 恒 false。 */
 function splitRect() {
   if (!mainWin || mainWin.isDestroyed()) return null;
   if (drawerOpen && drawerView) return null;
@@ -1509,8 +1372,6 @@ function splitRect() {
   const fullH = Math.max(1, h - ins.y - (ins.footer || 0));
   const res = splitPanes(g, fullW, fullH);
   return {
-    focus: g.focusId && g.ids.includes(g.focusId) ? g.focusId : null,
-    layout: splitLayoutOf(g),
     bars: res.bars.map((bb) => ({
       field: bb.field,
       vertical: bb.vertical,
@@ -1683,6 +1544,9 @@ function ideModeNow() {
 function layoutDock() {
   const v = dockView;
   if (!v || !dockReady) return;
+  /* 标志存活校验（同 layout）：标签没了就清，别让坞被永久藏起来 */
+  if (htmlFullscreenTabId != null && !tabs.has(htmlFullscreenTabId)) htmlFullscreenTabId = null;
+  if (inPageIdeTabId != null && !tabs.has(inPageIdeTabId)) inPageIdeTabId = null;
   const b = dockBounds();
   /* 网页 HTML 全屏 / IDE 模式（抽屉、题目页+IDE 并排）时坞自动隐藏
      （R36/R37 用户要求） */
@@ -1735,9 +1599,9 @@ function dockOpen(href) {
   if (!t) return;
   if (t.type === "settings") return openSettingsTab();
   if (t.type === "home") {
-    const id = tabOrder.find((tid) => tabs.get(tid) && tabs.get(tid).kind === "home");
-    if (id != null) setActiveTab(id);
-    else createHomeTab();
+    /* R39（用户口径）：坞「首页」= 总是新建标签打开洛谷首页。本地玻璃首页
+       （时钟/壁纸那页）仍由 Ctrl+T / 加号 / 命令面板打开，createHomeTab 不动。 */
+    createTab(HOME_URL, { activate: true });
     return;
   }
   if (t.type === "ide") return toggleIde();
@@ -1857,7 +1721,19 @@ setInterval(() => {
    才恢复。显示/恢复之后逼它重画一帧，把首帧补上。 */
 function repaintSiteViews() {
   for (const t of tabs.values()) {
-    try { if (t.view) t.view.webContents.invalidate(); } catch {}
+    try {
+      if (!t.view) continue;
+      /* 崩过的视图 invalidate 救不回来（页面与壁纸一起白）：直接重载一次 */
+      if (t.view.webContents.isCrashed && t.view.webContents.isCrashed()) {
+        if (!t.crashReloading) {
+          t.crashReloading = true;
+          t.view.webContents.reload();
+          setTimeout(() => { t.crashReloading = false; }, 5000);
+        }
+        continue;
+      }
+      t.view.webContents.invalidate();
+    } catch {}
   }
   try { if (drawerView) drawerView.webContents.invalidate(); } catch {}
 }
@@ -2388,6 +2264,9 @@ function handleAppCommand(raw) {
 function tabsSnapshot() {
   return {
     activeId: activeTabId,
+    /* 新建分组会用的下一个调色板色键（外壳的"新建分组"拖拽预览小签按它上色，
+       与 makeGroup 的游标同一份来源） */
+    nextGroupColor: GROUP_PALETTE[groupColorCursor % GROUP_PALETTE.length],
     tabs: tabOrder.map((id) => {
       const t = tabs.get(id);
       let canBack = false;
@@ -2405,7 +2284,7 @@ function tabsSnapshot() {
         loading: !!t.loading, favicon: t.favicon || "", canBack, canFwd,
         muted, zoom: t.zoom || 1,
         splitPeer: sg ? sg.ids.length : null,
-        splitFocus: sg && sg.focusId === id ? true : null,
+        splitSide: sg ? (sg.ids[0] === id ? "left" : "right") : null,
         sleeping: !!t.sleeping,
         group: t.groupId || null,
       };
@@ -2635,6 +2514,31 @@ function wirePageView(id, view) {
     layout();
   });
 
+  /* 渲染进程崩溃：页面连同它自己画的壁纸一起白掉，以前没有任何恢复（用户报的
+     "有的时候背景会直接消失、重开就好"）。重载一次把文档重建回来；带防重入，
+     避免崩溃-重载死循环（R39）。 */
+  wc.on("render-process-gone", (_e, details) => {
+    if (wc.isDestroyed()) return;
+    if (details && details.reason === "clean-exit") return;
+    const meta = tabs.get(id);
+    if (!meta || meta.crashReloading) return;
+    meta.crashReloading = true;
+    setTimeout(() => {
+      try { if (!wc.isDestroyed()) wc.reload(); } catch {}
+      setTimeout(() => { const m = tabs.get(id); if (m) m.crashReloading = false; }, 5000);
+    }, 400);
+  });
+
+  /* 主框架加载失败给个提示：以前完全静默（地址栏显示新 URL、页面还是旧的），
+     用户以为"没反应"。-3 = ERR_ABORTED（被新导航取代/转下载），不提示；
+     探针模式下静默（探针故意访问非法域名）。 */
+  wc.on("did-fail-load", (_e, code, desc, _url, isMainFrame) => {
+    if (!isMainFrame || code === -3) return;
+    if (id !== activeTabId) return; // 后台标签的失败不打扰
+    if (process.argv.some((a) => /^--lg-[a-z0-9]*test$/.test(a))) return;
+    try { mainWin.webContents.send("chrome:toast", "无法加载页面（" + (desc || code) + "）"); } catch {}
+  });
+
   wc.on("did-finish-load", () => {
     if (wc.isDestroyed()) return;
     const meta = tabs.get(id);
@@ -2673,6 +2577,9 @@ function wirePageView(id, view) {
     // 页面缩放是按标签存的，导航回来要重新贴一次（Chromium 会按站点记，但换域就丢）
     if (meta && meta.zoom && meta.zoom !== 1) {
       try { wc.setZoomFactor(meta.zoom); } catch {}
+      /* 缩放恢复后必须补推一次视图矩形：--lg-zoom 不更新的话壁纸几何仍按
+         旧系数算，页面放大时背景只盖住一部分、露出底色（R39，"背景缺一块"） */
+      try { pushViewRect(tabs.get(id), true); } catch {}
     }
     if (!isLocal) recordHistory(wc.getURL(), wc.getTitle());
     if (id === activeTabId) pushUser();
@@ -2987,9 +2894,7 @@ function setActiveTab(id) {
   // 分屏：活动标签所在组全员同显（IDE 抽屉开着时分屏挂起，只显活动标签）。
   // 焦点在窗格之间移动走 webContents focus 事件（只换 activeTabId，不动这里）。
   const g = !(drawerOpen && drawerView) && !inPageIdeFull(id) ? splitGroupOf(id) : null;
-  // 聚焦模式下点组内另一个标签（标签条/快捷键）：聚焦目标跟着走
-  if (g && g.focusId && g.ids.includes(id)) g.focusId = id;
-  const visSet = g ? (g.focusId && g.ids.includes(g.focusId) ? [g.focusId] : g.ids) : [id];
+  const visSet = g ? g.ids : [id];
   for (const [tid, t] of tabs) {
     if (!t.view) continue; // 休眠标签没有视图
     const vis = visSet.includes(tid);
@@ -3199,36 +3104,24 @@ function ensureSiteTabs() {
         ids.push(nid);
       }
     }
-    /* 恢复分屏组：成员全在才回链（新格式 {ids,layout,colRatio..rowRatio2,focus}；
-       兼容旧版对格式 {i,j,left,ratio}——left 的那位排 ids[0]） */
+    /* 恢复分屏对（R39 起只做左右两格）：新格式 {ids, ratio}；兼容旧格式
+       {ids,layout,colRatio..focus}（多格旧存档取前两格、按左右各半降级）与更旧的
+       对格式 {i,j,left,ratio}（left 的那位排 ids[0]） */
     for (const sp of Array.isArray(saved.splits) ? saved.splits : []) {
       if (Array.isArray(sp.ids)) {
         const members = sp.ids.map((si) => idBySavedIdx.get(si)).filter((id) => id != null && tabs.has(id));
         if (members.length >= 2) {
-          const g = {
-            ids: members.slice(0, MAX_SPLIT),
-            layout: typeof sp.layout === "string" ? sp.layout : null,
-            colRatio: clampNum(sp.colRatio, RATIO_MIN, RATIO_MAX, 0.5),
-            rowRatio: clampNum(sp.rowRatio, RATIO_MIN, RATIO_MAX, 0.5),
-            colRatio2: clampNum(sp.colRatio2, RATIO_MIN, RATIO_MAX, 0.5),
-            rowRatio2: clampNum(sp.rowRatio2, RATIO_MIN, RATIO_MAX, 0.5),
-            focusId: null,
-          };
+          const ratio = sp.ratio != null ? sp.ratio : sp.colRatio;
+          const g = { ids: members.slice(0, 2), colRatio: clampNum(ratio, RATIO_MIN, RATIO_MAX, 0.5) };
           for (const m of g.ids) { unsplitSilent(m); splits.set(m, g); }
-          splitNormalize(g); // 人数/布局对不上（旧存档）就回默认布局
-          const fi = Number(sp.focus);
-          if (Number.isInteger(fi) && fi >= 0) {
-            const fid = idBySavedIdx.get(fi);
-            if (fid != null && g.ids.includes(fid)) g.focusId = fid;
-          }
+          makeSplitContiguous(g);
         }
       } else {
         const a = idBySavedIdx.get(sp.i);
         const b = idBySavedIdx.get(sp.j);
         const lf = idBySavedIdx.get(sp.left);
         if (a != null && b != null && tabs.has(a) && tabs.has(b) && (lf === a || lf === b)) {
-          const g = { ids: lf === b ? [b, a] : [a, b], layout: null, focusId: null, ...splitDefaultRatios(2, "cols") };
-          g.colRatio = clampNum(sp.ratio, RATIO_MIN, RATIO_MAX, 0.5);
+          const g = { ids: lf === b ? [b, a] : [a, b], colRatio: clampNum(sp.ratio, RATIO_MIN, RATIO_MAX, 0.5) };
           unsplitSilent(a);
           unsplitSilent(b);
           splits.set(g.ids[0], g);
@@ -3440,6 +3333,9 @@ function createMainWindow() {
   win.on("unmaximize", () => { layout(); pushWinState(); scheduleSaveWindowState(); });
   win.on("enter-full-screen", layout);
   win.on("leave-full-screen", layout);
+  /* 换显示器 / 改 DPI / 分辨率变了：以前没有任何处理，视图几何与壁纸会停在
+     旧尺寸上（"背景错位/缺一块"的一条），这里跟着重排一次（R39） */
+  win.on("display-metrics-changed", () => { layout(); });
 
   win.on("close", () => {
     // 防抖可能吞掉最后一次改动：关窗前无条件补写（此刻窗口还活着，读得到边界）
@@ -3764,13 +3660,23 @@ function listWallpaperFiles() {
     return [];
   }
 }
-/* 目录内容有变（导入/删除/手动改）之后把当前壁纸拉回合法值 */
+/* 目录内容有变（导入/删除/手动改）之后把当前壁纸拉回合法值。R39：判据从
+   "存在"升级为"可读"——文件在但读不出来（盘掉线/权限/损坏）同样算失效，
+   顺延到集合里最后一个可读的文件；一个都没有就清空走渐变兜底。 */
 function reconcileWallpaper() {
   const items = listWallpaperFiles();
-  if (cfg.wallpaper && !items.includes(cfg.wallpaper) && !fs.existsSync(cfg.wallpaper)) {
-    cfg.wallpaper = items[items.length - 1] || "";
+  const ok = (f) => {
+    if (!f) return false;
+    try { fs.accessSync(f, fs.constants.R_OK); return true; } catch { return false; }
+  };
+  if (cfg.wallpaper && !ok(cfg.wallpaper)) {
+    let next = "";
+    for (let i = items.length - 1; i >= 0; i--) if (ok(items[i])) { next = items[i]; break; }
+    cfg.wallpaper = next;
   }
-  if (!cfg.wallpaper && items.length) cfg.wallpaper = items[items.length - 1];
+  if (!cfg.wallpaper && items.length) {
+    for (let i = items.length - 1; i >= 0; i--) if (ok(items[i])) { cfg.wallpaper = items[i]; break; }
+  }
 }
 function dedupeWallpaperDir() {
   let removed = 0;
@@ -4986,6 +4892,20 @@ ipcMain.on("popup:hold", (_e, on) => {
   flyoutHold = !!on;
   if (flyoutHold) flyoutHoldTimer = setTimeout(() => { flyoutHold = false; }, 4000);
 });
+/* 地址栏联想的选中态（R39）：悬停索引从弹层回传给外壳（回车执行鼠标指着的那
+   一行）；选中态从外壳发回弹层（方向键/悬停只改类名，不重建 DOM）。 */
+ipcMain.on("popup:sug-hover", (_e, i) => {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  const n = Number(i);
+  if (!Number.isFinite(n)) return;
+  try { mainWin.webContents.send("chrome:sug-hover", n); } catch {}
+});
+ipcMain.on("chrome:sug-sel", (_e, i) => {
+  if (!popupView || popupView.webContents.isDestroyed()) return;
+  const n = Number(i);
+  if (!Number.isFinite(n)) return;
+  try { popupView.webContents.send("popup:sug-sel", n); } catch {}
+});
 ipcMain.handle("popup:pick", (_e, payload) => {
   const k = payload && typeof payload === "object" ? payload.k : payload;
   const v = payload && typeof payload === "object" ? payload.v : undefined;
@@ -5154,24 +5074,22 @@ ipcMain.handle("vtab:set-width", (_e, w) => {
   layout();
   return { ok: true, width: cfg.vtabWidth };
 });
-/* 分屏拼合：与当前标签并排（组未满则加入，最多 4 窗格）/ 退出 / 拖比例 /
-   切布局（15 种，按窗格数给可选集）/ 循环布局 / 聚焦窗格 */
+/* 分屏（R39 起只做左右两格）：并排 / 退出 / 拖比例 / 关闭左格 / 关闭右格 /
+   反转左右位置 */
 ipcMain.handle("tab:split", (_e, id) => {
   const ok = splitWith(activeTabId, id);
   return { ok };
 });
 ipcMain.handle("tab:unsplit", (_e, id) => ({ ok: unsplit(id != null ? id : activeTabId) }));
 ipcMain.handle("tab:split-ratio", (_e, p) => {
-  // field ∈ colRatio/rowRatio/colRatio2/rowRatio2（旧 kind=col|row 兼容）；
-  // ratio=null 表示双击复位回布局均分默认
+  // ratio=null 表示双击复位回均分（0.5）
   setSplitRatio(p && p.id != null ? p.id : activeTabId, p && p.ratio, (p && p.field) || (p && p.kind));
   return { ok: true };
 });
-ipcMain.handle("tab:split-layout", (_e, p) => ({
-  ok: setSplitLayout(p && p.id != null ? p.id : activeTabId, p && p.layout),
+ipcMain.handle("tab:split-close-side", (_e, p) => ({
+  ok: closeSplitSide(p && p.id != null ? p.id : activeTabId, p && p.side === "left" ? "left" : "right"),
 }));
-ipcMain.handle("tab:split-layout-next", (_e, p) => ({ ok: cycleSplitLayout(p && p.id) }));
-ipcMain.handle("tab:split-focus", (_e, id) => ({ ok: toggleSplitFocus(id != null ? id : activeTabId) }));
+ipcMain.handle("tab:split-reverse", (_e, id) => ({ ok: reverseSplit(id != null ? id : activeTabId) }));
 
 /* Glance 链接速览：页面 Alt+点击经 preload-page 桥进来；外壳按钮走 close/promote */
 ipcMain.handle("lg-app:glance", (_e, url) => ({ ok: openGlance(url) }));
@@ -5540,44 +5458,23 @@ function tabMenuTemplate(id) {
       ],
     },
     {
-      // 分屏拼合：未分屏时与当前标签并排；当前已在组里则加入该组（最多 4 窗格）；
-      // 点组内成员 = 把它拿出分屏（组缩到 1 人自动解散）
-      label: splits.has(id)
-        ? "退出分屏"
-        : (() => {
-            const g = activeTabId != null ? splits.get(activeTabId) : null;
-            return g ? `加入当前分屏（${g.ids.length}/4 窗格）` : "与当前标签分屏显示";
-          })(),
-      enabled: splits.has(id)
-        ? true
-        : (() => {
-            if (activeTabId == null || activeTabId === id) return false;
-            const g = splits.get(activeTabId);
-            return !g || g.ids.length < MAX_SPLIT;
-          })(),
+      // 分屏（R39 只做左右两格，1:1 Chromium split tab）：未分屏时与当前标签
+      // 并排；已在分屏里则退出（关一格 = 分屏解散，幸存那格回全宽）
+      label: splits.has(id) ? "退出分屏" : "与当前标签分屏显示",
+      enabled: splits.has(id) ? true : activeTabId != null && activeTabId !== id,
       click: () => {
         if (splits.has(id)) unsplit(id);
         else splitWith(activeTabId, id);
       },
     },
-    /* 拼合布局切换（15 种，按窗格数给可选集）+ 窗格聚焦：仅组内成员可见 */
+    /* 分屏成员专属（对齐 Chromium split_tab_menu_model：关左/右窗格、反转位置） */
     ...(() => {
       const g = splitGroupOf(id);
       if (!g) return [];
       return [
-        {
-          label: "拼合布局",
-          submenu: (SPLIT_LAYOUTS[g.ids.length] || []).map((lk) => ({
-            label: SPLIT_LAYOUT_NAMES[lk] || lk,
-            type: "radio",
-            checked: splitLayoutOf(g) === lk,
-            click: () => setSplitLayout(id, lk),
-          })),
-        },
-        {
-          label: g.focusId === id ? "取消聚焦（还原全部窗格）" : "聚焦此窗格（铺满标签区）",
-          click: () => toggleSplitFocus(id),
-        },
+        { label: "关闭左侧窗格", click: () => closeSplitSide(id, "left") },
+        { label: "关闭右侧窗格", click: () => closeSplitSide(id, "right") },
+        { label: "反转左右位置", click: () => reverseSplit(id) },
       ];
     })(),
     /* 标签分组（Edge Tab Groups）：未分组 → 添加到新组/加入现有组；
@@ -5679,6 +5576,7 @@ function setTabPinned(t, on) {
 function moveTabInOrder(id, beforeIdRaw, zone) {
   if (!tabs.has(id)) return { ok: false };
   const t = tabs.get(id);
+  const prevIdx = tabOrder.indexOf(id); // 吸附分屏对时判断"从哪边来"
   const beforeId = beforeIdRaw != null && tabs.has(Number(beforeIdRaw)) ? Number(beforeIdRaw) : null;
   const wantPinned = zone === "pinned" ? true : zone === "normal" ? false : !!t.pinned;
   if (wantPinned !== !!t.pinned) {
@@ -5691,7 +5589,24 @@ function moveTabInOrder(id, beforeIdRaw, zone) {
   tabOrder = tabOrder.filter((x) => x !== id);
   const isPinned = (x) => !!(tabs.get(x) && tabs.get(x).pinned);
   const pinnedCount = tabOrder.filter(isPinned).length;
-  let idx = beforeId == null ? tabOrder.length : tabOrder.indexOf(beforeId);
+  /* 禁止把标签插到分屏两格之间（Chromium TabDragContextImpl::IsValidInsertionIndex
+     同款）：落点正好是某个分屏对的第二位成员时，吸附到对块外侧——按拖动前的
+     位置偏向贴哪边。两格在标签条里必须始终相邻。 */
+  let bid = beforeId;
+  if (bid != null) {
+    for (const g of new Set(splits.values())) {
+      if (!g || g.ids.length !== 2 || g.ids.includes(id)) continue;
+      const la = g.ids[0];
+      const rb = g.ids[1];
+      if (bid !== rb || !tabs.has(la) || !tabs.has(rb)) continue;
+      const li = tabOrder.indexOf(la);
+      if (li < 0 || tabOrder[li + 1] !== rb) continue; // 两格不相邻则无从谈起
+      const ri = tabOrder.indexOf(rb);
+      bid = prevIdx >= 0 && prevIdx < li ? la : (ri + 1 < tabOrder.length ? tabOrder[ri + 1] : null);
+      break;
+    }
+  }
+  let idx = bid == null ? tabOrder.length : tabOrder.indexOf(bid);
   if (idx < 0) idx = tabOrder.length;
   if (t.pinned) idx = Math.min(idx, pinnedCount);
   else idx = Math.max(idx, pinnedCount);
@@ -7952,11 +7867,13 @@ async function selftest() {
       } catch (e) { out.reloadErr = String(e); }
       flush();
 
-      /* 4) 分屏拼合：2 格左右相邻、15 布局切换、四字段独立拖比、双击复位、
-         布局循环、窗格聚焦、满 4 拒绝、关成员缩组、退出还原 */
+      /* 4) 分屏（R39 起只做左右两格，1:1 Chromium split tab）：2 格左右相邻、
+         两格在标签条里相邻、禁止插到两格中间、拖比/双击复位、反转左右、
+         关左/右格、旧多格存档降级为两格 */
       try {
         const a = createHomeTab({ activate: false });
         const b = createHomeTab({ activate: false });
+        const mid = createHomeTab({ activate: false }); // 用来验证"中间插入禁令"
         splitWith(a, b);
         await sleep(300);
         const ba = tabs.get(a).view.getBounds();
@@ -7967,6 +7884,7 @@ async function selftest() {
         out.split = {
           paired: !!(splitGroupOf(a) && splitGroupOf(a).ids.length === 2 && splitGroupOf(a) === splitGroupOf(b)),
           leftRight: ba.x < bb.x && ba.y === bb.y && Math.abs(bb.x - (ba.x + ba.width + SPLIT_GAP)) < 2,
+          adjacentInStrip: Math.abs(tabOrder.indexOf(b) - tabOrder.indexOf(a)) === 1,
           rectPushed: !!(
             rect &&
             Array.isArray(rect.bars) &&
@@ -7976,138 +7894,43 @@ async function selftest() {
             Math.abs(rect.bars[0].x - (ba.x + ba.width)) < 2
           ),
         };
+        // 禁止插到两格之间（Chromium IsValidInsertionIndex 同款）：落点会被吸附到对块外侧
+        moveTabInOrder(mid, b, null);
+        out.split.noInsertBetween =
+          Math.abs(tabOrder.indexOf(b) - tabOrder.indexOf(a)) === 1 &&
+          tabOrder.indexOf(mid) !== tabOrder.indexOf(a) + 1;
+        closeTab(mid);
+        // 拖比 + 双击复位（只有一根竖缝、一个 colRatio 字段）
         setSplitRatio(a, 0.7, "colRatio");
         await sleep(250);
-        const ba2 = tabs.get(a).view.getBounds();
-        out.split.ratioWorks = Math.abs(ba2.width - Math.round((tabW - SPLIT_GAP) * 0.7)) < 6;
-        setSplitRatio(a, null, "colRatio"); // null = 双击复位，回布局均分默认
+        out.split.ratioWorks = Math.abs(tabs.get(a).view.getBounds().width - Math.round((tabW - SPLIT_GAP) * 0.7)) < 6;
+        setSplitRatio(a, null, "colRatio");
         await sleep(200);
         out.split.ratioReset = Math.abs(tabs.get(a).view.getBounds().width - Math.round((tabW - SPLIT_GAP) * 0.5)) < 6;
-
-        // 2 格第二布局：等分行（a 在上 b 在下，条是横的）
-        setSplitLayout(a, "rows");
+        // 反转左右位置：两格交换、各自宽度保持
+        const wA = tabs.get(a).view.getBounds().width;
+        reverseSplit(a);
         await sleep(250);
-        const va = tabs.get(a).view.getBounds();
-        const vb = tabs.get(b).view.getBounds();
-        const rectR = splitRect();
-        out.split.rowsLayout = !!(
-          va.y < vb.y && va.x === vb.x && va.width === tabW &&
-          Math.abs(vb.y - (va.y + va.height + SPLIT_GAP)) < 2 &&
-          rectR && rectR.bars.length === 1 && !rectR.bars[0].vertical
-        );
-        out.split.layoutsListed = SPLIT_LAYOUTS[2].length + SPLIT_LAYOUTS[3].length + SPLIT_LAYOUTS[4].length === 15;
-        setSplitLayout(a, "cols");
+        const ra2 = tabs.get(a).view.getBounds();
+        const rb2 = tabs.get(b).view.getBounds();
+        out.split.reverse = ra2.x > rb2.x && Math.abs(ra2.width - wA) < 6;
+        reverseSplit(a);
         await sleep(200);
-
-        // 第三人：显式主窗格居左（a 左通栏 + b/c 右上下；条 = 1 纵 + 右列 1 横）
+        // 关闭右格：b 关掉、a 回全宽、分屏解散
+        closeSplitSide(a, "right");
+        await sleep(300);
+        out.split.closeSide = !tabs.has(b) && !splitGroupOf(a) && Math.abs(tabs.get(a).view.getBounds().width - tabW) < 2;
+        // 一个标签同时只在一个分屏里（Chromium AddToNewSplit 同款）
         const c = createHomeTab({ activate: false });
-        splitWith(a, c);
-        setSplitLayout(a, "main-left"); // 布局选中后是粘性的：人数变了只要还适用就不回默认
-        await sleep(300);
-        const ra = tabs.get(a).view.getBounds();
-        const rb = tabs.get(b).view.getBounds();
-        const rc = tabs.get(c).view.getBounds();
-        const rect3 = splitRect();
-        out.split.three =
-          ra.height === fullH &&
-          rb.x === rc.x && rb.width === rc.width &&
-          Math.abs(rc.y - (rb.y + rb.height + SPLIT_GAP)) < 2 &&
-          !!(rect3 && rect3.bars.length === 2 && rect3.bars.some((x) => !x.vertical && Math.abs(x.x - rb.x) < 2));
-
-        // 3 格布局切换：等分列 → 三列均分
-        setSplitLayout(a, "cols");
-        await sleep(250);
-        const ca = tabs.get(a).view.getBounds();
-        const cb2 = tabs.get(b).view.getBounds();
-        const cc = tabs.get(c).view.getBounds();
-        out.split.threeCols =
-          ca.x < cb2.x && cb2.x < cc.x &&
-          Math.abs(ca.width - cb2.width) <= 1 && Math.abs(cb2.width - cc.width) <= 1;
-        setSplitLayout(a, "main-left");
-        await sleep(200);
-
-        // 第四人：显式 2×2 网格（条 = 1 纵 + 左右列各 1 横 = 3 条）
         const d = createHomeTab({ activate: false });
-        splitWith(a, d);
-        setSplitLayout(a, "grid");
-        await sleep(300);
-        const qa = tabs.get(a).view.getBounds();
-        const qb = tabs.get(b).view.getBounds();
-        const qc = tabs.get(c).view.getBounds();
-        const qd = tabs.get(d).view.getBounds();
-        const rect4 = splitRect();
-        out.split.four =
-          qa.x < qb.x && qa.y < qd.y &&
-          Math.abs(qd.y - (qa.y + qa.height + SPLIT_GAP)) < 2 &&
-          qd.x === qa.x && qc.x === qb.x && qc.y === qd.y &&
-          !!(rect4 && rect4.bars.length === 3);
-        const e5 = createHomeTab({ activate: false });
-        out.split.cap = splitWith(a, e5) === false && !splits.has(e5);
-        closeTab(e5);
-
-        // 网格两列行比独立：拖左列（rowRatio）右列不动；拖右列（rowRatio2）左列不动
-        setSplitRatio(a, 0.7, "rowRatio");
+        splitWith(a, c);
         await sleep(250);
-        const ga2 = tabs.get(a).view.getBounds();
-        const gb2 = tabs.get(b).view.getBounds();
-        out.split.gridIndependent =
-          Math.abs(ga2.height - Math.round((fullH - SPLIT_GAP) * 0.7)) < 6 &&
-          Math.abs(gb2.height - Math.round((fullH - SPLIT_GAP) * 0.5)) < 8;
-        setSplitRatio(a, null, "rowRatio");
-        setSplitRatio(a, 0.65, "rowRatio2");
-        await sleep(250);
-        const gb3 = tabs.get(b).view.getBounds();
-        const ga3 = tabs.get(a).view.getBounds();
-        out.split.rowWorks =
-          Math.abs(gb3.height - Math.round((fullH - SPLIT_GAP) * 0.65)) < 6 &&
-          Math.abs(ga3.height - Math.round((fullH - SPLIT_GAP) * 0.5)) < 8;
-        setSplitRatio(a, null, "rowRatio2");
-
-        // 布局循环：grid → main-left → … 共 7 步回到 grid
-        const layBefore = splitLayoutOf(splitGroupOf(a));
-        cycleSplitLayout(a);
-        const layNext = splitLayoutOf(splitGroupOf(a));
-        out.split.cycleLayout = layBefore === "grid" && layNext === "main-left";
-        for (let i = 0; i < SPLIT_LAYOUTS[4].length - 1; i++) cycleSplitLayout(a);
-        out.split.cycleBack = splitLayoutOf(splitGroupOf(a)) === "grid";
-
-        // 聚焦：b 铺满标签区、条全收、焦点跟随过去；再触发还原
-        toggleSplitFocus(b);
-        await sleep(250);
-        const fb = tabs.get(b).view.getBounds();
-        const rectF = splitRect();
-        out.split.focus = !!(
-          Math.abs(fb.width - tabW) < 2 && Math.abs(fb.height - fullH) < 2 &&
-          rectF && rectF.bars.length === 0 && rectF.focus === b && activeTabId === b
+        out.split.pairOnly = !!(
+          splitGroupOf(a) && splitGroupOf(a).ids.length === 2 &&
+          splitWith(c, d) === true && splitGroupOf(c) === splitGroupOf(d) && !splitGroupOf(a)
         );
-        toggleSplitFocus(b);
-        await sleep(250);
-        out.split.unfocus = !!(
-          splitGroupOf(a) && !splitGroupOf(a).focusId &&
-          splitRect().bars.length === 3
-        );
-
-        // 关一个成员：组缩成 3 格（grid 在 3 人下不存在 → 回默认主左，a 回通高）
         closeTab(d);
-        await sleep(300);
-        out.split.shrink = !!(
-          splitGroupOf(a) &&
-          splitGroupOf(a).ids.length === 3 &&
-          splitLayoutOf(splitGroupOf(a)) === "main-left" &&
-          tabs.get(a).view.getBounds().height === fullH
-        );
-
-        // 退出：a 脱离回到全宽，b/c 仍成组
-        unsplit(a);
-        await sleep(250);
-        out.split.restored = !!(
-          !splitGroupOf(a) &&
-          splitGroupOf(b) &&
-          splitGroupOf(b).ids.length === 2 &&
-          tabs.get(a).view.getBounds().width === tabW
-        );
         closeTab(c);
-        closeTab(b);
         closeTab(a);
       } catch (e) { out.splitErr = String(e); }
       flush();
@@ -8820,9 +8643,13 @@ async function selftest() {
         out.suggest = { fit: sug, doc: sugDoc, afterDown: sugDoc2 };
         out.suggestPass = !!(
           sug && sug.pad && sug.center === false && sugDoc &&
-          sugDoc.rows >= 2 && sugDoc.withPop === sugDoc.rows && sugDoc.on === 0 &&
-          sugDoc.labels.some((s) => s.includes("搜索")) && sugDoc.labels.some((s) => s.includes("已打开的标签") === false) &&
-          sugDoc2 && sugDoc2.on === 1 && sugDoc2.rows === sugDoc.rows
+          sugDoc.rows >= 2 && sugDoc.withPop === sugDoc.rows &&
+          /* R39 起默认不选中任何一行（回车按输入内容走），↓ 才从第一行开始 */
+          sugDoc.on === -1 &&
+          sugDoc.labels.some((s) => s.includes("搜索")) &&
+          /* 首行 = 「打开 xxx」（URL 类输入的默认动作行） */
+          sugDoc.labels[0] && sugDoc.labels[0].indexOf("打开 ") === 0 &&
+          sugDoc2 && sugDoc2.on === 0 && sugDoc2.rows === sugDoc.rows
         );
         await mainWin.webContents.executeJavaScript(
           '(function(){var i=document.getElementById("omni-input");i.value="";closeSuggest();i.blur();return 1})()',
@@ -10554,6 +10381,15 @@ async function selftest() {
           out.ideInPage = { skipped: "network", url: t2 ? t2.url : "" };
           out.ideInPagePass = true; // 网络不可用记 skip（与 adblock 段同口径）
         } else {
+          /* 等注入真正落地再抓"之前"状态：navigateActive 一设 URL 循环就退出，
+             页面与注入可能都还没到——固定 sleep 会拿到 attr=null 的假失败（R39） */
+          for (let i = 0; i < 60; i++) {
+            const ok = await t2.view.webContents
+              .executeJavaScript("typeof window.__lgIdeInPage === 'function'", true)
+              .catch(() => false);
+            if (ok === true) break;
+            await sleep(500);
+          }
           await sleep(1200);
           const [w0, h0] = mainWin.getContentSize();
           const before = { bounds: t2.view.getBounds(), dock: dockShown, ide: inPageIdeTabId, attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true) };
@@ -10687,6 +10523,409 @@ async function selftest() {
       /* ---------- 复原 ---------- */
       try { await setCfg({ ...saved }); } catch (e) {}
       out.pass = !!(out.dockDirPass && out.noCardPass && out.ideInPagePass && out.groupsDragPass);
+      flush();
+    } else if (argv.includes("--lg-v312test")) {
+      /* v3.12.0（R39）六项：
+         1) 地址栏：输入法组字中的回车不算提交（isComposing / keyCode 229 守卫）；
+            回车恒按输入内容走（sugSel 默认 -1，只有显式 ↓/↑/Tab/悬停才选建议）；
+            localhost / 主机名:端口 解析成地址（不再被当搜索词）；联想首行
+            「打开 xxx」、悬停高亮回传（popup:sug-hover → chrome:sug-hover）；
+         2) 坞「首页」= 总是新建标签打开 luogu.com.cn（原标签不动、坞项高亮）；
+         3) 账号菜单跑位：place() 吃 payload.win 夹取（弹层视图视口滞后也不会塌到
+            左上角）；popup:win 补发时重摆；账号芯片真实链路的位置贴右缘；
+         4) 背景：图片壁纸层健康 + 被移除后 observer 自动重建并重跑 apply；
+            视频兜底只在 bgready=1 后才关背景图（失败回退图片/渐变）；缩放恢复
+            补推 --lg-zoom；全屏/IDE 标志残留清理；reconcileWallpaper 可读性顺延；
+         5) 分组手感：合并带迟滞（进入 0.3~0.7 / 退出 0.22~0.78）、折叠组悬停
+            450ms 临时展开、FLIP 动画计数 > 0、拖拽小签出现；
+         6) 分屏只留左右两格：布局表/切布局/聚焦 API 与 IPC 已删；两格相邻 +
+            中间插入被吸附；关左/右格、反转左右。 */
+      const out = { at: new Date().toISOString() };
+      const flush = () => fsx.writeFileSync(selftestShot, JSON.stringify(out, null, 2));
+      try { mainWin.setOpacity(0); } catch {}
+      try { mainWin.showInactive(); } catch {}
+      try { mainWin.setContentSize(1280, 800); } catch {}
+      for (let i = 0; i < 40 && tabs.size === 0; i++) await sleep(500);
+      await sleep(1200);
+      const js = (code) => mainWin.webContents.executeJavaScript(code, true);
+      const setCfg = async (patch) => {
+        Object.assign(cfg, patch);
+        saveConfig();
+        pushConfigToChrome();
+        layout();
+        await sleep(500);
+      };
+      const invokeFor = (ch, ...args) => {
+        const h = ipcMain._invokeHandlers && ipcMain._invokeHandlers.get(ch);
+        if (!h) return null;
+        return h({ sender: mainWin.webContents }, ...args);
+      };
+      const saved = {
+        verticalTabs: cfg.verticalTabs, dockPos: cfg.dockPos, dockItems: cfg.dockItems,
+        wallpaper: cfg.wallpaper, wallpaperKind: cfg.wallpaperKind,
+      };
+
+      /* ---------- 1) 地址栏 ---------- */
+      try {
+        await setCfg({ verticalTabs: false, dockPos: "left" });
+        const resolved = JSON.parse(await js(`JSON.stringify({
+          localhost: resolveOmnibox("localhost:3000", {}, "", true),
+          hostPort: resolveOmnibox("my-server:8080", {}, "", true),
+          bare: resolveOmnibox("hello", {}, "https://www.luogu.com.cn/search?keyword=%s", true),
+          dotted: resolveOmnibox("example.com", {}, "", true),
+          problem: resolveOmnibox("p1002", {}, "", true),
+        })`));
+        /* IME 守卫：组字中的回车不许动；真回车按输入内容导航 */
+        const h = createHomeTab();
+        setActiveTab(h);
+        await sleep(600);
+        const urlBefore = tabs.get(h) ? tabs.get(h).url : "";
+        await js(`(function(){var i=document.getElementById("omni-input");i.focus();i.value="https://www.luogu.com.cn/problem/P1002";i.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",isComposing:true,bubbles:true,cancelable:true}));return true})()`);
+        await sleep(900);
+        const afterComposing = tabs.get(h) ? tabs.get(h).url : "";
+        await js(`(function(){var i=document.getElementById("omni-input");i.value="https://www.luogu.com.cn/problem/P1002";i.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));return true})()`);
+        await sleep(1100);
+        const afterReal = tabs.get(h) ? tabs.get(h).url : "";
+        /* 联想：默认不选中 + 首行「打开」+ 悬停回传 */
+        await js(`(function(){var i=document.getElementById("omni-input");i.focus();i.value="localhost:3000";i.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+        await sleep(1100);
+        const sugState = JSON.parse(await js(`JSON.stringify({sel: sugSel, open: sugOpen, n: sugItems.length, first: sugItems[0] ? sugItems[0].label : ""})`));
+        let popRows = null;
+        let hoverSel = null;
+        if (popupView && !popupView.webContents.isDestroyed()) {
+          try {
+            popRows = JSON.parse(await popupView.webContents.executeJavaScript(
+              `(function(){var rs=document.querySelectorAll("#omni-sug .sug-row");return JSON.stringify({rows:rs.length,on:document.querySelectorAll("#omni-sug .sug-row.on").length,first:(rs[0]?rs[0].textContent:"")})})()`, true));
+            if (popRows && popRows.rows >= 2) {
+              await popupView.webContents.executeJavaScript(
+                `(function(){var rs=document.querySelectorAll("#omni-sug .sug-row");rs[1].dispatchEvent(new MouseEvent("mouseover",{bubbles:true}));return true})()`, true);
+              await sleep(600);
+              hoverSel = JSON.parse(await js(`JSON.stringify({sel: sugSel, on: (function(){return 0})()})`)).sel;
+              popRows.onAfterHover = JSON.parse(await popupView.webContents.executeJavaScript(
+                `JSON.stringify({on:document.querySelectorAll("#omni-sug .sug-row.on").length})`, true)).on;
+            }
+          } catch (e) { out.omniPopErr = String(e); }
+        }
+        await js(`(function(){var i=document.getElementById("omni-input");if(i){i.value="";i.blur();}try{closeSuggest();}catch(e){}return true})()`);
+        await sleep(300);
+        out.omni = { resolved, urlBefore, afterComposing, afterReal, sugState, popRows, hoverSel };
+        out.omniPass = !!(
+          resolved.localhost && /^http:\/\/localhost:3000$/.test(resolved.localhost.url) && resolved.localhost.type === "external" &&
+          resolved.hostPort && /^http:\/\/my-server:8080$/.test(resolved.hostPort.url) &&
+          resolved.bare && resolved.bare.type === "luogu" && /search\?keyword=hello/.test(resolved.bare.url) &&
+          resolved.dotted && resolved.dotted.type === "external" &&
+          resolved.problem && /problem\/P1002/.test(resolved.problem.url) &&
+          afterComposing === urlBefore &&
+          /problem\/P1002/i.test(afterReal) &&
+          sugState.sel === -1 && sugState.open === true && /^打开 localhost:3000$/.test(sugState.first || "") &&
+          !!popRows && popRows.on === 0 &&
+          (hoverSel === 1 || !popRows || popRows.rows < 2) &&
+          (!popRows || popRows.rows < 2 || popRows.onAfterHover === 1)
+        );
+      } catch (e) { out.omniErr = String((e && e.stack) || e); out.omniPass = false; }
+      flush();
+
+      /* ---------- 2) 坞「首页」= 新标签打开 luogu.com.cn ---------- */
+      try {
+        await setCfg({ verticalTabs: false, dockPos: "left" });
+        const beforeIds = new Set(tabs.keys());
+        const prevActive = activeTabId;
+        const prevUrl = tabs.has(prevActive) ? tabs.get(prevActive).url : "";
+        dockOpen("@home");
+        await sleep(1400);
+        const newIds = tabOrder.filter((id) => !beforeIds.has(id));
+        const nt = newIds.length === 1 ? tabs.get(newIds[0]) : null;
+        const dockActive = JSON.parse(await js(`JSON.stringify({n: document.querySelectorAll("#dock a.active").length, href: (document.querySelector("#dock a.active")||{}).getAttribute ? document.querySelector("#dock a.active").getAttribute("data-href") : null})`));
+        out.dockHome = {
+          newCount: newIds.length,
+          url: nt ? nt.url : "",
+          activeIsNew: nt ? activeTabId === nt.id : false,
+          prevUntouched: tabs.has(prevActive) && tabs.get(prevActive).url === prevUrl,
+          dockActive,
+        };
+        out.dockHomePass = !!(
+          newIds.length === 1 && nt && /^https:\/\/www\.luogu\.com\.cn\/?$/.test(nt.url) &&
+          activeTabId === nt.id && out.dockHome.prevUntouched &&
+          dockActive.n >= 1 && dockActive.href === "@home"
+        );
+        if (nt) { closeTab(nt.id); await sleep(400); }
+      } catch (e) { out.dockHomeErr = String((e && e.stack) || e); out.dockHomePass = false; }
+      flush();
+
+      /* ---------- 3) 账号菜单跑位（place 吃 payload.win） ---------- */
+      try {
+        const [w0, h0] = mainWin.getContentSize();
+        const menuHtml = '<div id="probe-menu" style="width:300px;height:220px">probe</div>';
+        const showWith = (payload) => js("window.lgChrome.popupShow(" + JSON.stringify(payload) + ")");
+        const readPanel = async () => {
+          if (!popupView || popupView.webContents.isDestroyed()) return null;
+          return JSON.parse(await popupView.webContents.executeJavaScript(
+            `(function(){var m=document.getElementById("probe-menu");if(!m)return "null";var r=m.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),vw:window.innerWidth})})()`, true));
+        };
+        /* (a) place() 必须吃 payload.win 夹取（弹层视图视口滞后时不被带偏）：
+            直接调弹层文档里的 place()——win.w=640 时面板应被夹进 640 宽
+            （x+w = 632）；若按 window.innerWidth（此刻视口 200）夹，会塌到 0。 */
+        let placeUnit = null;
+        try { popupView.setBounds({ x: 0, y: 0, width: 200, height: 200 }); } catch {}
+        await sleep(700);
+        placeUnit = JSON.parse(await popupView.webContents.executeJavaScript(`(function(){
+          var menu = document.createElement("div");
+          menu.style.cssText = "width:300px;height:220px";
+          document.body.appendChild(menu);
+          place(menu, { ax: 1260, ay: 120, win: { w: 640, h: 480 } });
+          var r = menu.getBoundingClientRect();
+          var out = { x: Math.round(r.left), w: Math.round(r.width), vw: window.innerWidth };
+          menu.remove();
+          return JSON.stringify(out);
+        })()`, true));
+        /* (b) 视口小 + 真窗口尺寸：贴右缘（ax - 菜单宽），不许塌到左边 */
+        await showWith({ html: menuHtml, ax: w0 - 20, ay: 120, win: { w: 640, h: 480 } });
+        await sleep(700);
+        const small = await readPanel();
+        /* (b2) 真窗口尺寸：贴右缘（ax - 菜单宽） */
+        await showWith({ html: menuHtml, ax: w0 - 20, ay: 120, win: { w: w0, h: h0 } });
+        await sleep(700);
+        const full = await readPanel();
+        /* (c) popup:win 补发（窗口缩放那条路）→ 重摆 */
+        await showWith({ html: menuHtml, ax: w0 - 20, ay: 120, win: { w: 640, h: 480 } });
+        await sleep(500);
+        try { popupView.webContents.send("popup:win", { w: w0, h: h0 }); } catch {}
+        await sleep(700);
+        const reWin = await readPanel();
+        /* (d) 账号芯片真实链路：位置必须在右半窗、右缘对齐芯片 */
+        await js("showAccountMenu()");
+        await sleep(800);
+        const chip = JSON.parse(await js(`(function(){var c=document.getElementById("user-chip");var r=c?c.getBoundingClientRect():null;return JSON.stringify({right:r?Math.round(r.right):null,bottom:r?Math.round(r.bottom):null})})()`));
+        const acct = JSON.parse(await popupView.webContents.executeJavaScript(
+          `(function(){var m=document.getElementById("account-menu");if(!m)return "null";var r=m.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width)})})()`, true));
+        await js("try{hideAllMenus();}catch(e){}");
+        await sleep(300);
+        out.menuPlace = { win: [w0, h0], placeUnit, small, full, reWin, chip, acct };
+        out.menuPlacePass = !!(
+          placeUnit && Math.abs(placeUnit.x + placeUnit.w - 632) <= 4 &&
+          small && small.w >= 200 && Math.abs(small.x + small.w - (w0 - 20)) <= 14 &&
+          full && Math.abs(full.x + full.w - (w0 - 20)) <= 14 &&
+          reWin && Math.abs(reWin.x + reWin.w - (w0 - 20)) <= 14 &&
+          acct && chip.right != null && acct.x > w0 * 0.5 && Math.abs(acct.x + acct.w - chip.right) <= 16
+        );
+      } catch (e) { out.menuPlaceErr = String((e && e.stack) || e); out.menuPlacePass = false; }
+      flush();
+
+      /* ---------- 4) 背景：自愈 / 视频兜底 / 缩放推送 / 标志清理 ---------- */
+      try {
+        const wdir = wallpapersDir();
+        try { fs.mkdirSync(wdir, { recursive: true }); } catch {}
+        const png = path.join(wdir, "lg-probe-wall.png");
+        fs.writeFileSync(png, Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64"));
+        cfg.wallpaper = png;
+        cfg.wallpaperKind = "image";
+        saveConfig();
+        pushConfigToChrome();
+        applyConfigToPages();
+        await sleep(1200);
+        const h = createHomeTab();
+        setActiveTab(h);
+        await sleep(1600);
+        const wc = tabs.get(h).view.webContents;
+        const health = JSON.parse(await wc.executeJavaScript(
+          `(function(){var bg=document.getElementById("lg-glass-bg");var cs=bg?getComputedStyle(bg):null;return JSON.stringify({wall:document.documentElement.getAttribute("data-lg-wall"),exist:!!bg,bi:cs?String(cs.backgroundImage).slice(0,48):"",heal:window.__lgWallHeal||0})})()`, true));
+        /* 层被站点脚本移除 → MutationObserver 补回并重跑 apply */
+        await wc.executeJavaScript(`(function(){var b=document.getElementById("lg-glass-bg");if(b)b.remove();return true})()`, true);
+        await sleep(1800);
+        const healed = JSON.parse(await wc.executeJavaScript(
+          `(function(){var bg=document.getElementById("lg-glass-bg");var cs=bg?getComputedStyle(bg):null;return JSON.stringify({exist:!!bg,bi:cs?String(cs.backgroundImage).slice(0,48):"",heal:window.__lgWallHeal||0})})()`, true));
+        /* 视频兜底契约：bgready=0 时背景图不许被关（失败回退图片/渐变） */
+        const videoCss = JSON.parse(await wc.executeJavaScript(
+          `(function(){var r=document.documentElement;var bg=document.getElementById("lg-glass-bg");
+            r.setAttribute("data-lg-bgvideo","1");r.setAttribute("data-lg-bgready","0");
+            var a=getComputedStyle(bg).backgroundImage; a=!!(a&&a!=="none");
+            r.setAttribute("data-lg-bgready","1");
+            var b=getComputedStyle(bg).backgroundImage; b=!!(b&&b!=="none");
+            r.setAttribute("data-lg-bgvideo","0");r.setAttribute("data-lg-bgready","0");
+            return JSON.stringify({beforeReady:a,afterReady:b})})()`, true));
+        /* 缩放恢复：设 1.5 → 重载 → did-finish-load 恢复后必须补推 --lg-zoom */
+        setZoom(tabs.get(h), 1.5);
+        await sleep(500);
+        wc.reload();
+        for (let i = 0; i < 40; i++) { await sleep(250); if (!wc.isLoading()) break; }
+        await sleep(900);
+        const zoomNow = String(await wc.executeJavaScript('document.documentElement.style.getPropertyValue("--lg-zoom")', true) || "");
+        setZoom(tabs.get(h), 1);
+        await sleep(400);
+        /* 标志残留：已关标签的 id 塞进两个标志，layout() 必须清掉 */
+        const deadId = createHomeTab({ activate: false });
+        closeTab(deadId);
+        await sleep(500);
+        htmlFullscreenTabId = deadId;
+        inPageIdeTabId = deadId;
+        layout();
+        await sleep(400);
+        const flags = { full: htmlFullscreenTabId, ide: inPageIdeTabId, dock: dockShown };
+        /* reconcileWallpaper：当前壁纸不可读 → 顺延到集合里可读的文件 */
+        cfg.wallpaper = path.join(wdir, "lg-probe-missing.png");
+        reconcileWallpaper();
+        const reconciled = cfg.wallpaper === png;
+        cfg.wallpaper = png;
+        saveConfig();
+        out.bg = { health, healed, videoCss, zoomNow, flags, reconciled };
+        out.bgPass = !!(
+          health.wall === "1" && health.exist === true && /url\(/.test(health.bi) &&
+          healed.exist === true && /url\(/.test(healed.bi) &&
+          videoCss.beforeReady === true && videoCss.afterReady === false &&
+          Math.abs(parseFloat(zoomNow) - 1.5) < 0.01 &&
+          flags.full === null && flags.ide === null &&
+          reconciled === true
+        );
+        closeTab(h);
+        await sleep(300);
+      } catch (e) { out.bgErr = String((e && e.stack) || e); out.bgPass = false; }
+      flush();
+
+      /* ---------- 5) 分组手感：迟滞 / 折叠组悬停展开 / FLIP ---------- */
+      try {
+        await setCfg({ verticalTabs: false, dockPos: "left" });
+        const ids = [];
+        for (let i = 0; i < 4; i++) ids.push(createTab(HOME_URL, { activate: false }));
+        await sleep(1400);
+        /* FLIP：真实重排一次，动画计数必须增长（标签不再瞬间跳） */
+        const flip0 = JSON.parse(await js("JSON.stringify({ n: window.__lgFlipCount || 0 })")).n;
+        await invokeFor("tab:reorder", { id: ids[0], beforeId: ids[3], zone: null });
+        await sleep(800);
+        const flip1 = JSON.parse(await js("JSON.stringify({ n: window.__lgFlipCount || 0 })")).n;
+        /* 后两个建成一个组并折叠 */
+        const g = makeGroup();
+        joinGroup(ids[2], g.id);
+        joinGroup(ids[3], g.id);
+        updateGroup(g.id, { collapsed: true });
+        await sleep(700);
+        /* 合成手势：拖第 1 个标签 → 悬停折叠组牌 → 450ms 后临时展开 */
+        const gesture = JSON.parse(await js(`(function(){
+          var rows = document.querySelectorAll("#tabs .tab[data-id]");
+          var chip = document.querySelector("#tabs .gchip[data-gid]");
+          if (rows.length < 2 || !chip) return JSON.stringify({ err: "need", rows: rows.length, chip: !!chip });
+          var A = rows[0];
+          var ra = A.getBoundingClientRect(), rc = chip.getBoundingClientRect();
+          var ev = function (type, x, y, el) {
+            return el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 1, isPrimary: true }));
+          };
+          ev("pointerdown", Math.round(ra.left + ra.width / 2), Math.round(ra.top + ra.height / 2), A);
+          ev("pointermove", Math.round(ra.left + ra.width / 2) + 8, Math.round(ra.top + ra.height / 2), document);
+          ev("pointermove", Math.round(rc.left + rc.width / 2), Math.round(rc.top + rc.height / 2), document);
+          return JSON.stringify({
+            armed: true,
+            collapsedBefore: chip.className.indexOf("collapsed") >= 0,
+            chipGid: Number(chip.getAttribute("data-gid")),
+            tipArmed: !!document.getElementById("drag-tip"),
+          });
+        })()`));
+        await sleep(1100); // > 450ms dwell
+        /* 再补一次同位置 pointermove：停留时长那条判定路径（渲染器定时器在
+           隐藏/遮挡窗口里会被节流，探针不能只等定时器） */
+        await js(`(function(){
+          var chip = document.querySelector("#tabs .gchip[data-gid]");
+          if (!chip) return true;
+          var rc = chip.getBoundingClientRect();
+          document.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, cancelable: true, clientX: Math.round(rc.left + rc.width / 2), clientY: Math.round(rc.top + rc.height / 2), button: 0, buttons: 1, pointerId: 1, isPrimary: true }));
+          return true;
+        })()`);
+        await sleep(500);
+        const afterDwell = JSON.parse(await js(`(function(){
+          var chip = document.querySelector("#tabs .gchip[data-gid]");
+          return JSON.stringify({
+            collapsed: chip ? chip.className.indexOf("collapsed") >= 0 : null,
+            tempMembers: document.querySelectorAll("#tabs .tab[data-temp-member]").length,
+            flip: window.__lgFlipCount || 0,
+            tip: !!document.getElementById("drag-tip"),
+            zone: !!document.querySelector("#tabs .drop-zone"),
+          });
+        })()`));
+        /* 排障：拖拽状态现场 + 直接调用 expandTempGroup 看函数本身是否可用 */
+        const dbgDwell = JSON.parse(await js("JSON.stringify(window.__lgDragDbg ? window.__lgDragDbg() : null)"));
+        const directExpand = JSON.parse(await js(`(function(){
+          try { var r = expandTempGroup(${gesture.chipGid}, false); return JSON.stringify({ ret: r, temp: document.querySelectorAll("#tabs .tab[data-temp-member]").length }); }
+          catch (e) { return JSON.stringify({ err: String(e) }); }
+        })()`));
+        /* 迟滞：把指针移到落点行的 0.75 处（退出带内）→ 合并标记必须保持 */
+        const hyst = JSON.parse(await js(`(function(){
+          var row = document.querySelector("#tabs .tab[data-id]:not(.dragging)");
+          if (!row) return JSON.stringify({ err: "no-row" });
+          var r = row.getBoundingClientRect();
+          var y = Math.round(r.top + r.height / 2);
+          var ev = function (type, x) { return document.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: 1, pointerId: 1, isPrimary: true })); };
+          ev("pointermove", Math.round(r.left + r.width * 0.5));
+          var merged = row.className.indexOf("drop-merge") >= 0;
+          ev("pointermove", Math.round(r.left + r.width * 0.75)); // 退出带内（0.22~0.78）
+          var kept = row.className.indexOf("drop-merge") >= 0;
+          ev("pointermove", Math.round(r.left + r.width * 0.95)); // 退出带外
+          var cleared = row.className.indexOf("drop-merge") < 0;
+          return JSON.stringify({ merged: merged, kept: kept, cleared: cleared });
+        })()`));
+        await js(`(function(){document.dispatchEvent(new PointerEvent("pointerup",{bubbles:true,cancelable:true,clientX:10,clientY:10,button:0,buttons:0,pointerId:1,isPrimary:true}));return true})()`);
+        await sleep(700);
+        const afterUp = JSON.parse(await js(`JSON.stringify({collapsed: !!document.querySelector("#tabs .gchip.collapsed"), temp: document.querySelectorAll("#tabs .tab[data-temp-member]").length, tip: !!document.getElementById("drag-tip")})`));
+        for (const id of ids) { try { if (tabs.has(id)) closeTab(id); } catch (err) {} }
+        await sleep(600);
+        out.groups2 = { flip0, flip1, gesture, afterDwell, dbgDwell, directExpand, hyst, afterUp };
+        out.groups2Pass = !!(
+          flip1 > flip0 &&
+          gesture.armed === true && gesture.collapsedBefore === true &&
+          afterDwell.collapsed === false && afterDwell.tempMembers >= 2 &&
+          hyst.merged === true && hyst.kept === true && hyst.cleared === true &&
+          afterUp.temp === 0 && afterUp.tip === false
+        );
+      } catch (e) { out.groups2Err = String((e && e.stack) || e); out.groups2Pass = false; }
+      flush();
+
+      /* ---------- 6) 分屏只留左右两格 ---------- */
+      try {
+        const apiGone = JSON.parse(await js(`JSON.stringify({
+          layouts: typeof SPLIT_LAYOUTS, names: typeof SPLIT_LAYOUT_NAMES,
+          setLayout: typeof setSplitLayout, focus: typeof toggleSplitFocus,
+        })`));
+        const ipcGone = {
+          layout: !!(ipcMain._invokeHandlers && ipcMain._invokeHandlers.has("tab:split-layout")),
+          layoutNext: !!(ipcMain._invokeHandlers && ipcMain._invokeHandlers.has("tab:split-layout-next")),
+          focus: !!(ipcMain._invokeHandlers && ipcMain._invokeHandlers.has("tab:split-focus")),
+          closeSide: !!(ipcMain._invokeHandlers && ipcMain._invokeHandlers.has("tab:split-close-side")),
+          reverse: !!(ipcMain._invokeHandlers && ipcMain._invokeHandlers.has("tab:split-reverse")),
+        };
+        const a = createHomeTab({ activate: false });
+        const b = createHomeTab({ activate: false });
+        const mid = createHomeTab({ activate: false });
+        splitWith(a, b);
+        await sleep(400);
+        const pair = { ids: splitGroupOf(a) ? splitGroupOf(a).ids.slice() : null, adjacent: Math.abs(tabOrder.indexOf(b) - tabOrder.indexOf(a)) === 1 };
+        moveTabInOrder(mid, b, null); // 想插到两格之间 → 应被吸附到对块外侧
+        const noInsert = Math.abs(tabOrder.indexOf(b) - tabOrder.indexOf(a)) === 1 && tabOrder.indexOf(mid) !== tabOrder.indexOf(a) + 1;
+        closeTab(mid);
+        await sleep(300);
+        const wA = tabs.get(a).view.getBounds().width;
+        reverseSplit(a);
+        await sleep(400);
+        const rev = tabs.get(a).view.getBounds().x > tabs.get(b).view.getBounds().x && Math.abs(tabs.get(a).view.getBounds().width - wA) < 8;
+        reverseSplit(a);
+        await sleep(300);
+        closeSplitSide(a, "right");
+        await sleep(500);
+        const closed = !tabs.has(b) && !splitGroupOf(a);
+        closeTab(a);
+        await sleep(300);
+        out.split2 = { apiGone, ipcGone, pair, noInsert, rev, closed };
+        out.split2Pass = !!(
+          apiGone.layouts === "undefined" && apiGone.names === "undefined" &&
+          apiGone.setLayout === "undefined" && apiGone.focus === "undefined" &&
+          ipcGone.layout === false && ipcGone.layoutNext === false && ipcGone.focus === false &&
+          ipcGone.closeSide === true && ipcGone.reverse === true &&
+          pair.ids && pair.ids.length === 2 && pair.adjacent === true &&
+          noInsert === true && rev === true && closed === true
+        );
+      } catch (e) { out.split2Err = String((e && e.stack) || e); out.split2Pass = false; }
+      flush();
+
+      /* ---------- 复原 ---------- */
+      try { await setCfg({ ...saved }); } catch (e) {}
+      out.pass = !!(out.omniPass && out.dockHomePass && out.menuPlacePass && out.bgPass && out.groups2Pass && out.split2Pass);
       flush();
     } else if (argv.includes("--lg-mattest")) {
       /* 材质对拍（"内外同一个效果"的机械守卫）：

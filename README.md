@@ -33,7 +33,9 @@ luogu-glass/
 - **外壳**：Edge 式垂直标签栏（默认收起；悬停=整条展开浮出，与"点箭头常驻展开"逐像素同一条——整高贴边、方角、盖住窄条、头尾按钮同位置，悬停不挤压页面、常驻展开才挤压；宽度可拖、可放左侧或右侧）/ 顶部标签条二选一；
   Edge 式标签分组（组头行 + 连续组色线 + 多选建组 + 就地改名 + **拖动合并**：
   拖到标签上建组/并组、拖到组头加入（折叠组也行）、拖出即移出、整组拖动排序）与
-  15 种拼合布局；悬停浮层/右键菜单/命令面板都能整理标签页（排序/去重/自动建组，可撤销）；
+   左右两格分屏（v3.12.0 起只做左右并排：两格自动排到相邻、不许插到两格中间、右键可
+   关左/关右/反转位置；上下/网格/主次/聚焦已按用户要求删除）；
+   悬停浮层/右键菜单/命令面板都能整理标签页（排序/去重/自动建组，可撤销）；
   垂直模式顶栏两行（标题行：图标 + 网页描述居中，右端窗口三键；工具行：前进后退 + 网址 + 账号）；
   侧坞是悬浮栏（设置里选上/下/左/右，页面内容从它底下穿过、不再让位；方向跟着
   位置走：左/右 = 一竖列、上/下 = 一横条；网页自己进入全屏、题目页进入自带
@@ -96,6 +98,9 @@ LuoguLab.exe --lg-selftest=out --lg-pagetest    # 列表页与题目页的功能
 LuoguLab.exe --lg-selftest=out --lg-dump-promo  # 推广卡 DOM dump（调试）
 LuoguLab.exe --lg-hidden --lg-v36test --lg-url=about:blank   # 隔离隐藏实例全量回归
 LuoguLab.exe --lg-hidden --lg-v310test --lg-url=https://www.luogu.com.cn/  # v3.10.0 全量
+LuoguLab.exe --lg-hidden --lg-v312test --lg-url=https://www.luogu.com.cn/  # v3.12.0 全量
+              # 地址栏体验（输入法回车/回车确定性/localhost/联想跟手）/ 坞首页开洛谷首页 /
+              # 账号菜单跑位 / 背景自愈 / 分组手感（迟滞·预览·动画·折叠展开）/ 左右两格分屏
 LuoguLab.exe --lg-hidden --lg-v311test --lg-url=https://www.luogu.com.cn/problem/P1002
               # v3.11.0：坞方向四位置 / 悬停卡片已删 / 题目页 IDE 真全屏 / 分组拖动
               # 隐藏 = 全程不亮窗不抢前台（--lg-hidden / LG_HIDDEN=1）
@@ -110,7 +115,7 @@ omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色
 ## 部署状态（2026-10-01）
 
 - 桌面交付：`C:\Users\Administrator\Desktop\LuoguLab\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.11.0）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.12.0）
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
 - 设计迭代史见 `design-log.md`（R1~R33，全部有探针/截图证据）

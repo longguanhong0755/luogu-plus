@@ -518,13 +518,34 @@ body.compact #vtab { display: none !important; }
    不动 .tab 的定位（标签牌有圆角，线跟着圆角收一点，观感一致） */
 .tab.drop-before { box-shadow: inset 2px 0 0 var(--ink); }
 .tab.drop-after { box-shadow: inset -2px 0 0 var(--ink); }
-/* 拖到标签上 = 与它建组/并组（Edge 的建组手势，R38）：整行高亮成"要合并"的样子 */
+/* 拖到标签上 = 与它建组/并组（Edge 的建组手势，R38）：整行高亮成"要合并"的样子。
+   R39：高亮色用**结果组色**（已有组 = 该组色；新建组 = 下一个调色板色，JS 内联
+   --gc），"松手会进哪个组"一眼可见，不再是一律墨色 */
 .tab.drop-merge, .vtab.drop-merge {
   background: var(--surface-2);
-  box-shadow: inset 0 0 0 1.5px var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--gc, var(--ink));
 }
-/* 拖到组头/组牌上 = 加入该组（折叠组也能当落点） */
-.gchip.drop-zone, .vghead.drop-zone { outline: 1px dashed var(--gc, var(--hairline)); outline-offset: 1px; border-radius: 8px; }
+/* 拖到组头/组牌上 = 加入该组（折叠组也能当落点）。R39：整块用组色填充 +
+   组色描边（Edge 的整组亮起观感），不再是 1px 虚线 */
+.gchip.drop-zone, .vghead.drop-zone {
+  background: color-mix(in srgb, var(--gc, var(--ink)) 20%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--gc, var(--hairline));
+  border-radius: 8px;
+}
+/* 拖动光标旁的小签：松手会发生什么（加入「N 组」/ 新建分组 / 移动分组） */
+#drag-tip {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  padding: 3px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface-2);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18), inset 0 0 0 1.5px var(--gc, var(--hairline));
+  white-space: nowrap;
+}
 /* 整组拖动中：组头/组牌半透明（与标签拖动同一套观感） */
 .vghead.dragging, .gchip.dragging { opacity: 0.5; }
 #vtab-pins.drop-zone {
@@ -784,7 +805,22 @@ body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-
 .vgroup.collapsed .g-count { color: var(--ink); }
 /* 组内成员：缩进（组色线由 .vgroup 的左缘负责，贯穿整组） */
 .vgroup .vtab { padding-left: 12px; }
-.vgroup.drop-zone { outline: 1px dashed var(--gc); outline-offset: 1px; }
+.vgroup.drop-zone {
+  background: color-mix(in srgb, var(--gc, var(--ink)) 12%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--gc, var(--hairline));
+  border-radius: 2px 8px 8px 2px;
+}
+/* 分屏成对（R39，Chromium split tab 的标签条表示）：相邻左右两格共享一条
+   下缘色带，一眼看出是一个分屏对（配合 .t-split 徽章） */
+#tabs .tab.split-pair::after {
+  content: "";
+  position: absolute;
+  left: 1px; right: 1px; bottom: 0;
+  height: 2.5px;
+  border-radius: 1.5px;
+  background: var(--ink-faint);
+  pointer-events: none;
+}
 /* 多选（Edge：Ctrl+点加选 / Shift+点连选 → 右键建组） */
 .vtab.sel, .tab.sel { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--ink-faint); }
 /* 窄条里的组：只留色线 + 色点（组名/计数不可见），缩进压到最小——

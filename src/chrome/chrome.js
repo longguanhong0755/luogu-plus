@@ -80,6 +80,13 @@ function resolveOmnibox(raw, mappings, searchTpl, searchIsLuogu) {
   if (/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(:\d+)?(\/\S*)?$/i.test(input)) {
     return { type: "external", url: "https://" + input };
   }
+  /* localhost / 内网主机名（R39）：单段主机名（没有点）以前一律掉进搜索，
+     localhost:3000、my-server:8080 这种明确的地址意图被搜掉。本机与内网
+     默认按 http 试（Chrome 同款）；带 scheme 的输入走上面的分支不受影响。 */
+  if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?(\/\S*)?$/i.test(input) ||
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:\d+(\/\S*)?$/i.test(input)) {
+    return { type: "external", url: "http://" + input };
+  }
   if (/^[a-z]\d+$/i.test(input)) {
     return { type: "luogu", url: "https://www.luogu.com.cn/problem/" + input.toUpperCase() };
   }
@@ -184,12 +191,17 @@ function buildTabEl(t, cls) {
     const sp = document.createElement("span");
     sp.className = "t-badge t-split";
     sp.innerHTML = svg("split");
-    sp.title = t.splitFocus
-      ? "此窗格已聚焦铺满（右键菜单可取消聚焦）"
-      : t.splitPeer > 2
-        ? `分屏拼合中（${t.splitPeer} 窗格，右键可切布局/聚焦/退出）`
-        : "分屏显示中（右键可切布局/聚焦/退出）";
+    sp.title = t.splitSide === "left"
+      ? "左右分屏 · 左格（右键可关闭左/右格、反转位置、退出分屏）"
+      : t.splitSide === "right"
+        ? "左右分屏 · 右格（右键可关闭左/右格、反转位置、退出分屏）"
+        : "左右分屏中（右键可关闭左/右格、反转位置、退出分屏）";
     el.appendChild(sp);
+    /* 成对两格共享一个圆角底（Chromium split tab 的标签条表示）：相邻的
+       左右两格用同一条组色带连起来，一眼看出是一个分屏对 */
+    el.classList.add("split-pair");
+    if (t.splitSide === "left") el.classList.add("split-first");
+    if (t.splitSide === "right") el.classList.add("split-last");
   }
   // 缩放百分比不再挂在标签上（R36 用户要求标签只留图标+文字）：比例改在
   // 窗口右上角的 #zoomhud 实时显示（见 zoomHudSync）
@@ -260,8 +272,10 @@ function setFlyoutHold(on) {
 /* 落点标记：插入位置线（落点行的上/下缘）+ 放置区高亮（钉住区 / 分组块）。
    每次移动只保留当前落点的一套标记。 */
 function clearDropMarks() {
-  for (const el of document.querySelectorAll(".drop-before, .drop-after, .drop-zone")) {
-    el.classList.remove("drop-before", "drop-after", "drop-zone");
+  for (const el of document.querySelectorAll(".drop-before, .drop-after, .drop-zone, .drop-merge")) {
+    el.classList.remove("drop-before", "drop-after", "drop-zone", "drop-merge");
+    // 合并高亮用 --gc 染色；分组成员自己就带 --gc（组色），不能一起清
+    if (!el.classList.contains("grouped")) el.style.removeProperty("--gc");
   }
 }
 function markDrop(row, before) {
@@ -277,6 +291,16 @@ function markDrop(row, before) {
   const grp = row.closest(".vgroup");
   if (grp) grp.classList.add("drop-zone");
 }
+/* 调试出口（探针用）：拖拽状态 / 临时展开的现场 */
+window.__lgDragDbg = function () {
+  return {
+    drag: drag ? { moved: !!drag.moved, hoverGid: drag.hoverGid, autoExpanded: drag.autoExpanded, dwell: Date.now() - (drag.hoverSince || 0) } : null,
+    groups: (tabsState.groups || []).map((g) => ({ id: g.id, collapsed: !!g.collapsed })),
+    members: tabsState.tabs.filter((t) => t.group != null).map((t) => t.id + ":" + t.group),
+    chipCollapsed: !!document.querySelector("#tabs .gchip.collapsed"),
+    temp: document.querySelectorAll("[data-temp-member]").length,
+  };
+};
 function initDrag(box, vertical) {
   box.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
@@ -284,13 +308,163 @@ function initDrag(box, vertical) {
     /* 组头/组牌：整组拖动（Edge：拖动组把整块挪走） */
     const head = e.target.closest(".vghead[data-gid], .gchip[data-gid]");
     if (head) {
-      drag = { gid: Number(head.dataset.gid), el: head, vertical, sx: e.clientX, sy: e.clientY, moved: false, merge: null };
+      drag = { gid: Number(head.dataset.gid), el: head, vertical, sx: e.clientX, sy: e.clientY, moved: false, merge: null, mergeRow: null, mergeKind: null, autoExpanded: null, hoverGid: null, hoverSince: 0 };
       return;
     }
     const el = e.target.closest(".tab, .vtab");
     if (!el) return;
-    drag = { id: Number(el.dataset.id), el, vertical, sx: e.clientX, sy: e.clientY, moved: false, merge: null };
+    drag = { id: Number(el.dataset.id), el, vertical, sx: e.clientX, sy: e.clientY, moved: false, merge: null, mergeRow: null, mergeKind: null, autoExpanded: null, hoverGid: null, hoverSince: 0 };
   });
+}
+
+/* ---------- 拖拽手感三件（R39，对齐 Edge/Chromium 的可观察行为） ---------- */
+/* ① FLIP：DOM 变动前后各量一次矩形，位移过的行从旧位置滑到新位置（170ms）。
+   隐藏窗口里动画不推进没关系——这里只是"发出去"，不依赖 animationend；
+   探针用 window.__lgFlipCount 计数。 */
+let flipCount = 0;
+function flipSnapIn(box) {
+  const m = new Map();
+  if (!box) return m;
+  for (const el of box.querySelectorAll("[data-id]")) {
+    try { m.set(el.dataset.id, el.getBoundingClientRect()); } catch (e) {}
+  }
+  return m;
+}
+function flipPlayIn(box, snap) {
+  if (!box || !snap || !snap.size) return;
+  for (const el of box.querySelectorAll("[data-id]")) {
+    if (el.classList.contains("dragging")) continue;
+    const prev = snap.get(el.dataset.id);
+    if (!prev) continue;
+    const now = el.getBoundingClientRect();
+    const dx = prev.left - now.left, dy = prev.top - now.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    try {
+      el.animate(
+        [{ transform: "translate(" + dx + "px," + dy + "px)" }, { transform: "none" }],
+        { duration: 170, easing: "cubic-bezier(.2,.7,.3,1)" }
+      );
+      flipCount++;
+    } catch (e) {}
+  }
+  try { window.__lgFlipCount = flipCount; } catch (e) {}
+}
+/* ② 光标旁的小签：松手会发生什么（加入哪个组 / 新建分组），颜色就是结果组色 */
+let dragTipEl = null;
+function dragTip(text, x, y, color) {
+  if (!text) {
+    if (dragTipEl) { dragTipEl.remove(); dragTipEl = null; }
+    return;
+  }
+  if (!dragTipEl) {
+    dragTipEl = document.createElement("div");
+    dragTipEl.id = "drag-tip";
+    document.body.appendChild(dragTipEl);
+  }
+  dragTipEl.textContent = text;
+  dragTipEl.style.setProperty("--gc", color || "var(--ink)");
+  dragTipEl.style.left = Math.round(x + 14) + "px";
+  dragTipEl.style.top = Math.round(y + 16) + "px";
+}
+/* 新建组会用的颜色（主进程下发下一个调色板色，和 makeGroup 同一份游标） */
+function nextGroupColor() {
+  const k = tabsState.nextGroupColor;
+  return (k && GROUP_COLORS[k]) || GROUP_COLORS.blue;
+}
+/* ③ 拖到标签条边缘自动滚（长列表里拖到看不见的位置） */
+function autoScrollStrip(axis, e) {
+  const sc = document.getElementById(axis === "y" ? "vtabs" : "tabs");
+  if (!sc) return;
+  const r = sc.getBoundingClientRect();
+  const EDGE = 26, STEP = 16;
+  if (axis === "y") {
+    if (r.height <= 0) return;
+    if (e.clientY < r.top + EDGE) sc.scrollTop -= STEP;
+    else if (e.clientY > r.bottom - EDGE) sc.scrollTop += STEP;
+  } else {
+    if (r.width <= 0) return;
+    if (e.clientX < r.left + EDGE) sc.scrollLeft -= STEP;
+    else if (e.clientX > r.right - EDGE) sc.scrollLeft += STEP;
+  }
+}
+/* ④ 折叠组悬停 450ms 临时展开（Edge：拖到折叠组上会展开让你挑插入位置）。
+   renderTabs 在拖拽期间挂起（重建 DOM 会打断手势），所以这里做纯 DOM 的临时
+   展开；拖完由主进程推送的新快照统一重建，临时状态自然消失。
+   两种形态都管：垂直栏 = .vgroup（补成员行），水平条 = .gchip（在组牌后补成员牌）。 */
+let hoverExpandTimer = null;
+/* 两套容器都渲染同一份分组（#tabs 与 #vtab 同时存在，只是其中一个被 CSS 藏着）：
+   临时展开必须落到**当前拖拽的那一条**上，否则会展开隐藏的那份（探针实测过）。 */
+function dragStripRoot(vertical) {
+  return document.getElementById(vertical ? "vtab" : "tabs");
+}
+function expandTempGroup(gid, vertical) {
+  const root = dragStripRoot(vertical);
+  if (!root) return false;
+  const members = tabsState.tabs.filter((t) => t.group === gid);
+  const box = root.querySelector('.vgroup[data-gid="' + gid + '"]');
+  if (box) {
+    if (!box.classList.contains("collapsed")) return false;
+    box.classList.remove("collapsed");
+    const snap = flipSnapIn(box);
+    for (const t of members) box.appendChild(buildTabEl(t, "vtab"));
+    flipPlayIn(box, snap);
+    return true;
+  }
+  const chip = root.querySelector('.gchip[data-gid="' + gid + '"]');
+  if (!chip || !chip.classList.contains("collapsed")) return false;
+  chip.classList.remove("collapsed");
+  chip.dataset.tempOpen = "1";
+  const boxEl = chip.parentElement;
+  const snap = flipSnapIn(boxEl);
+  let anchor = chip;
+  for (const t of members) {
+    const el = buildTabEl(t, "tab");
+    el.dataset.tempMember = "1";
+    anchor.after(el);
+    anchor = el;
+  }
+  flipPlayIn(boxEl, snap);
+  return true;
+}
+function collapseTempGroup(d) {
+  const gid = d && d.autoExpanded;
+  if (gid == null) return;
+  d.autoExpanded = null;
+  const root = dragStripRoot(d.vertical);
+  const box = root ? root.querySelector('.vgroup[data-gid="' + gid + '"]') : null;
+  if (box) {
+    box.classList.add("collapsed");
+    for (const el of Array.from(box.querySelectorAll("[data-id]"))) el.remove();
+    return;
+  }
+  const chip = root ? root.querySelector('.gchip[data-gid="' + gid + '"]') : null;
+  if (chip) {
+    chip.classList.add("collapsed");
+    delete chip.dataset.tempOpen;
+  }
+  if (root) for (const el of Array.from(root.querySelectorAll('[data-temp-member="1"]'))) el.remove();
+}
+function dragHoverExpand(gid) {
+  const d = drag;
+  if (!d) return;
+  if (d.autoExpanded != null && d.autoExpanded !== gid) collapseTempGroup(d);
+  if (gid == null || d.autoExpanded === gid) { clearTimeout(hoverExpandTimer); return; }
+  const root = dragStripRoot(d.vertical);
+  const box = root ? root.querySelector('.vgroup[data-gid="' + gid + '"]') : null;
+  const chip = root ? root.querySelector('.gchip[data-gid="' + gid + '"]') : null;
+  const el = box || chip;
+  if (!el || !el.classList.contains("collapsed")) { clearTimeout(hoverExpandTimer); return; }
+  if (d.hoverGid !== gid) { d.hoverGid = gid; d.hoverSince = Date.now(); }
+  const tryExpand = () => {
+    if (!drag || drag.autoExpanded === gid) return;
+    if (!groupById(gid)) return;
+    if (expandTempGroup(gid, drag.vertical)) drag.autoExpanded = gid;
+  };
+  /* 两条路都留着：指针继续动时由"停留时长"判定（渲染器定时器被节流也不怕），
+     指针停住时由定时器兜底。 */
+  if (Date.now() - (d.hoverSince || 0) >= 450) { tryExpand(); return; }
+  clearTimeout(hoverExpandTimer);
+  hoverExpandTimer = setTimeout(tryExpand, 450);
 }
 /* 拖拽落定：只报"放到谁前面"（move 语义）+ 落点区（钉住/普通）。窄条里钉住
    标签在独立区、折叠组只画一块组牌，外壳手里的顺序天生缺这些标签——回传全量
@@ -298,6 +472,9 @@ function initDrag(box, vertical) {
    甩到最后。改成只报锚点后，主进程在权威 tabOrder 上落位，缺谁都不影响。 */
 function finishDrag(d) {
   if (!d || !d.moved) return;
+  clearTimeout(hoverExpandTimer);
+  dragTip(null);
+  collapseTempGroup(d);
   setFlyoutHold(false);
   clearDropMarks();
   justDragged = Date.now();
@@ -365,6 +542,10 @@ document.addEventListener("pointermove", (e) => {
   }
   const over = document.elementFromPoint(e.clientX, e.clientY);
   if (!over || !over.closest) return;
+  autoScrollStrip(drag.vertical ? "y" : "x", e);
+  /* 折叠组悬停展开：拖到折叠组（组头/组牌）上停 450ms 自动展开 */
+  const collapsedBox = over.closest(".vgroup.collapsed[data-gid], .gchip.collapsed[data-gid]");
+  dragHoverExpand(collapsedBox ? Number(collapsedBox.dataset.gid) : null);
 
   /* ---- 整组拖动：落点 = 别的标签 / 别的组头（报锚点 + 前/后） ---- */
   if (drag.gid != null) {
@@ -373,50 +554,81 @@ document.addEventListener("pointermove", (e) => {
     let anchorEl = null;
     if (headEl && Number(headEl.dataset.gid) !== drag.gid) anchorEl = headEl;
     else if (rowEl && rowEl !== drag.el && tabGidOf(Number(rowEl.dataset.id)) !== drag.gid) anchorEl = rowEl;
-    if (!anchorEl) { drag.merge = null; return; }
+    if (!anchorEl) { drag.merge = null; dragTip(null); return; }
     const r = anchorEl.getBoundingClientRect();
     const before = drag.vertical ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2;
     const anchorId = anchorEl.dataset.id != null ? Number(anchorEl.dataset.id) : firstMemberIdOf(Number(anchorEl.dataset.gid));
     drag.merge = { anchorId, before };
     clearDropMarks();
     (anchorEl.closest(".vgroup") || anchorEl).classList.add("drop-zone");
+    dragTip("移动分组到这里", e.clientX, e.clientY, null);
     return;
   }
 
-  /* ---- 落点类型判定（Edge 语义，R38）----
+  /* ---- 落点类型判定（Edge 语义，R38；R39 加迟滞与实时预览）----
      ① 悬在别的组头/组牌上 → 加入该组（折叠组也能当落点，Edge 同款）；
-     ② 悬在别的标签的**中段**（不是贴边）→ 与它建组/并组（"拖到标签上"手势）；
-     ③ 其余位置 → 普通插入（插入线 + 实时换位）。 */
+     ② 悬在别的标签的**中段** → 与它建组/并组（"拖到标签上"手势）；
+     ③ 其余位置 → 普通插入（插入线 + 实时换位 + FLIP 开缝）。 */
   const headEl = over.closest(".vghead[data-gid], .gchip[data-gid]");
   if (headEl && Number(headEl.dataset.gid) !== tabGidOf(drag.id)) {
-    drag.merge = { kind: "group", targetGid: Number(headEl.dataset.gid) };
+    const gid = Number(headEl.dataset.gid);
+    drag.merge = { kind: "group", targetGid: gid };
+    drag.mergeRow = null;
+    drag.mergeKind = null;
     clearDropMarks();
     (headEl.closest(".vgroup") || headEl).classList.add("drop-zone");
+    const g = groupById(gid);
+    dragTip("加入「" + ((g && g.name) || "分组") + "」", e.clientX, e.clientY, g ? GROUP_COLORS[g.color] : null);
     return;
   }
   const row = over.closest(drag.vertical ? ".vtab[data-id]" : ".tab[data-id]");
-  if (!row || row === drag.el) { drag.merge = null; return; }
+  if (!row || row === drag.el) {
+    drag.merge = null; drag.mergeRow = null; drag.mergeKind = null; dragTip(null);
+    return;
+  }
   const r = row.getBoundingClientRect();
   const frac = drag.vertical
     ? (e.clientY - r.top) / Math.max(1, r.height)
     : (e.clientX - r.left) / Math.max(1, r.width);
-  if (!row.closest("#vtab-pins") && frac >= 0.3 && frac <= 0.7) {
-    drag.merge = { kind: "tab", targetId: Number(row.dataset.id), before: frac < 0.5 };
+  /* 迟滞：已经在合并态的行要走到 0.22/0.78 才退出——边界上来回抖一下不会
+     在"合并/插入"之间反复横跳（Edge 的手感差别主要在这）。 */
+  const latched = drag.mergeRow === row && drag.mergeKind === "tab";
+  const inMerge = !row.closest("#vtab-pins") &&
+    (latched ? (frac >= 0.22 && frac <= 0.78) : (frac >= 0.3 && frac <= 0.7));
+  if (inMerge) {
+    const targetId = Number(row.dataset.id);
+    const tg = tabGidOf(targetId);
+    drag.merge = { kind: "tab", targetId, before: frac < 0.5 };
+    drag.mergeRow = row;
+    drag.mergeKind = "tab";
     clearDropMarks();
+    const g = tg != null ? groupById(tg) : null;
+    const col = g ? (GROUP_COLORS[g.color] || GROUP_COLORS.gray) : nextGroupColor();
+    row.style.setProperty("--gc", col);
     row.classList.add("drop-merge");
+    dragTip(g ? "加入「" + (g.name || "分组") + "」" : "新建分组", e.clientX, e.clientY, col);
     return;
   }
   drag.merge = null;
+  drag.mergeRow = null;
+  drag.mergeKind = null;
+  dragTip(null);
   if (drag.vertical) {
     /* 垂直：允许跨"钉住区 ↔ 标签列表"（Edge 的拖进/拖出钉住），所以不再要求
        同容器——落点行在哪个容器里，落下去就是哪个区（zone 见 finishDrag）。 */
     const before = e.clientY < r.top + r.height / 2;
-    row.parentElement.insertBefore(drag.el, before ? row : row.nextSibling);
+    const boxEl = row.parentElement;
+    const snap = flipSnapIn(boxEl);
+    boxEl.insertBefore(drag.el, before ? row : row.nextSibling);
+    flipPlayIn(boxEl, snap);
     markDrop(row, before);
   } else {
     if (row.parentElement !== drag.el.parentElement) return;
     const before = e.clientX < r.left + r.width / 2;
-    row.parentElement.insertBefore(drag.el, before ? row : row.nextSibling);
+    const boxEl = row.parentElement;
+    const snap = flipSnapIn(boxEl);
+    boxEl.insertBefore(drag.el, before ? row : row.nextSibling);
+    flipPlayIn(boxEl, snap);
     markDrop(row, before); // 水平条也补插入指示线（R38）
   }
 });
@@ -430,9 +642,13 @@ document.addEventListener("pointerup", () => {
 /* 手势被打断（触控取消 / 窗口失焦）：复位状态，不提交落点 */
 function cancelDrag() {
   if (!drag) return;
-  drag.el.classList.remove("dragging");
-  document.body.classList.remove("dragging");
+  const d = drag;
   drag = null;
+  clearTimeout(hoverExpandTimer);
+  dragTip(null);
+  collapseTempGroup(d);
+  d.el.classList.remove("dragging");
+  document.body.classList.remove("dragging");
   clearDropMarks();
   setFlyoutHold(false);
 }
@@ -632,6 +848,10 @@ function renderTabs() {
   const strip = document.getElementById("tabs");
   const rail = document.getElementById("vtabs");
   const pins = document.getElementById("vtab-pins");
+  /* FLIP 快照：整份重建后让位移过的行从旧位置滑过去（分组/重排不再瞬间跳） */
+  const snapStrip = flipSnapIn(strip);
+  const snapRail = flipSnapIn(rail);
+  const snapPins = flipSnapIn(pins);
   strip.textContent = "";
   fillVtab(pins, rail);
   /* 水平条：钉住的照旧排在最前（条内纯图标小标签） */
@@ -644,6 +864,9 @@ function renderTabs() {
     }
     for (const t of run.tabs) strip.appendChild(buildTabEl(t, "tab"));
   }
+  flipPlayIn(strip, snapStrip);
+  flipPlayIn(rail, snapRail);
+  flipPlayIn(pins, snapPins);
   document.body.classList.toggle("loading", tabsState.tabs.some((t) => t.loading));
   renderNavBtns();
   renderVtabCurrent();
@@ -787,6 +1010,9 @@ function renderSuggest() {
   sugItems.forEach((it, i) => {
     const row = document.createElement("div");
     row.className = "sug-row" + (i === sugSel ? " on" : "");
+    /* 悬停高亮：弹层是独立 webContents，鼠标事件只有那边收得到——行上带
+       索引，popup.js 悬停时把索引回传（popup:sug-hover → chrome:sug-hover）。 */
+    row.setAttribute("data-sug-i", String(i));
     const ic = document.createElement("span");
     ic.className = "sug-ic";
     ic.innerHTML = svg(it.icon || "page");
@@ -823,6 +1049,13 @@ async function fetchSuggest() {
   if (seq !== sugSeq) return; // 过期响应丢掉（打字快时后到的旧结果会把新结果盖掉）
   const ql = q.toLowerCase();
   const items = [];
+  /* 首行 = 对"输入内容本身"的默认动作（Edge/Chrome 的默认行）：URL 类输入
+     显示「打开 xxx」，让"回车会去哪"一眼可见。回车本身（没显式选中建议时）
+     永远按输入内容走 omniSubmit，建议行只是补充入口。 */
+  const direct = resolveOmnibox(q, cfgState.mappings, cfgState.searchTemplate, cfgState.searchIsLuogu !== false);
+  if (direct && (direct.type === "luogu" || direct.type === "external")) {
+    items.push({ kind: "url", icon: "page", label: "打开 " + q, sub: direct.url, url: direct.url });
+  }
   for (const m of data.mappings || []) {
     items.push({ kind: "url", icon: "page", label: m.key, sub: m.url, url: m.url });
   }
@@ -850,8 +1083,16 @@ async function fetchSuggest() {
     });
   }
   sugItems = items;
-  sugSel = items.length ? 0 : -1;
+  /* 默认不选中任何一行（R39）：以前默认选 0，回车到底走"建议 0"还是
+     "输入内容"取决于联想是否已返回——同一串输入两次回车行为不一样。
+     现在回车恒等于"提交输入内容"，只有显式按 ↓/↑/Tab/悬停才走建议行。 */
+  sugSel = -1;
   renderSuggest();
+}
+/* 选中态只改类名（不再整份重发 HTML 走 popupShow）：方向键/悬停每动一下
+   都重排一次弹层视图的话，列表看起来就"不跟手"。 */
+function paintSugSel() {
+  if (window.lgChrome.sugSel) window.lgChrome.sugSel(sugSel);
 }
 
 /* ---------- 侧坞（水平模式） ----------
@@ -885,6 +1126,9 @@ function renderDock() {
   const path = t && t.kind === "home" ? "@home" : (() => {
     try { return t && !/^file:/i.test(t.url || "") ? new URL(t.url).pathname : ""; } catch { return ""; }
   })();
+  /* 坞「首页」按钮（R39）改为"总是新建标签打开洛谷首页"，高亮判据跟着改：
+     当前标签是洛谷首页（www.luogu.com.cn/）时才亮，本地玻璃首页不算。 */
+  const luoguHome = !!(t && t.kind !== "home" && /^https?:\/\/(www\.)?luogu\.com\.cn\/?$/i.test(t.url || ""));
   const items = Array.isArray(cfgState.dockItems) ? cfgState.dockItems.filter((it) => it && it.href) : [];
   /* 坞的渲染仍在外壳（图标/选中态/文案一处都不重复）：这份 HTML 推给坞覆盖
      视图显示（R36：坞浮在页面之上、页面内容从它底下穿过，不再让位）。
@@ -901,7 +1145,7 @@ function renderDock() {
       const target = dockTarget(it.href);
       let active = false;
       if (target) {
-        if (target.type === "home") active = path === "@home";
+        if (target.type === "home") active = luoguHome;
         else if (target.type === "ide") active = path.indexOf("/ide") === 0;
         else if (target.type === "luogu") active = path.indexOf(target.url) === 0 && !(target.url === "/" && path && path !== "/");
         if (active) a.classList.add("active");
@@ -1157,10 +1401,17 @@ function menuAt(id, anchor) {
   for (const k of Object.keys(popActions)) if (!keep.has(k)) delete popActions[k];
   menuOpenId = id;
   const r = anchor.getBoundingClientRect();
+  /* 锚点没布局（隐藏/脱离文档/尺寸全零）时 rect 全零——原样发出去会把菜单
+     定位到窗口左上角（用户截图的"点右上角账号，菜单弹到左边"就是这个路径
+     的一个入口）。退化为贴窗口右缘、工具行下沿：账号芯片本来就在那附近，
+     观感上只是"没对齐"，不会跑到对面去。 */
+  const degenerate = !anchor.isConnected || (r.width === 0 && r.height === 0 && r.left === 0 && r.top === 0);
+  const ax = degenerate ? Math.max(8, Math.round(window.innerWidth - 8)) : Math.round(r.right);
+  const ay = degenerate ? headerH() : Math.round(r.bottom + 6);
   window.lgChrome.popupShow({
     html,
-    ax: Math.round(r.right),
-    ay: Math.round(r.bottom + 6),
+    ax,
+    ay,
     // 账号切换 / 登录验证码进行中时，点空白不许关菜单
     sticky: id === "account-menu" && !!switchJob,
     ...popupThemePayload(),
@@ -1647,6 +1898,9 @@ function renderTabFlyout(force, anim) {
     fit: "rect",
     fitPad: { l: 0, t: 0, r: 0, b: 0 },
     fullH: true,
+    /* 新建分组的预览色（浮层里的"新建分组"小签用它上色）：主进程的调色板
+       游标在外壳这边只知道下一个色键，映射成色值一起下发 */
+    nextColorHex: GROUP_COLORS[tabsState.nextGroupColor] || GROUP_COLORS.blue,
     ...(rightSide ? { ar: 0, ay: headerH() } : { al: 0, ay: 0 }),
     flyout: true,
     ...popupThemePayload(),
@@ -1918,17 +2172,24 @@ function commands() {
       run: () => window.lgChrome.unsplitTab(),
     },
     {
-      title: "分屏：切换拼合布局（等分列 / 网格 / 主窗格…）",
+      title: "分屏：关闭左侧窗格",
       run: () => {
         const t = currentTab();
-        if (t) window.lgChrome.splitLayoutNext(t.id);
+        if (t) window.lgChrome.splitCloseSide(t.id, "left");
       },
     },
     {
-      title: "分屏：聚焦 / 取消聚焦当前窗格",
+      title: "分屏：关闭右侧窗格",
       run: () => {
         const t = currentTab();
-        if (t) window.lgChrome.splitFocus(t.id);
+        if (t) window.lgChrome.splitCloseSide(t.id, "right");
+      },
+    },
+    {
+      title: "分屏：反转左右位置",
+      run: () => {
+        const t = currentTab();
+        if (t) window.lgChrome.splitReverse(t.id);
       },
     },
     {
@@ -2543,7 +2804,20 @@ function bind() {
   });
   const omni = document.getElementById("omni-input");
   omni.addEventListener("focus", () => omni.select());
+  /* 输入法组字期间不发联想、不响应回车/方向键（R39）：
+     - input 事件在组字过程中连续触发（拼音串），发出去的是半成品；
+     - Enter 是"确认候选词"、↑↓ 是"选候选词"——都不该动联想列表，更不能
+       顺手导航（"打中文按回车就跳走"就是这个）。
+     compositionend 之后补一次联想，拿的是已上屏的正文。 */
+  const omniComposing = () => { try { return !!omni.isComposing; } catch (e) { return false; } };
   omni.addEventListener("input", () => {
+    if (omniComposing()) return;
+    sugSel = -1; // 输入变化即复位选中：回车按输入内容走，不按建议走
+    clearTimeout(sugTimer);
+    sugTimer = setTimeout(fetchSuggest, 120);
+  });
+  omni.addEventListener("compositionend", () => {
+    sugSel = -1;
     clearTimeout(sugTimer);
     sugTimer = setTimeout(fetchSuggest, 120);
   });
@@ -2552,6 +2826,7 @@ function bind() {
     setTimeout(() => { if (sugOpen) closeSuggest(); }, 220);
   });
   omni.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return; // 组字中的按键一律不算数
     if (e.key === "Enter") {
       if (sugOpen && sugSel >= 0 && sugItems[sugSel]) {
         e.preventDefault();
@@ -2562,14 +2837,35 @@ function bind() {
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       if (!sugOpen || !sugItems.length) return;
       e.preventDefault();
-      sugSel = (sugSel + (e.key === "ArrowDown" ? 1 : -1) + sugItems.length) % sugItems.length;
-      renderSuggest();
+      const n = sugItems.length;
+      // sugSel 默认 -1（没选中）：↓ 从第一行开始、↑ 从最后一行开始，之后循环
+      if (e.key === "ArrowDown") sugSel = sugSel < 0 ? 0 : (sugSel + 1) % n;
+      else sugSel = sugSel < 0 ? n - 1 : (sugSel - 1 + n) % n;
+      paintSugSel();
+    } else if (e.key === "Tab" && sugOpen && sugItems.length) {
+      // Tab / Shift+Tab 也能在建议里走（Edge 同款），不夺焦点
+      e.preventDefault();
+      const n = sugItems.length;
+      if (e.shiftKey) sugSel = sugSel < 0 ? n - 1 : (sugSel - 1 + n) % n;
+      else sugSel = sugSel < 0 ? 0 : (sugSel + 1) % n;
+      paintSugSel();
     } else if (e.key === "Escape") {
       if (sugOpen) { closeSuggest(); return; }
       omni.blur();
       syncOmni();
     }
   });
+  /* 悬停高亮回传（popup.js → 主进程 → 这里）：选中跟着鼠标走，回车执行的
+     就是鼠标指着的那一行（Chrome/Edge 同款）。 */
+  if (window.lgChrome.onSugHover) {
+    window.lgChrome.onSugHover((i) => {
+      const idx = Number(i);
+      if (!sugOpen || !sugItems[idx]) return;
+      if (idx === sugSel) return;
+      sugSel = idx;
+      paintSugSel();
+    });
+  }
   document.getElementById("btn-stop").addEventListener("click", () => window.lgChrome.stop());
   // 中键点击空白标签条区域新建（点在标签上不算空白——双保险，标签自己也拦了冒泡）
   document.getElementById("tabstrip").addEventListener("mousedown", (e) => {

@@ -30,8 +30,21 @@ contextBridge.exposeInMainWorld("lgPopup", {
   tabReorder: (id, beforeId, zone) => ipcRenderer.invoke("popup:tab-reorder", { id: Number(id), beforeId: beforeId == null ? null : Number(beforeId), zone: zone === "pinned" || zone === "normal" ? zone : null }),
   /* 拖拽期间挂住浮层：光标拖出面板时主进程先别收回（否则拖到一半面板没了） */
   hold: (on) => ipcRenderer.send("popup:hold", !!on),
-  /* 浮层里的分组拖动：与外壳同一套落点语义（拖到标签上建组/并组、拖到组头加入） */
+  /* 浮层里的分组拖动：与外壳同一套落点语义（拖到标签上建组/并组、拖到组头加入、
+     拖组头整组移动、邻接进出组推断） */
   groupDrop: (m) => ipcRenderer.invoke("popup:group-drop", m),
+  groupJoin: (id, groupId) => ipcRenderer.invoke("tab:group-join", { id: Number(id), groupId: Number(groupId) }),
+  groupLeave: (id) => ipcRenderer.invoke("tab:group-leave", Number(id)),
+  groupMove: (groupId, anchorId, before) =>
+    ipcRenderer.invoke("tab:group-move", {
+      groupId: Number(groupId),
+      anchorId: anchorId == null ? null : Number(anchorId),
+      before: !!before,
+    }),
+  /* 联想列表：悬停行索引回传（回车执行鼠标指着的那行）+ 选中态本地更新
+     （外壳按方向键/悬停只发改类名的信号，不重建 DOM——列表才"跟手"） */
+  sugHover: (i) => ipcRenderer.send("popup:sug-hover", Number(i) || 0),
+  onSugSel: (cb) => ipcRenderer.on("popup:sug-sel", (_e, i) => cb(i)),
   onClear: (cb) => ipcRenderer.on("popup:clear", () => cb()),
-  version: "7",
+  version: "8",
 });

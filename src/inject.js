@@ -158,6 +158,22 @@
     }
   }
 
+  /* 视频就绪：关掉图片/渐变兜底（material.css 只在 data-lg-bgready="1" 时
+     才把背景图去掉），并起播（只在活动标签）。 */
+  function bgVideoReady(vEl) {
+    try { document.documentElement.setAttribute("data-lg-bgready", "1"); } catch (e) {}
+    playBgVideoIfActive(vEl);
+  }
+  /* 视频彻底失败（直放 + blob 兜底都没拿到数据）：退回图片/渐变兜底。
+     以前这里静默放弃 → 用户看到的就是"背景直接消失"（R39）。 */
+  function bgVideoFail() {
+    try {
+      var root = document.documentElement;
+      root.setAttribute("data-lg-bgready", "0");
+      if (root.getAttribute("data-lg-bgvideo") === "1") root.setAttribute("data-lg-bgvideo", "0");
+    } catch (e) {}
+  }
+
   /* 视频壁纸喂源：优先直接 src=lg-media://。协议注册时就是 stream:true，
      主进程的 protocol.handle 也实现了 Range——直放成功就省掉"主进程读全量
      字节 → IPC → 页面 blob"的三倍内存放大（视频动辄几十 MB，每个标签一份
@@ -166,7 +182,9 @@
   function feedBgVideo(vEl, url) {
     if (vEl._lgBlob) { try { URL.revokeObjectURL(vEl._lgBlob); } catch (e) {} vEl._lgBlob = null; }
     var settled = false;
+    var timer = 0;
     var cleanup = function () {
+      clearTimeout(timer);
       vEl.removeEventListener("error", onErr);
       vEl.removeEventListener("loadedmetadata", onMeta);
     };
@@ -180,29 +198,42 @@
       if (settled) return;
       settled = true;
       cleanup();
-      playBgVideoIfActive(vEl);
+      bgVideoReady(vEl);
     };
     vEl.addEventListener("error", onErr);
     vEl.addEventListener("loadedmetadata", onMeta);
+    /* 既没 error 也没 loadedmetadata（媒体加载器卡住/协议没注册）时的兜底：
+       4s 后转 blob；blob 也失败就回退到图片/渐变兜底 */
+    timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      blobFeedBgVideo(vEl);
+    }, 4000);
     vEl.src = url;
     try { vEl.load(); } catch (e) {}
   }
 
   /* blob 兜底：主进程读字节（有缓存）→ 页面 createObjectURL。 */
   function blobFeedBgVideo(vEl) {
-    if (!window.lgApp || !window.lgApp.wallVideo) return;
+    if (!window.lgApp || !window.lgApp.wallVideo) { bgVideoFail(); return; }
     window.lgApp
       .wallVideo()
       .then(function (r) {
-        if (!r || !r.ok || !r.data) return;
+        if (!r || !r.ok || !r.data) { bgVideoFail(); return; }
         var u8 = r.data instanceof Uint8Array ? r.data : new Uint8Array(r.data);
         if (vEl._lgBlob) { try { URL.revokeObjectURL(vEl._lgBlob); } catch (e) {} }
         vEl._lgBlob = URL.createObjectURL(new Blob([u8], { type: r.type || "video/webm" }));
         vEl.src = vEl._lgBlob;
         try { vEl.load(); } catch (e) {}
-        playBgVideoIfActive(vEl);
+        /* blob 同样要等 loadedmetadata 才算就绪；再给一次 4s 兜底 */
+        var t = setTimeout(function () { if (vEl.readyState < 1) bgVideoFail(); }, 4000);
+        vEl.addEventListener("loadedmetadata", function () {
+          clearTimeout(t);
+          bgVideoReady(vEl);
+        }, { once: true });
       })
-      .catch(function () {});
+      .catch(function () { bgVideoFail(); });
   }
 
   /* ---------- 壁纸视差：鼠标移动壁纸层轻微跟随 ----------
@@ -539,11 +570,15 @@
     // 有壁纸时页面底色必须透明，否则壁纸被挡住（此前壁纸开关失效的根因）
     root.setAttribute("data-lg-wall", wall !== "none" || bgVideo ? "1" : "0");
     root.setAttribute("data-lg-bgvideo", bgVideo ? "1" : "0");
+    if (!bgVideo) root.setAttribute("data-lg-bgready", "0");
   var vEl = ensureBgVideo();
   if (vEl) {
       if (bgVideo) {
         if (vEl.getAttribute("data-src") !== cfg.wallpaperUrl) {
           vEl.setAttribute("data-src", cfg.wallpaperUrl);
+          /* 换源：先退回图片/渐变兜底（bgready=0），等新源 loadedmetadata
+             再切到视频面——加载期不再是一片空白 */
+          root.setAttribute("data-lg-bgready", "0");
           vEl.muted = true;
           /* 直放 lg-media:// 优先（零拷贝），失败自动转 blob 兜底（feedBgVideo） */
           feedBgVideo(vEl, cfg.wallpaperUrl);
@@ -1964,9 +1999,39 @@
      setProperty），也是页面"晚到修正再闪一次"的来源。配置变化由主进程推
      （applyConfigToPages）、SPA 换路由由 did-navigate-in-page 触发 apply；
      这里只兜"URL 变了但主进程没通知到"的漏。 */
+  /* 壁纸自愈（R39）：无规律"背景直接消失"、刷新或重开就好 = 运行期状态丢失
+     （层被站点脚本清掉 / 视频挂了 / 样式丢了）。每拍（2.5s）做一次便宜体检，
+     不健康就重跑 apply 把层与视频重建回来；带退避与次数上限，不刷屏。 */
+  var healLast = 0;
+  var healTries = 0;
+  function wallpaperUnhealthy() {
+    if (document.documentElement.getAttribute("data-lg-wall") !== "1") return false;
+    var bg = document.getElementById(BG_ID);
+    if (!bg) return true;
+    if (document.documentElement.getAttribute("data-lg-bgvideo") === "1") {
+      var v = bg.querySelector(":scope > video.lg-bg-video");
+      if (!v) return true;
+      if (v.getAttribute("data-src") && v.readyState < 1) return true;
+      return false;
+    }
+    var bi = "";
+    try { bi = getComputedStyle(bg).backgroundImage || ""; } catch (e) {}
+    return !bi || bi === "none";
+  }
+  function healWallpaper() {
+    var now = Date.now();
+    if (now - healLast < 8000 || healTries >= 5) return;
+    healLast = now;
+    healTries++;
+    try { apply(state.cfg); } catch (e) {}
+    try { window.__lgWallHeal = healTries; } catch (e) {}
+  }
   var lastHref = location.href;
   var glassTick = 0;
   setInterval(function () {
+    // 壁纸层体检（所有页面都做：本地页也有壁纸）
+    if (wallpaperUnhealthy()) healWallpaper();
+    else healTries = 0;
     if (isLuoguPage) {
       ideInPageQueue(); // 题目页自带 IDE 模式的兜底巡检（观察者漏拍时补）
       sweepPromos();
@@ -2201,9 +2266,14 @@
   // 调试出口：探针/实测可以直接触发一次全量扫面看结果
   window.__lgGlassSweep = sweepGlassSurfaces;
 
-  // SPA/动态渲染兜底：背景层若被页面脚本移除则自动补回
+  // SPA/动态渲染兜底：背景层若被页面脚本移除则自动补回。只补一个空 div 不够
+  // （R39）——视频子元素、图片样式、几何都得跟着回来，所以补完立刻重跑一次
+  // apply（幂等）；这也覆盖"站点整块重渲染把壁纸层清掉"导致的背景消失。
   var mo = new MutationObserver(function () {
-    if (!document.getElementById(BG_ID)) ensureBgLayer();
+    if (!document.getElementById(BG_ID)) {
+      ensureBgLayer();
+      try { apply(state.cfg); } catch (e) {}
+    }
   });
   function startObserve() {
     if (document.body) {

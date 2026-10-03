@@ -53,6 +53,13 @@
     if (/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(:\d+)?(\/\S*)?$/i.test(s)) {
       return { label: "网址 " + s, url: "https://" + s };
     }
+    /* localhost / 内网主机名（R39，与地址栏同一套）：单段主机名（没有点）
+       以前一律当搜索词，localhost:3000 / my-server:8080 这类明确的地址意图
+       被搜掉。本机与内网默认按 http 试（Chrome 同款），带 scheme 的不受影响。 */
+    if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?(\/\S*)?$/i.test(s) ||
+        /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:\d+(\/\S*)?$/i.test(s)) {
+      return { label: "网址 " + s, url: "http://" + s };
+    }
     if (/^[a-z]\d+$/i.test(s)) return { label: "题目 " + s.toUpperCase(), url: "https://www.luogu.com.cn/problem/" + s.toUpperCase() };
     if (/^\d+$/.test(s)) return { label: "用户 UID " + s, url: "https://www.luogu.com.cn/user/" + s };
     /* 搜索回退吃主进程下发的搜索引擎模板（与地址栏同一家；inject.js 的
@@ -187,6 +194,9 @@
   /* ---------- 绑定 ---------- */
   $("go").addEventListener("click", go);
   $("q").addEventListener("keydown", (e) => {
+    /* 输入法组字中的回车 = 确认候选词，不是提交（R39）。keyCode 229 是
+       部分输入法在组字期间对按键的统一编码，两个条件都要挡。 */
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter") go();
   });
   $("q").addEventListener("input", () => {

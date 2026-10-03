@@ -84,6 +84,10 @@ contextBridge.exposeInMainWorld("lgChrome", {
   stop: () => ipcRenderer.invoke("tab:stop"),
   /* 地址栏联想：历史 + 映射词（打开的标签与搜索行在外壳本地合并） */
   navSuggest: (q) => ipcRenderer.invoke("lg-nav:suggest", String(q || "")),
+  /* 联想选中态：方向键/悬停只发改类名的信号（不重建弹层 DOM）；悬停索引由
+     弹层回传（popup:sug-hover → chrome:sug-hover），回车执行鼠标指着的那行 */
+  sugSel: (i) => ipcRenderer.send("chrome:sug-sel", Number(i)),
+  onSugHover: (cb) => ipcRenderer.on("chrome:sug-hover", (_e, i) => cb(i)),
   toggleIde: () => ipcRenderer.invoke("tab:toggle-ide"),
   /* 分屏编辑器（题目右侧并排 IDE 的抽屉）：题目页工具条已删（R36），
      改从命令面板进 */
@@ -97,15 +101,14 @@ contextBridge.exposeInMainWorld("lgChrome", {
   organizeTabs: (action) => ipcRenderer.invoke("tab:organize", action),
   organizeUndo: () => ipcRenderer.invoke("tab:organize-undo"),
   onOrganizeDone: (cb) => ipcRenderer.on("chrome:organize-done", (_e, r) => cb(r)),
-  /* 分屏拼合：并排/加入组 / 退出 / 拖比例（field=colRatio|rowRatio|colRatio2|
-     rowRatio2，ratio=null 复位布局均分）/ 切布局 / 循环布局 / 聚焦窗格；
-     几何由 onSplit 推下来（{ bars:[...] }，条数随布局变） */
+  /* 分屏（R39 起只做左右两格，对齐 Chromium 开源 split tab）：并排 / 退出 /
+     拖比例（colRatio，null 复位均分）/ 关闭左格 / 关闭右格 / 反转左右；
+     几何由 onSplit 推下来（{ bars:[...] }，只有一条竖条） */
   splitTab: (id) => ipcRenderer.invoke("tab:split", id),
   unsplitTab: (id) => ipcRenderer.invoke("tab:unsplit", id),
   splitRatio: (id, ratio, field) => ipcRenderer.invoke("tab:split-ratio", { id, ratio, field }),
-  splitLayout: (id, layout) => ipcRenderer.invoke("tab:split-layout", { id, layout }),
-  splitLayoutNext: (id) => ipcRenderer.invoke("tab:split-layout-next", { id }),
-  splitFocus: (id) => ipcRenderer.invoke("tab:split-focus", id),
+  splitCloseSide: (id, side) => ipcRenderer.invoke("tab:split-close-side", { id, side }),
+  splitReverse: (id) => ipcRenderer.invoke("tab:split-reverse", id),
   onSplit: (cb) => ipcRenderer.on("chrome:split", (_e, r) => cb(r)),
   /* Glance 链接速览：主进程推送打开/几何变化；外壳回报按钮点击 */
   onGlance: (cb) => ipcRenderer.on("chrome:glance", (_e, p) => cb(p)),

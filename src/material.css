@@ -107,7 +107,10 @@
   display: none;
 }
 html[data-lg-bgvideo="1"] .lg-wallpaper > video { display: block; }
-html[data-lg-bgvideo="1"] .lg-wallpaper { background-image: none; }
+/* 只有视频**真的拿到数据**（loadedmetadata / blob 就绪 → data-lg-bgready="1"）
+   才关掉图片/渐变兜底：视频挂掉（文件没了、解码失败、媒体加载器卡住）时
+   背景不至于整片空白——"背景直接消失"的一条根因（R39）。 */
+html[data-lg-bgvideo="1"][data-lg-bgready="1"] .lg-wallpaper { background-image: none; }
 
 /* 弹层副本：同一公式 + 按自身在窗口里的坐标取负偏移。壁纸之后跟"玻璃模糊链"
    （blur/saturate/brightness），因为这里没有真 backdrop-filter 可用；压在

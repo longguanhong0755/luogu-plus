@@ -37,8 +37,13 @@ function place(menu, p) {
      内容堆在顶上，下面一大片空面板一直盖到坞栏）。 */
   const w = menu.offsetWidth || 240;
   const h = menu.offsetHeight || 0;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  /* 夹取基准必须是"整个窗口"的尺寸（主进程每次 popup:show 都带 payload.win）。
+     弹层视图本体的视口在 showPopup 改 bounds 的同一拍里还没跟上——预热态是
+     1×1、上一次 rect 弹层留下的是一小块，拿 window.innerWidth 夹取会把贴右缘
+     的菜单夹成 left=0、溢出翻转再把 top 推到 8：用户截图的"点右上角账号，
+     菜单弹到左上角"就是这个（有时候才出现 = 取决于视口有没有跟上）。 */
+  const vw = p.win && p.win.w ? Math.round(p.win.w) : window.innerWidth;
+  const vh = p.win && p.win.h ? Math.round(p.win.h) : window.innerHeight;
   // 注意 al/ay 要用 != null 判：悬停浮层就是 al:0（贴左缘），|| 会把 0 当没传
   let left = p.ax != null ? p.ax - w : p.al != null ? p.al : 8;
   left = Math.max(0, Math.min(left, vw - w - 8));
@@ -253,7 +258,31 @@ let vdrag = null;
 function clearMarks() {
   root.querySelectorAll(".drop-before, .drop-after, .drop-zone, .drop-merge").forEach((el) => {
     el.classList.remove("drop-before", "drop-after", "drop-zone", "drop-merge");
+    // 合并高亮用 --gc 染色；分组成员自己就带 --gc（组色），不能一起清
+    if (!el.classList.contains("grouped")) el.style.removeProperty("--gc");
   });
+}
+/* 光标旁的小签（与外壳同观感）：松手会发生什么 */
+let tipEl = null;
+function dragTip(text, x, y, color) {
+  if (!text) {
+    if (tipEl) { tipEl.remove(); tipEl = null; }
+    return;
+  }
+  if (!tipEl) {
+    tipEl = document.createElement("div");
+    tipEl.id = "drag-tip";
+    document.body.appendChild(tipEl);
+  }
+  tipEl.textContent = text;
+  tipEl.style.cssText =
+    "position:fixed;z-index:80;pointer-events:none;padding:3px 9px;border-radius:8px;" +
+    "font-size:12px;line-height:1.5;white-space:nowrap;background:var(--surface-2);" +
+    "color:var(--ink);box-shadow:0 3px 12px rgba(0,0,0,.18)";
+  tipEl.style.setProperty("--gc", color || "var(--ink)");
+  tipEl.style.boxShadow = "0 3px 12px rgba(0,0,0,.18), inset 0 0 0 1.5px " + (color || "var(--hairline)");
+  tipEl.style.left = Math.round(x + 14) + "px";
+  tipEl.style.top = Math.round(y + 16) + "px";
 }
 /* 行的组归属（克隆里的 .vgroup[data-gid] 就是它） */
 function rowGidOf(el) {
@@ -278,6 +307,7 @@ function endDrag(commit) {
   vdrag = null;
   if (!d) return;
   d.el.classList.remove("dragging");
+  dragTip(null);
   if (window.lgPopup.hold) window.lgPopup.hold(false);
   clearMarks();
   if (!d.moved) {
@@ -287,6 +317,11 @@ function endDrag(commit) {
     return;
   }
   if (!commit) return;
+  /* 整组拖动（R39 补齐，与外壳同语义）：只报锚点，主进程搬整块 */
+  if (d.gid != null) {
+    if (d.merge && d.merge.anchorId != null) window.lgPopup.groupMove(d.gid, d.merge.anchorId, d.merge.before);
+    return;
+  }
   /* 拖到标签上 / 拖到组头上（Edge 的建组手势，R38）：与外壳共用主进程通道 */
   if (d.merge && d.merge.kind === "tab") {
     window.lgPopup.groupDrop({ id: d.id, targetId: d.merge.targetId, before: d.merge.before });
@@ -298,15 +333,37 @@ function endDrag(commit) {
   }
   let next = d.el.nextElementSibling;
   while (next && !next.getAttribute("data-id")) next = next.nextElementSibling;
+  let prev = d.el.previousElementSibling;
+  while (prev && !prev.getAttribute("data-id")) prev = prev.previousElementSibling;
   const zone = d.el.closest("#vtab-pins") ? "pinned" : "normal";
-  window.lgPopup.tabReorder(d.id, next ? Number(next.getAttribute("data-id")) : null, zone);
+  /* 邻接进出组推断（R39 补齐，与外壳同语义）：落在某个组块正中间 = 入组；
+     拖离自己的组块（两侧都没有本组成员）= 出组。先归属后重排。 */
+  const cur = rowGidOf(d.el);
+  const prevG = prev ? rowGidOf(prev) : null;
+  const nextG = next ? rowGidOf(next) : null;
+  (async () => {
+    if (zone === "pinned") {
+      if (cur != null && window.lgPopup.groupLeave) await window.lgPopup.groupLeave(d.id);
+    } else if (prevG != null && prevG === nextG && cur !== prevG && window.lgPopup.groupJoin) {
+      await window.lgPopup.groupJoin(d.id, prevG);
+    } else if (cur != null && prevG !== cur && nextG !== cur && window.lgPopup.groupLeave) {
+      await window.lgPopup.groupLeave(d.id);
+    }
+    window.lgPopup.tabReorder(d.id, next ? Number(next.getAttribute("data-id")) : null, zone);
+  })();
 }
 document.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
+  /* 组头：整组拖动（与外壳同一套语义） */
+  const head = e.target.closest ? e.target.closest(".vghead[data-gid]") : null;
+  if (head) {
+    vdrag = { gid: Number(head.dataset.gid), el: head, sx: e.clientX, sy: e.clientY, moved: false, merge: null, mergeRow: null, mergeKind: null };
+    return;
+  }
   const row = e.target.closest ? e.target.closest(ROW_SEL) : null;
   if (!row || !row.hasAttribute("data-drag-row")) return;
   if (e.target.closest(".t-close")) return;
-  vdrag = { id: Number(row.getAttribute("data-id")), el: row, sx: e.clientX, sy: e.clientY, moved: false, merge: null };
+  vdrag = { id: Number(row.getAttribute("data-id")), el: row, sx: e.clientX, sy: e.clientY, moved: false, merge: null, mergeRow: null, mergeKind: null };
 });
 document.addEventListener("pointermove", (e) => {
   if (!vdrag) return;
@@ -321,26 +378,69 @@ document.addEventListener("pointermove", (e) => {
   }
   const over = document.elementFromPoint(e.clientX, e.clientY);
   if (!over || !over.closest) return;
-  /* 落点类型判定（与外壳同规则，R38）：组头上 = 加入该组（折叠组也能当落点）；
-     标签中段 = 与它建组/并组（Edge 的"拖到标签上"）；其余 = 普通插入 */
+  /* ---- 整组拖动：落点 = 别的组头 / 别的标签（报锚点 + 前/后） ---- */
+  if (vdrag.gid != null) {
+    const headEl = over.closest(".vghead[data-gid]");
+    const rowEl = over.closest(ROW_SEL);
+    let anchorEl = null;
+    if (headEl && Number(headEl.dataset.gid) !== vdrag.gid) anchorEl = headEl;
+    else if (rowEl && rowEl !== vdrag.el && rowGidOf(rowEl) !== vdrag.gid) anchorEl = rowEl;
+    if (!anchorEl) { vdrag.merge = null; dragTip(null); return; }
+    const r = anchorEl.getBoundingClientRect();
+    const before = e.clientY < r.top + r.height / 2;
+    const anchorId = anchorEl.getAttribute("data-id") != null
+      ? Number(anchorEl.getAttribute("data-id"))
+      : Number((anchorEl.querySelector("[data-id]") || { dataset: {} }).dataset.id);
+    vdrag.merge = Number.isFinite(anchorId) ? { anchorId, before } : null;
+    clearMarks();
+    (anchorEl.closest(".vgroup") || anchorEl).classList.add("drop-zone");
+    dragTip("移动分组到这里", e.clientX, e.clientY, null);
+    return;
+  }
+  /* ---- 落点类型判定（与外壳同规则，R38/R39）：组头上 = 加入该组（折叠组也能
+     当落点）；标签中段 = 与它建组/并组；其余 = 普通插入。中段带迟滞（进入
+     0.3~0.7、退出 0.22~0.78），边界上不再来回横跳。 ---- */
   const head = over.closest(".vghead[data-gid]");
   if (head && Number(head.dataset.gid) !== rowGidOf(vdrag.el)) {
-    vdrag.merge = { kind: "group", targetGid: Number(head.dataset.gid) };
+    const gid = Number(head.dataset.gid);
+    vdrag.merge = { kind: "group", targetGid: gid };
+    vdrag.mergeRow = null;
+    vdrag.mergeKind = null;
     clearMarks();
     (head.closest(".vgroup") || head).classList.add("drop-zone");
+    const grp = head.closest(".vgroup");
+    const col = grp ? grp.style.getPropertyValue("--gc") : "";
+    const nmEl = head.querySelector(".g-name");
+    dragTip("加入「" + ((nmEl && nmEl.textContent) || "分组") + "」", e.clientX, e.clientY, col);
     return;
   }
   const row = over.closest(ROW_SEL);
-  if (!row || row === vdrag.el) { vdrag.merge = null; return; }
+  if (!row || row === vdrag.el) {
+    vdrag.merge = null; vdrag.mergeRow = null; vdrag.mergeKind = null; dragTip(null);
+    return;
+  }
   const r = row.getBoundingClientRect();
   const frac = (e.clientY - r.top) / Math.max(1, r.height);
-  if (!row.closest("#vtab-pins") && frac >= 0.3 && frac <= 0.7) {
-    vdrag.merge = { kind: "tab", targetId: Number(row.getAttribute("data-id")), before: frac < 0.5 };
+  const latched = vdrag.mergeRow === row && vdrag.mergeKind === "tab";
+  const inMerge = !row.closest("#vtab-pins") && (latched ? (frac >= 0.22 && frac <= 0.78) : (frac >= 0.3 && frac <= 0.7));
+  if (inMerge) {
+    const targetId = Number(row.getAttribute("data-id"));
+    vdrag.merge = { kind: "tab", targetId, before: frac < 0.5 };
+    vdrag.mergeRow = row;
+    vdrag.mergeKind = "tab";
     clearMarks();
+    const grp = row.closest(".vgroup");
+    const col = grp ? grp.style.getPropertyValue("--gc") : (current.nextColorHex || "#3b82f6");
+    row.style.setProperty("--gc", col);
     row.classList.add("drop-merge");
+    const nmEl = grp ? grp.querySelector(".vghead .g-name") : null;
+    dragTip(grp ? "加入「" + ((nmEl && nmEl.textContent) || "分组") + "」" : "新建分组", e.clientX, e.clientY, col);
     return;
   }
   vdrag.merge = null;
+  vdrag.mergeRow = null;
+  vdrag.mergeKind = null;
+  dragTip(null);
   const before = e.clientY < r.top + r.height / 2;
   row.parentElement.insertBefore(vdrag.el, before ? row : row.nextSibling);
   markDrop(row, before);
@@ -349,8 +449,31 @@ document.addEventListener("pointerup", () => { if (vdrag) endDrag(true); });
 document.addEventListener("pointercancel", () => { if (vdrag) endDrag(false); });
 
 window.lgPopup.onShow(show);
-// 窗口缩放：主进程补发窗口尺寸，假壁纸几何跟着更新
-if (window.lgPopup.onWin) window.lgPopup.onWin(setWallWin);
+// 窗口缩放：主进程补发窗口尺寸，假壁纸几何跟着更新；全窗模式的菜单还要
+// 重摆一次（夹取基准换了一整轮，贴右缘的菜单可能因此翻面/换位）
+if (window.lgPopup.onWin) window.lgPopup.onWin((win) => {
+  setWallWin(win);
+  const menu = root.firstElementChild;
+  if (menu && current && current.fit !== "rect" && current.kind !== "glance") {
+    current = { ...current, win };
+    try { place(menu, current); } catch (e) {}
+  }
+});
+/* 联想列表的选中态（外壳发 popup:sug-sel）：只改类名，不重建 DOM */
+if (window.lgPopup.onSugSel) {
+  window.lgPopup.onSugSel((i) => {
+    root.querySelectorAll("[data-sug-i]").forEach((el) => {
+      el.classList.toggle("on", Number(el.getAttribute("data-sug-i")) === Number(i));
+    });
+  });
+}
+/* 悬停高亮：把行索引回传给外壳（回车要执行鼠标指着的那一行）。弹层是独立
+   webContents，外壳的 mouseover 到不了这里。 */
+document.addEventListener("mouseover", (e) => {
+  const row = e.target && e.target.closest ? e.target.closest("[data-sug-i]") : null;
+  if (!row || !window.lgPopup.sugHover) return;
+  window.lgPopup.sugHover(Number(row.getAttribute("data-sug-i")));
+});
 
 /* 菜单关闭时清掉菜单内容（弹出层视图本体由主进程藏掉，不吃点击） */
 if (window.lgPopup.onClear) window.lgPopup.onClear(() => {
