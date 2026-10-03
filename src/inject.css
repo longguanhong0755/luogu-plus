@@ -364,41 +364,6 @@ html[data-lg-declutter="1"] .theme-frosted::before {
 }
 #lg-quicksearch input::placeholder { color: #a1a1aa; }
 
-/* ============================================================
-   题目页增强：分屏编辑器入口 + 样例复制
-   ============================================================ */
-#lg-problem-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  margin: 0 0 12px;
-}
-#lg-problem-tools .lg-pt-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 31px;
-  padding: 0 11px;
-  border: 1px solid var(--lg-glass-line);
-  border-radius: 6px;
-  background: var(--lg-glass-card);
-  color: var(--lg-ink, #18181b);
-  font-family: var(--lg-sans);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: border-color 0.12s;
-}
-#lg-problem-tools .lg-pt-btn:hover { border-color: var(--lg-accent, #18181b); }
-#lg-problem-tools .lg-pt-btn svg {
-  width: 14px; height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 /* ---------- IDE 页面适配（/ide，Monaco 外围单色化） ---------- */
 /* 顶栏与底部 I/O 面板容器跟随主题着色 */
 .editor-top-bar,

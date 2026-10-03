@@ -3,7 +3,7 @@
    暴露 window.__lgGlass.apply(config)，主进程在每次页面加载后调用；
    设置页改配置时也通过主进程实时推送到这里。
    开关一览：pageTheme(auto/light/dark，v3.5.1 起 native 并入 auto) / clean /
-            declutter / quickSearch / listTools / problemEditor / contentDesat / ideNative
+            declutter / quickSearch / listTools / contentDesat / ideNative
    ============================================================ */
 (function () {
   if (window.__lgGlass) return;
@@ -484,7 +484,6 @@
     root.setAttribute("data-lg-declutter", cfg.declutter ? "1" : "0");
     root.setAttribute("data-lg-quicksearch", cfg.quickSearch === false ? "0" : "1");
     root.setAttribute("data-lg-listtools", cfg.listTools === false ? "0" : "1");
-    root.setAttribute("data-lg-problem-editor", cfg.problemEditor === false ? "0" : "1");
 
     // 视觉参数（全部内联下发，含主题变量）
     // 变量跟随 data-lg-theme 而不是 resolved：暗色走整页反转时，这一套必须
@@ -637,19 +636,15 @@
     } else if (isIde || pageTheme === "native") {
       teardownListTools();
       teardownQuickSearch();
-      teardownProblemExtras();
     } else if (/\/problem\/[A-Za-z]+\d+/.test(path)) {
       teardownListTools();
       teardownQuickSearch();
-      setupProblemExtras();
     } else if (/\/(problem|training|contest|record)\/list/.test(path) || /^\/problem\/?$/.test(path)) {
-      teardownProblemExtras();
       setupListTools();
       setupQuickSearch();
     } else {
       teardownListTools();
       teardownQuickSearch();
-      teardownProblemExtras();
     }
   }
 
@@ -890,79 +885,6 @@
   }
   function teardownQuickSearch() {
     var el = document.getElementById("lg-quicksearch");
-    if (el) el.remove();
-  }
-
-  /* ============================================================
-     功能三：题目页增强——分屏编辑器 + 样例一键复制
-     ============================================================ */
-  function setupProblemExtras() {
-    if (document.documentElement.getAttribute("data-lg-problem-editor") !== "1") return;
-    if (document.getElementById("lg-problem-tools")) return;
-
-    var bar = document.createElement("div");
-    bar.id = "lg-problem-tools";
-
-    var btnDrawer = document.createElement("button");
-    btnDrawer.className = "lg-pt-btn";
-    btnDrawer.type = "button";
-    btnDrawer.innerHTML =
-      '<svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M14 5v14"/></svg><span>分屏编辑器</span>';
-    btnDrawer.title = "在题目右侧并排打开洛谷 IDE（Ctrl+I 可切到独立 IDE 标签页）";
-    btnDrawer.addEventListener("click", function () {
-      appCommand("drawer/toggle");
-    });
-    bar.appendChild(btnDrawer);
-
-    var btnIde = document.createElement("button");
-    btnIde.className = "lg-pt-btn";
-    btnIde.type = "button";
-    btnIde.innerHTML = '<svg viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/></svg><span>打开 IDE</span>';
-    btnIde.addEventListener("click", function () {
-      appCommand("ide");
-    });
-    bar.appendChild(btnIde);
-
-    var copyN = 0;
-    var samples = document.querySelectorAll(".lfe-marked pre, .sample pre, [class*='sample'] pre");
-    if (samples.length) {
-      var btnCopy = document.createElement("button");
-      btnCopy.className = "lg-pt-btn";
-      btnCopy.type = "button";
-      btnCopy.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 4h9v14H9z"/><path d="M6 7v13h9"/></svg><span>复制全部样例</span>';
-      btnCopy.addEventListener("click", function () {
-        var parts = [];
-        for (var i = 0; i < samples.length; i++) {
-          // 克隆后再取文本：sweepCodeCopy 挂进来的「复制」按钮也在 pre 里，
-          // 直接 textContent 会把按钮文字一起拷走
-          var clone = samples[i].cloneNode(true);
-          var btns = clone.querySelectorAll(".lg-code-copy");
-          for (var b = 0; b < btns.length; b++) btns[b].remove();
-          parts.push((clone.textContent || "").replace(/\s+$/, ""));
-        }
-        var txt = parts.join("\n");
-        try {
-          navigator.clipboard.writeText(txt);
-        } catch (e) {
-          var ta = document.createElement("textarea");
-          ta.value = txt;
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand("copy");
-          ta.remove();
-        }
-        btnCopy.querySelector("span").textContent = "已复制 " + samples.length + " 段";
-        copyN++;
-        setTimeout(function () { btnCopy.querySelector("span").textContent = "复制全部样例"; }, 1800);
-      });
-      bar.appendChild(btnCopy);
-    }
-
-    var host = document.querySelector(".columba-content-wrap .main, .main-container main, main") || document.body;
-    try { host.insertBefore(bar, host.firstChild); } catch (e) { document.body.insertBefore(bar, document.body.firstChild); }
-  }
-  function teardownProblemExtras() {
-    var el = document.getElementById("lg-problem-tools");
     if (el) el.remove();
   }
 

@@ -172,7 +172,7 @@ LuoguLab 把 luogu.com.cn 装进一个自带的浏览器外壳里，并且是**�
 | **快捷搜索** | 开 | 地址栏全局兜底 + 列表页顶部就地筛选框，两处都要 |
 | **恢复上次的标签** | 开 | 下次启动把上次的全部标签原样开回来（上限 12 个），设置页与本地页不参与 |
 | **列表页快捷操作** | 开 | 工具条：难度筛选（8 档）、状态筛选、排序（题号/通过率 ↑↓）、列表内搜索、题号定位、实时计数 |
-| **题目页分屏编辑器** | 开 | 题目右侧并排打开洛谷 IDE；另有「打开 IDE」「复制全部样例」 |
+| **分屏编辑器** | — | 题目右侧并排打开洛谷 IDE（第二个 WebContentsView）。v3.9.0 起题目页不再挂工具条，从命令面板开；IDE 标签页仍有 Ctrl+I |
 | **代码块一键复制** | 开 | 悬停代码块右上角出现「复制」，题解/样例/他人代码一键拿走 |
 | **难度徽章灰阶化** | 关 | 把洛谷难度色阶压成灰阶，配合黑白线条风 |
 | **IDE 页保持原生** | 开 | `/ide` 完全不套主题与滤镜，避免代码配色被改坏 |
@@ -656,7 +656,7 @@ window.open("luogu-glass://ide")             // 打开 IDE 标签页
 | `ct3.png.json` | 三态翻转（时序修复后） | `flippedPage {page:"dark", repaint:"1", declutter:"1", quickSearch:"0"}` |
 | `ct4.png.json` | 书签 / 历史 / 下载 | 书签 add→1 / del→0；历史 1 条；历史页 `panes:[历史,书签,下载]`、`bridged:true`、`rows:1` |
 | `ct5.png.json` | 命令面板 + 快捷键总览 | 面板 21 项、过滤"缩放"命中、快捷键 16 行 |
-| `pt1.png.json` | 页面功能块挂载 | 列表页 `toolbar:true / quick:true`（28 个元素，8 档难度）；题目页 `bar:true`，按钮 `[分屏编辑器, 打开 IDE, 复制全部样例]`，**20 个 pre 全部挂上复制按钮** |
+| `pt1.png.json` | 页面功能块挂载 | 列表页 `toolbar:true / quick:true`（28 个元素，8 档难度）；题目页 `problemBar:false` + `problemAttr:null`（v3.9.0 起工具条整块删除，`problemBarGone:true`），**20 个 pre 全部挂上复制按钮** |
 | `tb2.png.json` | 标签行为回归 | 3 标签（首页 + IDE 特殊 + P1001）切换正确，`muted/zoom` 字段就位 |
 | `final-shell.png.json` | 最终常规回归 | 注入/外壳断言全绿；`omniResolve` 五形态；`gearIcon:sliders-ok` |
 | `LuoguLabPkg/verify/fv-ct.png.json` | **打包产物**上的配置全量回归 | 布局往返 `vertical→horizontal→vertical`；三态翻转 `dark/repaint 1/declutter 1/quickSearch 0`；配色往返 paper(暖色,边框 0.320,动效关)→ink 全还原；zoom `1→1.1→1`+徽标 2；reorder `[1,2]→[2,1]→[1,2]`；菜单 10 项；书签 add/del；历史 4 条；历史页 `panes 3/bridged/rows 4`；命令面板 21 项 + 快捷键 16 行 |

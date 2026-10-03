@@ -191,13 +191,8 @@ function buildTabEl(t, cls) {
         : "分屏显示中（右键可切布局/聚焦/退出）";
     el.appendChild(sp);
   }
-  if (t.zoom && t.zoom !== 1) {
-    const z = document.createElement("span");
-    z.className = "t-badge t-zoom";
-    z.textContent = Math.round(t.zoom * 100) + "%";
-    z.title = "页面缩放（Ctrl+0 还原）";
-    el.appendChild(z);
-  }
+  // 缩放百分比不再挂在标签上（R36 用户要求标签只留图标+文字）：比例改在
+  // 窗口右上角的 #zoomhud 实时显示（见 zoomHudSync）
   const title = document.createElement("span");
   title.className = "t-title";
   title.textContent = t.title || t.url.replace(/^https?:\/\/[^/]+/, "") || "新标签页";
@@ -838,14 +833,17 @@ function dockTarget(href) {
 }
 function renderDock() {
   const dock = document.getElementById("dock");
+  if (!dock) return;
   dock.textContent = "";
   const t = currentTab();
   const path = t && t.kind === "home" ? "@home" : (() => {
     try { return t && !/^file:/i.test(t.url || "") ? new URL(t.url).pathname : ""; } catch { return ""; }
   })();
   const items = Array.isArray(cfgState.dockItems) ? cfgState.dockItems.filter((it) => it && it.href) : [];
-  /* 唯一一处坞：水平模式在左侧竖排条，垂直模式在底部横排条（同一元素，
-     同一份配置 cfg.dockItems，只有 CSS 形态不同——不会再有两套坞两套数据）。 */
+  /* 坞的渲染仍在外壳（图标/选中态/文案一处都不重复）：这份 HTML 推给坞覆盖
+     视图显示（R36：坞浮在页面之上、页面内容从它底下穿过，不再让位）。
+     点击不在这里绑——坞视图按 data-href 回传主进程，映射规则
+     （@home / @ide / URL / 站内路径 / @settings）在主进程 dockTargetOf。 */
   if (items.length) {
     const group = document.createElement("div");
     group.className = "dock-group";
@@ -853,7 +851,7 @@ function renderDock() {
       const a = document.createElement("a");
       a.innerHTML = svg(DOCK_ICONS.includes(it.icon) ? it.icon : "page");
       a.title = it.title || it.href;
-      a.href = "#";
+      a.setAttribute("data-href", it.href);
       const target = dockTarget(it.href);
       let active = false;
       if (target) {
@@ -862,14 +860,6 @@ function renderDock() {
         else if (target.type === "luogu") active = path.indexOf(target.url) === 0 && !(target.url === "/" && path && path !== "/");
         if (active) a.classList.add("active");
       }
-      a.addEventListener("click", (e) => {
-        e.preventDefault();
-        if (!target) return;
-        if (target.type === "home") window.lgChrome.openHome();
-        else if (target.type === "ide") window.lgChrome.toggleIde();
-        else if (target.type === "url") window.lgChrome.openExternalTab(target.url);
-        else window.lgChrome.navigate(target.url);
-      });
       group.appendChild(a);
     }
     dock.appendChild(group);
@@ -880,13 +870,28 @@ function renderDock() {
   const gear = document.createElement("a");
   gear.innerHTML = svg("sliders");
   gear.title = "Luogu++ 设置 (F2)";
-  gear.href = "#";
-  gear.addEventListener("click", (e) => {
-    e.preventDefault();
-    window.lgChrome.openSettings();
-  });
+  gear.setAttribute("data-href", "@settings");
   foot.appendChild(gear);
   dock.appendChild(foot);
+  dockSyncToMain();
+}
+
+/* 把坞的 HTML + 整套主题变量推给主进程（转发坞覆盖视图）。签名不变不重发：
+   renderDock 会被每次 tabs 推送调到（标题变化很频繁），重发等于重建坞视图的
+   DOM——坞会闪。窗口尺寸/位置变化不用管：落位是主进程的事，它自己会重算。 */
+let dockSig = "";
+function dockSyncToMain() {
+  const dock = document.getElementById("dock");
+  if (!dock || !window.lgChrome.dockSync) return;
+  const de = document.documentElement;
+  const sig = dock.innerHTML + "||" + (de.style.cssText || "") + "||" + (de.getAttribute("data-theme") || "") + "||" + (de.getAttribute("data-glass") || "");
+  if (sig === dockSig) return;
+  dockSig = sig;
+  const dp = document.body.dataset.dock;
+  const dockPosNow = dp === "left" || dp === "right" || dp === "top" || dp === "bottom"
+    ? dp
+    : (cfgState.verticalTabs ? "bottom" : "left");
+  window.lgChrome.dockSync({ html: dock.innerHTML, dock: dockPosNow, ...popupThemePayload() });
 }
 
 /* ---------- 用户区 + 账号下拉 ---------- */
@@ -1491,16 +1496,30 @@ function syncPinUI() {
   pin.innerHTML = svg(expanded ? "nailOn" : "nailOff");
   pin.title = expanded ? "收起侧栏（回到窄条，悬停自动展开）" : "钉住侧栏（常驻展开，不自动收回）";
 }
-async function togglePin() {
-  const r = await window.lgChrome.toggleVtab();
-  document.body.classList.toggle("rail", !!(r && r.collapsed));
-  // 常驻展开与紧凑互斥（主进程里展开会顺手关掉紧凑）：界面立刻跟上
-  if (r && typeof r.compact === "boolean") {
-    document.body.classList.toggle("compact", !!r.compact && !!cfgState.verticalTabs);
-  }
+function togglePin() {
+  /* 乐观落定（R36）：本帧就把姿态翻到目标值，主进程的配置回程只做校正。
+     等 IPC 回来才动类名的话，悬停浮层先收、常驻侧栏后长——中间会闪一条
+     46px 窄条，点钉子也像"没反应"。判据与主进程 toggleVtabPin 完全一致：
+     rail / compact 都不算展开。 */
+  const expandedNow = !document.body.classList.contains("rail") && !document.body.classList.contains("compact");
+  const wantExpanded = !expandedNow;
+  document.body.classList.toggle("rail", !wantExpanded);
+  if (wantExpanded) document.body.classList.remove("compact");
   syncPinUI();
   // 无论展开还是收起，浮层都收掉：展开=真侧栏接管；收起=回到窄条等悬停
   closeTabFlyout();
+  window.lgChrome
+    .toggleVtab()
+    .then((r) => {
+      if (!r) return;
+      document.body.classList.toggle("rail", !!r.collapsed);
+      // 常驻展开与紧凑互斥（主进程里展开会顺手关掉紧凑）：按回程校正
+      if (typeof r.compact === "boolean") {
+        document.body.classList.toggle("compact", !!r.compact && !!cfgState.verticalTabs);
+      }
+      syncPinUI();
+    })
+    .catch(() => {});
 }
 
 function renderTabFlyout(force, anim) {
@@ -1509,7 +1528,7 @@ function renderTabFlyout(force, anim) {
      视图，少一项就会出现"侧栏变了、浮层还是旧的"。 */
   const sig =
     tabsState.tabs
-      .map((t) => [t.id, t.title || "", t.id === tabsState.activeId ? "a" : "", t.loading ? "l" : "", t.pinned ? "p" : "", t.sleeping ? "s" : "", t.zoom && t.zoom !== 1 ? "z" : "", t.group != null ? "g" + t.group : ""].join(":"))
+      .map((t) => [t.id, t.title || "", t.id === tabsState.activeId ? "a" : "", t.loading ? "l" : "", t.pinned ? "p" : "", t.sleeping ? "s" : "", t.group != null ? "g" + t.group : ""].join(":"))
       .join("|") +
     "||" +
     (tabsState.groups || []).map((g) => g.id + ":" + (g.collapsed ? "c" : "") + ":" + (g.name || "")).join(",");
@@ -1798,6 +1817,8 @@ function commands() {
     },
     { title: "重新加载", hint: keyHint("reload", "Ctrl+R"), run: () => window.lgChrome.reload() },
     { title: "打开 IDE 标签页", hint: keyHint("ide", "Ctrl+I"), run: () => window.lgChrome.toggleIde() },
+    /* 题目页工具条已删（R36 用户要求）：分屏编辑器改从命令面板进 */
+    { title: "分屏编辑器：题目右侧并排 IDE（进入 / 退出）", run: () => window.lgChrome.toggleDrawer() },
     { title: "打开应用首页", hint: keyHint("new-tab", "Ctrl+T"), run: () => window.lgChrome.openHome() },
     { title: "浏览历史记录", hint: keyHint("history", "Ctrl+H"), run: () => window.lgChrome.openHistory() },
     { title: "打开 Luogu++ 设置", hint: keyHint("settings", "F2"), run: () => window.lgChrome.openSettings() },
@@ -2170,9 +2191,9 @@ function applyConfig(cfg) {
      顶栏与底坞还按 46px 硬编码，紧凑模式左上角就留一条 42px 空档。 */
   document.documentElement.style.setProperty("--vtab-cur", (Number(cfg.vtabCur != null ? cfg.vtabCur : cfg.insetX) || 0) + "px");
   /* 坞的位置（设置页「侧坞」卡片）：left/right 竖列、top/bottom 横条；
-     "auto" = 跟随布局（水平左侧 / 垂直底部，也就是改造前的形态）。
-     坞由外壳画（CSS 只认 body[data-dock]，左右边界吃 --vtab-cur），页面让位
-     由主进程按同一份 cfg 算（inset() 的 dockPad）——坞不盖网页、页面不留空档。 */
+     "auto" = 跟随布局（水平左侧 / 垂直底部）。R36：坞是独立覆盖视图——
+     这里只写 body[data-dock]（坞视图照抄它决定横/竖排形态），落位在主进程
+     dockBounds()；页面不再为它让位，内容从它底下穿过。 */
   const dockPosNow = (cfg.dockPos === "left" || cfg.dockPos === "right" || cfg.dockPos === "top" || cfg.dockPos === "bottom")
     ? cfg.dockPos
     : (cfg.verticalTabs ? "bottom" : "left");
@@ -2185,6 +2206,31 @@ function applyConfig(cfg) {
      页面 inset 三者同宽，超出范围的配置值不许在外壳里漏出去 */
   document.documentElement.style.setProperty("--vtab-w", Math.min(400, Math.max(160, Math.round(Number(cfg.vtabWidth) || 212))) + "px");
   renderDock();
+}
+
+/* ---------- 缩放比例提示（窗口右上角 #zoomhud） ----------
+   标签上的缩放徽标已删（R36：标签只留图标+文字），比例改在这里实时显示。
+   数据源就是 tabs 快照里活动标签的 zoom（主进程 setZoom → pushTabs），不新增
+   IPC。口径：变化时高亮浮出约 1.5 秒；之后只要 ≠100% 留一枚淡色常驻，回到
+   100% 整颗隐去。切标签只同步状态、不弹（否则每切一次都闪一下）。 */
+const zoomHud = document.getElementById("zoomhud");
+let zoomHudLast = null; // null = 还没拿到过任何快照（首份只同步，不弹）
+let zoomHudTab = null;
+let zoomHudTimer = null;
+function zoomHudSync() {
+  if (!zoomHud) return;
+  const act = (tabsState.tabs || []).find((t) => t.id === tabsState.activeId) || null;
+  const z = act && act.zoom ? act.zoom : 1;
+  const sameTab = zoomHudTab != null && act && zoomHudTab === act.id;
+  const changed = zoomHudLast != null && sameTab && Math.abs(z - zoomHudLast) > 0.001;
+  zoomHudLast = z;
+  zoomHudTab = act ? act.id : null;
+  zoomHud.textContent = Math.round(z * 100) + "%";
+  zoomHud.classList.toggle("on", Math.abs(z - 1) > 0.001);
+  if (!changed) return;
+  zoomHud.classList.add("hot");
+  clearTimeout(zoomHudTimer);
+  zoomHudTimer = setTimeout(() => zoomHud.classList.remove("hot"), 1500);
 }
 
 /* ---------- 事件绑定 ---------- */
@@ -2527,6 +2573,7 @@ if (!window.lgChrome) {
 } else {
   window.lgChrome.onTabs((s) => {
     tabsState = s;
+    zoomHudSync();
     renderTabs();
     // 「打开标签页」区段正展开着：标签变化要实时重发菜单（关了一个还躺在列表里就露馅）
     if (menuOpenId === "tabmore-menu" && tmExpanded.tabs) {
@@ -2610,6 +2657,13 @@ if (!window.lgChrome) {
     sugOpen = false;
     sugItems = [];
     glanceState = null; // 速览壳被点掉/Esc：状态归零（视图主进程已收）
+    /* 关路径握手（R36）：这一刻窄条/常驻侧栏已经画回来了，回一声主进程才真
+       把弹层视图隐掉。原来主进程先隐、这边后摘 flyout-open，中间至少一帧
+       侧栏整条消失（悬停收回"闪一下"的根）。 */
+    document.body.dataset.flyoutClose = "ack";
+    if (window.lgChrome.popupHiddenAck) {
+      try { window.lgChrome.popupHiddenAck(); } catch (e) {}
+    }
   });
   /* 主进程侧发起的整理（快捷键 / 标签右键的原生子菜单）也走同一套提示 */
   window.lgChrome.onOrganizeDone((r) => {

@@ -36,6 +36,13 @@ contextBridge.exposeInMainWorld("lgChrome", {
      否则它还以为菜单开着，下一次点按钮会被当成"关闭菜单"而空转 ——
      表现就是同一个按钮要点两下才开得出来。 */
   onPopupHidden: (cb) => ipcRenderer.on("chrome:popup-hidden", () => cb()),
+  /* 关路径握手回执（R36）：外壳把窄条/常驻侧栏画回来之后再回这一声，主进程
+     才真把弹层视图隐掉——否则中间一帧"面板没了、窄条还隐着"（收回闪一下） */
+  popupHiddenAck: () => ipcRenderer.send("popup:hidden-ack"),
+  /* 坞（R36：独立覆盖视图）：外壳渲染坞的 HTML + 整套主题变量推给主进程转发；
+     坞视图只负责量尺寸上报与点击回传 */
+  dockSync: (p) => ipcRenderer.send("dock:sync", p),
+  dockSize: (w, h) => ipcRenderer.send("dock:size", { w, h }),
   /* 悬停浮层画好了（主进程转发的 popup 信号）：外壳收到才把窄条隐去——
      那一刻浮层与窄条同像素，交接零闪烁 */
   onFlyoutShown: (cb) => ipcRenderer.on("chrome:flyout-shown", () => cb()),
@@ -78,6 +85,9 @@ contextBridge.exposeInMainWorld("lgChrome", {
   /* 地址栏联想：历史 + 映射词（打开的标签与搜索行在外壳本地合并） */
   navSuggest: (q) => ipcRenderer.invoke("lg-nav:suggest", String(q || "")),
   toggleIde: () => ipcRenderer.invoke("tab:toggle-ide"),
+  /* 分屏编辑器（题目右侧并排 IDE 的抽屉）：题目页工具条已删（R36），
+     改从命令面板进 */
+  toggleDrawer: () => ipcRenderer.invoke("tab:toggle-drawer"),
   toggleVtab: () => ipcRenderer.invoke("tab:toggle-vtab"),
   /* 拖侧栏右缘改宽度（160~400 夹取，主进程落盘并重算页面 inset） */
   setVtabWidth: (w) => ipcRenderer.invoke("vtab:set-width", w),

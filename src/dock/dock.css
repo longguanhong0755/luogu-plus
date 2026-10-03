@@ -1,0 +1,25 @@
+/* LuoguLab — 坞覆盖层（R36）
+   坞是独立覆盖视图：页面内容从它底下穿过，坞只是一条悬浮的栏。
+   视图矩形 = 坞胶囊本身（主进程按 dock.js 上报的尺寸落位），所以这里把
+   chrome.css 里"外壳让位带内的定位"改写成"视图就是胶囊"：
+   #dock 按内容收尺寸，四条定位属性全部归零，剩下的 flex 方向/项尺寸/胶囊
+   圆角与选中指示线继续吃 chrome.css 的同一套规则（markup 相同、样式同源）。 */
+html, body {
+  background: transparent !important;
+  overflow: hidden;
+  user-select: none;
+}
+body[data-dock] #dock {
+  position: static;
+  top: auto; right: auto; bottom: auto; left: auto;
+  width: fit-content;
+  height: fit-content;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+}
+/* 胶囊自带圆角与投影：贴着视图边缘，外层不再留余量 */
+#dock .dock-group,
+#dock .dock-foot { margin: 0; }
+/* 坞不是网页：右键/中键/拖拽一律压掉（点击由 dock.js 回传主进程） */
+#dock a { -webkit-user-drag: none; }

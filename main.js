@@ -99,7 +99,10 @@ const wallpaperImagePayload = () => wallpaperPayload("image");
 
 // 单实例锁：二次启动唤起已有窗口（也避免多实例抢缓存）
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  /* 抢不到锁就立刻走人：这里在 ready 之前，app.quit() 可能被初始化流程吞掉、
+     留下"无窗口的卡死进程"——它还握着 profile 与热应用 watcher，表现就是窗口
+     被反复重启弹出来、下次启动又被锁挡在门外（v3.9.0 修）。app.exit 不留尾巴。 */
+  app.exit(0);
 } else {
   app.on("second-instance", () => {
     if (mainWin && !mainWin.isDestroyed()) {
@@ -193,7 +196,6 @@ const DEFAULT_CONFIG = {
      设置「效率功能 → 恢复上次的标签」里重新打开） */
   restoreTabs: false,
   listTools: true,
-  problemEditor: true,
   activeAccountId: "",
   bookmarks: [],           // [{url, title, addedAt}]（收藏功能已删，字段只为兼容旧配置保留）
   /* 自定义基色（preset = "custom" 时生效） */
@@ -531,10 +533,9 @@ function cfgForPages() {
     insetX: ins.x,
     insetY: ins.y,
     footer: ins.footer || 0,
-    /* 侧栏分界线（外壳的 --vtab-cur 吃它）：只算侧栏本身那一条——坞的让位
-       在 ins.x/ins.right 里另算（坞在外壳里由 body[data-dock] 自己让）。
-       右下角顶栏/横条坞按这条线翻面，右侧模式下 ins.x 是 0，直接吃 ins.x
-       会让顶栏铺满、盖住侧栏。 */
+    /* 侧栏分界线（外壳的 --vtab-cur 吃它）：只算侧栏本身那一条。坞已迁到
+       独立覆盖视图（R36），页面不再为它让位——inset 里没有坞的份额。
+       右侧模式下 ins.x 是 0，顶栏直接吃 ins.x 会铺满、盖住侧栏。 */
     vtabCur: vtabBoundary(),
     // 坞位置的解析结果（auto 已在主进程定死）：外壳照抄，不再自己判一遍
     dockPosResolved: dockPos(),
@@ -615,6 +616,9 @@ function loadConfig() {
   if (cfg.tabSleepMinutes == null || !isFinite(Number(cfg.tabSleepMinutes)) || Number(cfg.tabSleepMinutes) < 0) cfg.tabSleepMinutes = 30;
   if (cfg.vtabCompact == null) cfg.vtabCompact = false;
   if (!["auto", "left", "right", "top", "bottom"].includes(String(cfg.dockPos))) cfg.dockPos = "auto";
+  /* R36：题目页工具条整块删除（用户要求）——旧配置里的 problemEditor 丢掉，
+     不 delete 的话会被 saveConfig 一直写回去，成为一段看不见的死数据。 */
+  if ("problemEditor" in cfg) delete cfg.problemEditor;
   // v5 → v6 迁移：两颗不透明度合并成一颗"面不透明度"。老配置里用户调过的
   // 卡片值优先（那是页面卡片的浓度），没调过就退栏值；此后栏、卡片、面板、
   // 内块全吃这一个值，内外不再有两种浓度。
@@ -938,6 +942,12 @@ function startDevWatch() {
       dbg("[dev] popup reloaded");
     }
   });
+  watchDir(path.join(SRC, "dock"), "dock", () => {
+    if (dockView && !dockView.webContents.isDestroyed()) {
+      try { dockView.webContents.reloadIgnoringCache(); } catch {}
+      dbg("[dev] dock reloaded");
+    }
+  });
   try {
     fs.watch(SRC, (_ev, name) => {
       if (!name) return;
@@ -1051,49 +1061,33 @@ const vtabW = () => {
   return cfg.vtabCollapsed === false ? vtabExpandedW() : VTAB_RAIL;
 };
 
-/* 侧坞（横条高 / 竖条宽）：坞画在外壳层里——壁纸与玻璃都由外壳自己出
-   （真实 backdrop-filter），不再走弹层的假折射。数值与 chrome.css 的
-   --bdock-h / --dock-w 对齐。 */
-const BDOCK_H = 56;
-const DOCK_W = 56;
+/* 侧坞（R36：独立覆盖视图 src/dock/）：坞不再让页面让位——页面内容从它底下
+   穿过，坞只是一条悬浮在页面之上的栏。落位在主进程 dockBounds()（四位置
+   各留 6px 边距），这里只剩"坞在哪一边"这一个语义。 */
 const dockHasItems = () => Array.isArray(cfg.dockItems) && cfg.dockItems.some((it) => it && it.href);
 
 /* 坞的位置：auto=跟随布局（水平左侧 / 垂直底部），其余四值即字面位置。
-   外壳（chrome.js 写 body[data-dock]）与页面让位（下面的 dockPad）共用它，
-   同一个值算两遍，坞与页面不可能各让一条边。 */
+   外壳渲染（body[data-dock] 决定横/竖排形态）与坞视图落位共用这一个值。 */
 function dockPos() {
   const p = String(cfg.dockPos || "auto");
   if (p === "left" || p === "right" || p === "top" || p === "bottom") return p;
   return cfg.verticalTabs ? "bottom" : "left";
 }
-/* 页面要替坞让出的边：坞在哪一边就让哪一边（56px）。没有坞项时不让。 */
-function dockPad() {
-  if (!dockHasItems()) return { l: 0, r: 0, t: 0, b: 0 };
-  const p = dockPos();
-  return {
-    l: p === "left" ? DOCK_W : 0,
-    r: p === "right" ? DOCK_W : 0,
-    t: p === "top" ? DOCK_W : 0,
-    b: p === "bottom" ? DOCK_W : 0,
-  };
-}
-/* 侧栏分界线（外壳顶栏/坞的 left、右侧模式的 right）：只算侧栏那一条，
-   坞的位置由 CSS 的 body[data-dock] 自己让——两个概念不要混。 */
+/* 侧栏分界线（外壳顶栏的 left、右侧模式的 right）：只算侧栏那一条。 */
 const vtabBoundary = () => (cfg.verticalTabs ? vtabW() : 0);
 
-/* 页面视图的可用矩形：垂直模式把左侧让给标签栏、顶部留工具行；
-   坞在哪一边再让哪一边（left/right = 56 宽，top/bottom = 56 高）。 */
+/* 页面视图的可用矩形：垂直模式把左侧让给标签栏、顶部留工具行。坞不再占边
+   （R36）：页面全幅延伸到坞底下（坞浮在页面之上，内容从它底下穿过）。 */
 /* 侧栏所在侧（Edge 左/右）：页面 inset 的 x / right 是唯一几何来源 */
 const vtabSide = () => (cfg.vtabSide === "right" ? "right" : "left");
 function inset() {
-  const dp = dockPad();
   if (cfg.verticalTabs) {
     const w = vtabW();
     const right = vtabSide() === "right";
-    return { x: (right ? 0 : w) + dp.l, right: (right ? w : 0) + dp.r, y: VHEAD_H + dp.t, footer: dp.b };
+    return { x: right ? 0 : w, right: right ? w : 0, y: VHEAD_H, footer: 0 };
   }
-  // 水平布局：坞在左侧时左边让 56 + 2（历史值 58），坞挪走后只留那条缝
-  return { x: 2 + dp.l, right: dp.r, y: INSET.y + dp.t, footer: dp.b };
+  // 水平布局：历史值 2px 的缝（以前坞在左侧时是 56+2=58）
+  return { x: 2, right: 0, y: INSET.y, footer: 0 };
 }
 
 function normalizeUrl(u) {
@@ -1154,7 +1148,10 @@ function layout() {
   }
   for (const [tid, t] of tabs) {
     if (!t.view) continue; // 休眠标签没有视图，等唤醒时再由 layout 摆位
-    const b = paneMap.get(tid) || { x: ins.x, y: ins.y, width: tabW, height: fullH };
+    /* 网页 HTML 全屏（视频 / IDE 全屏）：该标签视图落整窗——外壳与坞都被让开 */
+    const b = tid === htmlFullscreenTabId
+      ? { x: 0, y: 0, width: Math.max(1, w), height: Math.max(1, h) }
+      : (paneMap.get(tid) || { x: ins.x, y: ins.y, width: tabW, height: fullH });
     try {
       t.view.setBounds(b);
     } catch {}
@@ -1180,6 +1177,7 @@ function layout() {
     try { glanceView.setBounds(glanceRect()); } catch {}
     try { mainWin.webContents.send("chrome:glance-rect", { rect: glanceRect() }); } catch {}
   }
+  layoutDock();
   pushSplit();
 }
 
@@ -1642,6 +1640,173 @@ ipcMain.handle("tabtip:show", (_e, p) => { showTabTip(p); return { ok: true }; }
 ipcMain.on("tabtip:hide", () => hideTabTip());
 
 /* ============================================================
+   坞覆盖视图（R36）
+   坞从外壳层搬到独立覆盖视图：页面内容从它底下穿过（不再让位），坞只是一条
+   悬浮在页面之上的栏。外壳仍是渲染者（dock:sync 推 HTML + 整套主题变量），
+   这一层负责：落位（四位置居中、离页面区 6px）、显隐（网页全屏时隐藏）、
+   点击（dockTargetOf 映射，与旧的外壳 dockTarget 逐条一致）。
+   栈序：页面视图 < 坞 < 悬停卡片 < 弹层（raisePopup 里一并把坞抬回）。
+   ============================================================ */
+let dockView = null;
+let dockReady = false;
+let dockSyncPayload = null;       // 外壳最近一份 HTML/主题：did-finish-load 后补发
+let dockCapsule = { w: 0, h: 0 }; // 坞视图上报的胶囊尺寸
+let dockShown = false;            // 视图当前可见（raisePopup 里据此重挂）
+let htmlFullscreenTabId = null;   // 正处在网页 HTML 全屏的标签：坞隐藏、视图落整窗
+
+function ensureDockView() {
+  if (dockView) return dockView;
+  const v = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+      backgroundThrottling: false,
+      preload: path.join(__dirname, "preload-dock.js"),
+    },
+  });
+  try { v.setBackgroundColor("#00000000"); } catch {}
+  try { mainWin.contentView.addChildView(v); } catch {}
+  try { v.setVisible(false); } catch {}
+  dockView = v;
+  v.webContents.loadFile(path.join(__dirname, "src", "dock", "dock.html"));
+  v.webContents.on("did-finish-load", () => {
+    dockReady = true;
+    if (dockSyncPayload) {
+      try { v.webContents.send("dock:sync", dockSyncPayload); } catch {}
+    }
+    layoutDock();
+  });
+  return v;
+}
+
+/* 坞胶囊在页面区里的落位：四种位置各自居中、离页面区边缘 6px（M）。
+   坞不再让位（页面内容从它底下穿过），可用矩形就是 inset()。 */
+function dockBounds() {
+  if (!mainWin || mainWin.isDestroyed()) return null;
+  if (!dockCapsule.w || !dockCapsule.h) return null;
+  const [w, h] = mainWin.getContentSize();
+  const ins = inset();
+  const availX = ins.x;
+  const availW = Math.max(0, w - ins.x - (ins.right || 0));
+  const availY = ins.y;
+  const availH = Math.max(0, h - ins.y - (ins.footer || 0));
+  const M = 6;
+  const p = dockPos();
+  let x;
+  let y;
+  if (p === "left") {
+    x = availX + M;
+    y = availY + Math.round((availH - dockCapsule.h) / 2);
+  } else if (p === "right") {
+    x = availX + availW - dockCapsule.w - M;
+    y = availY + Math.round((availH - dockCapsule.h) / 2);
+  } else if (p === "top") {
+    x = availX + Math.round((availW - dockCapsule.w) / 2);
+    y = availY + M;
+  } else {
+    x = availX + Math.round((availW - dockCapsule.w) / 2);
+    y = availY + availH - dockCapsule.h - M;
+  }
+  x = Math.max(availX, Math.min(x, availX + Math.max(0, availW - dockCapsule.w)));
+  y = Math.max(availY, Math.min(y, availY + Math.max(0, availH - dockCapsule.h)));
+  return { x, y, width: dockCapsule.w, height: dockCapsule.h };
+}
+
+function layoutDock() {
+  const v = dockView;
+  if (!v || !dockReady) return;
+  const b = dockBounds();
+  /* 网页 HTML 全屏时坞自动隐藏（R36 用户要求：IDE 那种全屏页面） */
+  if (!b || htmlFullscreenTabId != null) {
+    if (dockShown) {
+      dockShown = false;
+      try { v.setVisible(false); } catch {}
+    }
+    return;
+  }
+  try { v.setBounds(b); } catch {}
+  if (!dockShown) {
+    dockShown = true;
+    try { v.setVisible(true); } catch {}
+    /* 抬到页面之上（新开的标签视图会盖过它）；弹层随后由 raisePopup 压到坞上 */
+    try { mainWin.contentView.removeChildView(v); mainWin.contentView.addChildView(v); } catch {}
+    raisePopup();
+  }
+  /* 假壁纸几何（tabtip 同契约）：坞视图要知道自己在窗口里的坐标与窗口尺寸 */
+  try {
+    const [w, h] = mainWin.getContentSize();
+    v.webContents.send("dock:rect", { x: b.x, y: b.y, winW: w, winH: h });
+  } catch {}
+}
+
+/* 坞项点击：规则与旧的外壳 dockTarget 逐条一致（@home/@ide/@settings、洛谷
+   全 URL 按站内导航、/路径、映射词、站外 URL 开新标签）。 */
+function dockTargetOf(href) {
+  const s = String(href || "").trim();
+  if (!s) return null;
+  if (s === "@home") return { type: "home" };
+  if (s === "@ide") return { type: "ide" };
+  if (s === "@settings") return { type: "settings" };
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      if (/(^|\.)luogu\.com\.cn$/i.test(u.hostname)) return { type: "luogu", url: u.pathname + u.search };
+    } catch (e) {}
+    return { type: "url", url: s };
+  }
+  if (/^[/]/.test(s)) return { type: "luogu", url: s };
+  const map = cfg.mappings || {};
+  if (map[s]) return { type: "url", url: map[s] };
+  return { type: "luogu", url: "/" + s.replace(/^\/+/, "") };
+}
+function dockOpen(href) {
+  const t = dockTargetOf(href);
+  if (!t) return;
+  if (t.type === "settings") return openSettingsTab();
+  if (t.type === "home") {
+    const id = tabOrder.find((tid) => tabs.get(tid) && tabs.get(tid).kind === "home");
+    if (id != null) setActiveTab(id);
+    else createHomeTab();
+    return;
+  }
+  if (t.type === "ide") return toggleIde();
+  if (t.type === "url") return createTab(t.url, { unlock: true });
+  return navigateActive(t.url, { unlock: true });
+}
+
+ipcMain.on("dock:sync", (_e, p) => {
+  if (!p || typeof p !== "object" || !mainWin || mainWin.isDestroyed()) return;
+  const v = ensureDockView();
+  const [w, h] = mainWin.getContentSize();
+  const b = dockBounds();
+  dockSyncPayload = {
+    html: String(p.html || ""),
+    dock: String(p.dock || "bottom"),
+    cssText: String(p.cssText || ""),
+    theme: String(p.theme || "light"),
+    glass: String(p.glass || "flat"),
+    layout: String(p.layout || "vertical"),
+    side: String(p.side || "left"),
+    winW: w,
+    winH: h,
+    x: b ? b.x : 0,
+    y: b ? b.y : 0,
+  };
+  if (dockReady) { try { v.webContents.send("dock:sync", dockSyncPayload); } catch {} }
+  layoutDock();
+});
+ipcMain.on("dock:size", (_e, s) => {
+  const w = Math.round(Number(s && s.w) || 0);
+  const h = Math.round(Number(s && s.h) || 0);
+  if (w <= 0 || h <= 0) return;
+  if (w === dockCapsule.w && h === dockCapsule.h) return;
+  dockCapsule = { w, h };
+  layoutDock();
+});
+ipcMain.on("dock:cmd", (_e, href) => dockOpen(String(href || "")));
+
+/* ============================================================
    标签休眠（Zen 式）：后台闲置标签卸载视图省内存（URL/标题/图标保留，
    标签位不动，点回去才重新加载）。手动：右键「休眠此标签页」；自动：
    cfg.tabSleepMinutes（默认 30，0=关）。活动标签、拼合可见成员、
@@ -1904,6 +2069,14 @@ function ensurePopupView() {
    所以无论视图集合怎么变，弹出层一露头就把自己重新挂到最顶上。 */
 function raisePopup() {
   if (!popupView || popupView.webContents.isDestroyed()) return;
+  /* 坞在页面之上、弹层之下：新挂的标签/抽屉视图会盖过坞，这里顺带把它抬回
+     （弹层随后再抬到坞之上）——坞视图只在自己可见时才重挂 */
+  if (dockView && dockShown && !dockView.webContents.isDestroyed()) {
+    try {
+      mainWin.contentView.removeChildView(dockView);
+      mainWin.contentView.addChildView(dockView);
+    } catch {}
+  }
   try {
     mainWin.contentView.removeChildView(popupView);
     mainWin.contentView.addChildView(popupView);
@@ -1918,6 +2091,9 @@ function raisePopup() {
 const POPUP_MARGIN = 12;
 let popupFit = null; // { al, ay, pad, wantW, wantH, contentW, contentH, originX, originY }
 let flyoutHold = false; // 拖拽中：光标裁判暂停收回浮层（popup:hold 控制）
+let popupHideAckTimer = null;  // 关路径握手：等外壳把窄条/侧栏画回来的回执（超时兜底）
+let popupPickHideTimer = null; // 浮层里的动作先转外壳执行，外壳自己不收时兜底关
+let popupHideHandoff = "";     // 最近一次浮层收回走的路径："ack" | "timeout"（探针断言用）
 let flyoutHoldTimer = null; // 兜底放行：拖拽中指针被抢走时"放行"可能收不到
 
 const popupPad = (p) => {
@@ -2012,6 +2188,7 @@ function hidePopup() {
   stopFlyoutWatch();
   flyoutHold = false; // 拖拽中被打断（点空白/Esc）时别把挂起状态留下
   hideTabTip();
+  const wasFlyout = !!(popupFit && popupFit.fullH); // 悬停浮层（整条面板）
   popupFit = null;
   if (glanceView) closeGlance(); // 速览壳被点掉/Esc：卡片视图一起收
   if (!popupView || popupView.webContents.isDestroyed()) return;
@@ -2020,7 +2197,21 @@ function hidePopup() {
     popupShown = false;
     try { mainWin.webContents.send("chrome:popup-hidden", true); } catch {}
   }
-  try { popupView.setVisible(false); } catch {}
+  if (!wasFlyout) {
+    try { popupView.setVisible(false); } catch {}
+    return;
+  }
+  /* 关路径握手（R36）：浮层盖着窄条（外壳用 body.flyout-open 把窄条隐了），
+     外壳收到 popup-hidden 先把它画回来、回一声 popup:hidden-ack 之后才真隐
+     视图——原来"先隐视图、后摘类"，中间至少一帧两侧都没有侧栏（悬停收回
+     "闪一下"的根）。外壳没回（视图没起来/脚本没跑）也有兜底，不许把弹层
+     视图永远挂在上面。 */
+  popupHideHandoff = "timeout";
+  clearTimeout(popupHideAckTimer);
+  popupHideAckTimer = setTimeout(() => {
+    popupHideAckTimer = null;
+    try { popupView && popupView.setVisible(false); } catch {}
+  }, 140);
 }
 
 /* 弹出层几何：矩形模式按上一次回报的尺寸重夹一遍（窗口缩放/重排时调用）；
@@ -2385,6 +2576,21 @@ function wirePageView(id, view) {
   // 本函数每个 WebContents 只跑一次，但 Electron 内部还会往同一个 wc 上
   // 挂它自己的加载事件，默认阈值 10 会被顶破并刷出 MaxListeners 警告。
   try { wc.setMaxListeners(48); } catch {}
+
+  /* 网页自己进入全屏（Fullscreen API：视频全屏 / 洛谷 IDE 的全屏）：坞自动
+     隐藏（R36 用户要求），本标签视图落到整窗——外壳与坞都让开；退出恢复。
+     同一时刻只可能有一个标签处于 HTML 全屏（Electron 会把窗口一起带进全屏）。 */
+  wc.on("enter-html-full-screen", () => {
+    htmlFullscreenTabId = id;
+    hideTabTip();
+    layoutDock();
+    layout();
+  });
+  wc.on("leave-html-full-screen", () => {
+    if (htmlFullscreenTabId === id) htmlFullscreenTabId = null;
+    layoutDock();
+    layout();
+  });
 
   wc.on("did-finish-load", () => {
     if (wc.isDestroyed()) return;
@@ -4707,15 +4913,37 @@ ipcMain.on("popup:hold", (_e, on) => {
   if (flyoutHold) flyoutHoldTimer = setTimeout(() => { flyoutHold = false; }, 4000);
 });
 ipcMain.handle("popup:pick", (_e, payload) => {
-  hidePopup();
-  // 点击键回传给外壳层执行（业务逻辑都留在外壳里，覆盖层不持有状态）。
-  // 带 data-pop-value 的项会顺带读回一个输入框的值（账号切换的验证码提交用）
   const k = payload && typeof payload === "object" ? payload.k : payload;
   const v = payload && typeof payload === "object" ? payload.v : undefined;
+  const wasFlyout = !!(popupFit && popupFit.fullH);
+  if (!wasFlyout) hidePopup();
+  // 点击键回传给外壳层执行（业务逻辑都留在外壳里，覆盖层不持有状态）。
+  // 带 data-pop-value 的项会顺带读回一个输入框的值（账号切换的验证码提交用）
   try {
     if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send("chrome:popup-picked", { k: String(k || ""), v });
   } catch {}
+  if (wasFlyout) {
+    /* 浮层里的动作（钉子/新建/设置/标签行/组头）：先让外壳执行，由它自己收
+       浮层——closeTabFlyout 是"先摘类再请求隐藏"，常驻侧栏在这一刻已经长好，
+       浮层隐掉时不留缝。先隐视图的话中间会闪一条 46px 窄条，点钉子也像
+       "没反应"。外壳万一不收（动作本身不关浮层），兜底 200ms 后关掉。 */
+    clearTimeout(popupPickHideTimer);
+    popupPickHideTimer = setTimeout(() => {
+      popupPickHideTimer = null;
+      if (popupShown) hidePopup();
+    }, 200);
+  }
   return { ok: true };
+});
+/* 关路径握手回执（R36）：外壳已经把窄条/常驻侧栏画回来了，这一刻才真隐弹层
+   视图（hidePopup 里等着的那个定时器就是它） */
+ipcMain.on("popup:hidden-ack", () => {
+  if (popupHideAckTimer) {
+    clearTimeout(popupHideAckTimer);
+    popupHideAckTimer = null;
+    popupHideHandoff = "ack";
+  }
+  try { popupView && popupView.setVisible(false); } catch {}
 });
 /* 不回隐的 pick：分组面板改色这类"点了还要留在面板里"的操作用
    （data-pop-stay 标记触发；面板内容变了外壳会自己重发一份） */
@@ -4817,14 +5045,24 @@ ipcMain.handle("tab:toggle-ide", () => {
   toggleIde();
   return { ok: true };
 });
+/* 分屏编辑器（题目右侧并排 IDE 的抽屉）：题目页工具条已删（R36 用户要求），
+   改从命令面板进——功能保留，入口不再往页面里塞按钮 */
+ipcMain.handle("tab:toggle-drawer", () => {
+  toggleDrawer();
+  return { ok: true, open: !!drawerOpen };
+});
 /* 垂直标签栏收纳（Edge 式）：钉住（展开常驻）↔ 窄条（悬停浮出）。状态写进
    配置，重启不丢；切到水平模式再切回来也按这份配置还原（用户要求：原来钉住
    就还原钉住）。悬浮面板与窄条、命令面板的"布局"开关、快捷键动作 vtab 共用。 */
 function toggleVtabPin() {
-  cfg.vtabCollapsed = cfg.vtabCollapsed === false ? true : false;
-  /* 钉住时顺手关掉紧凑：紧凑的 vtabW() 恒为 4px 热区，不关的话"钉住了却
-     看不见"。反过来收起成窄条不碰紧凑（独立一轴）。 */
-  if (cfg.vtabCollapsed === false && cfg.vtabCompact) cfg.vtabCompact = false;
+  /* 按"可见状态"取反（R36）：紧凑是独立一轴，可以存在
+     {vtabCollapsed:false, vtabCompact:true} 这种"配置说展开、界面其实收没"
+     的组合——旧写法第一下只把 collapsed 翻成 true、紧凑没人清，界面纹丝不动
+     （用户报的"固定功能不可用"）。判据与外壳 togglePin 完全一致：rail/compact
+     都不算展开；要展开就顺手清掉紧凑。任何起点第一下都有可见效果。 */
+  const visibleNow = cfg.vtabCollapsed === false && !cfg.vtabCompact;
+  cfg.vtabCollapsed = visibleNow; // 可见 → 收起（collapsed=true）；不可见 → 展开
+  if (!visibleNow) cfg.vtabCompact = false;
   saveConfig();
   pushConfigToChrome();
   layout();
@@ -5758,7 +5996,7 @@ async function selftest() {
             var out = {};
             // v3.5.1：页面配色三态撤掉，明暗往返改走统一管线（theme: light↔dark），
             // 页面侧 pageTheme=auto 跟随 resolvedTheme（repaint 只在洛谷页且暗色时=1）
-            await window.lgConfig.set({ theme: 'light', verticalTabs: false, declutter: true, quickSearch: false, listTools: false, problemEditor: false, restoreTabs: false });
+            await window.lgConfig.set({ theme: 'light', verticalTabs: false, declutter: true, quickSearch: false, listTools: false, restoreTabs: false });
             out.cfg = await window.lgConfig.get();
             var acc = await window.lgConfig.accountList();
             out.accountApi = { ok: acc.ok, count: (acc.accounts || []).length, hasJob: 'job' in acc };
@@ -5778,7 +6016,9 @@ async function selftest() {
         `JSON.stringify({
           layout: document.body.getAttribute('data-layout'),
           vtabShown: (function(){ var e=document.getElementById('vtab'); return !!e && getComputedStyle(e).display !== 'none'; })(),
-          dockShown: (function(){ var e=document.getElementById('dock'); return !!e && getComputedStyle(e).display !== 'none'; })()
+          /* R36：坞迁到独立覆盖视图——外壳里的 #dock 只是渲染源，恒隐（视图状态
+             由主进程 dockShown 报告，v39test 有专门段） */
+          dockSrcHidden: (function(){ var e=document.getElementById('dock'); return !e || getComputedStyle(e).display === 'none'; })()
         })`, true));
       const pageTab = tabOrder.map((tid) => tabs.get(tid)).find((x) => x && !isLocalKind(x.kind));
       if (pageTab) await waitInjected(pageTab.view.webContents); // 新标签可能还没注入完
@@ -5791,7 +6031,7 @@ async function selftest() {
         })`, true)) : { error: "no-luogu-tab" };
       // 切回默认，核对全部恢复（明暗走统一管线：dark = 外壳暗 + 洛谷页反转重绘）
       await st.view.webContents.executeJavaScript(
-        `window.lgConfig.set({ theme: 'dark', verticalTabs: true, declutter: false, quickSearch: true, listTools: true, problemEditor: true, restoreTabs: true })`,
+        `window.lgConfig.set({ theme: 'dark', verticalTabs: true, declutter: false, quickSearch: true, listTools: true, restoreTabs: true })`,
         true
       );
       await new Promise((r) => setTimeout(r, 1800));
@@ -5799,7 +6039,7 @@ async function selftest() {
         `JSON.stringify({
           layout: document.body.getAttribute('data-layout'),
           vtabShown: (function(){ var e=document.getElementById('vtab'); return !!e && getComputedStyle(e).display !== 'none'; })(),
-          dockShown: (function(){ var e=document.getElementById('dock'); return !!e && getComputedStyle(e).display !== 'none'; })()
+          dockSrcHidden: (function(){ var e=document.getElementById('dock'); return !e || getComputedStyle(e).display === 'none'; })()
         })`, true));
       const restoredPage = pageTab ? JSON.parse(await pageTab.view.webContents.executeJavaScript(
         `JSON.stringify({
@@ -5866,8 +6106,12 @@ async function selftest() {
       await mainWin.webContents.executeJavaScript(`window.lgChrome.zoom(1)`, true);
       await new Promise((r) => setTimeout(r, 400));
       zoomRes.up = pageTab ? pageTab.zoom : null;
-      zoomRes.badge = await mainWin.webContents.executeJavaScript(
+      /* R36：缩放百分比徽标已删（标签只留图标+文字）——比例改在右上角 #zoomhud
+         实时显示。这里断言"标签上没有任何缩放徽标 + HUD 显示当前比例" */
+      zoomRes.tabBadges = await mainWin.webContents.executeJavaScript(
         `document.querySelectorAll('.t-zoom').length`, true);
+      zoomRes.hud = await mainWin.webContents.executeJavaScript(
+        `(function(){var h=document.getElementById('zoomhud');return h?JSON.stringify({text:h.textContent,on:h.classList.contains('on'),hot:h.classList.contains('hot'),vis:getComputedStyle(h).visibility}):null})()`, true);
       await mainWin.webContents.executeJavaScript(`window.lgChrome.zoom(0)`, true);
       await new Promise((r) => setTimeout(r, 400));
       zoomRes.reset = pageTab ? pageTab.zoom : null;
@@ -6499,8 +6743,9 @@ async function selftest() {
           await pt.view.webContents.executeJavaScript(
             `JSON.stringify({
               page: document.documentElement.getAttribute('data-lg-page'),
-              bar: !!document.getElementById('lg-problem-tools'),
-              buttons: Array.prototype.map.call(document.querySelectorAll('#lg-problem-tools button'), function(b){ return b.textContent; }),
+              // R36：题目页工具条（分屏编辑器 / 打开 IDE / 复制全部样例）整块删除
+              problemBar: !!document.getElementById('lg-problem-tools'),
+              problemAttr: document.documentElement.getAttribute('data-lg-problem-editor'),
               preCount: document.querySelectorAll('pre').length,
               copyable: document.querySelectorAll('pre[data-lg-copyable="1"]').length,
               copyBtns: document.querySelectorAll('.lg-code-copy').length,
@@ -6510,6 +6755,8 @@ async function selftest() {
             true
           )
         );
+        // 删除的机械守卫：页面里不许再有那块工具条，属性也不许再挂
+        results.problemBarGone = !!(results.problem && results.problem.problemBar === false && results.problem.problemAttr === null);
       }
       cfg.pageTheme = themeBackup;
       fsx.writeFileSync(selftestShot + ".json", JSON.stringify(results));
@@ -7838,7 +8085,8 @@ async function selftest() {
           layout();
           await sleep(150);
           const pb = tabs.get(probeTab).view.getBounds();
-          out.zen.dockStrip = insD.footer === BDOCK_H && Math.abs(pb.y + pb.height - (hD - BDOCK_H)) <= 2;
+          /* R36：坞改成悬浮覆盖视图，页面不再为它让位——页面底边直达窗口底 */
+          out.zen.dockStrip = insD.footer === 0 && Math.abs(pb.y + pb.height - hD) <= 2;
           closeTab(probeTab);
           cfg.dockItems = wasItems;
           cfg.verticalTabs = wasV;
@@ -7990,7 +8238,7 @@ async function selftest() {
       const shellGeo = async () =>
         JSON.parse(
           await mainWin.webContents.executeJavaScript(
-            `(function(){var t=document.getElementById("top"),d=document.getElementById("dock");var cur=getComputedStyle(document.documentElement).getPropertyValue("--vtab-cur").trim();return JSON.stringify({cur:cur,topLeft:Math.round(parseFloat(getComputedStyle(t).left)),dockLeft:d?Math.round(parseFloat(getComputedStyle(d).left)):null,rail:document.body.classList.contains("rail"),compact:document.body.classList.contains("compact"),layout:document.body.dataset.layout})})()`,
+            `(function(){var t=document.getElementById("top"),d=document.getElementById("dock");var cur=getComputedStyle(document.documentElement).getPropertyValue("--vtab-cur").trim();return JSON.stringify({cur:cur,topLeft:Math.round(parseFloat(getComputedStyle(t).left)),dockSrcHidden:!d||getComputedStyle(d).display==="none",rail:document.body.classList.contains("rail"),compact:document.body.classList.contains("compact"),layout:document.body.dataset.layout})})()`,
             true
           )
         );
@@ -8014,7 +8262,9 @@ async function selftest() {
       await shot(mainWin.webContents, "compact");
       out.geometryPass = ["rail", "expanded", "compact"].every((k) => {
         const g = out.geometry[k] || {};
-        return g.topLeft === g.insetX && g.dockLeft === g.insetX && g.cur === g.insetX + "px";
+        /* R36：坞迁到独立覆盖视图——外壳里的 #dock 只是渲染源（恒隐），
+           坞视图的落位由 v39test 断言；这里只要求顶栏与 --vtab-cur 同源 */
+        return g.topLeft === g.insetX && g.dockSrcHidden === true && g.cur === g.insetX + "px";
       });
       flush();
 
@@ -9395,7 +9645,8 @@ async function selftest() {
       /* v3.8.0 六项：
          1) 悬停交接——浮层画好才收窄条（握手面包屑 = 真的收到 popup 的信号，
             不是 320ms 兜底兜的；交接的两帧里两侧像素相同，所以不闪）；
-         2) 折叠窄条头部只剩向下的三角；状态图标 = 钉子（钉住竖直实心 / 未钉斜 40°）；
+         2) 折叠窄条头部 = 三角 + 钉子（R36 起钉子回到窄条：用户报"固定功能不可用"）；
+            状态图标 = 钉子（钉住竖直实心 / 未钉斜 40°）；
          3) 垂直顶栏两行（38 标题行居中 + 42 工具行）+ 页面 inset().y = 80；
          4) 坞四个位置：外壳矩形与页面让位（inset）同源，页面视图真的让开了；
          5) 页面缩放时壁纸不被缩放（--lg-zoom 反向补偿：物理像素仍等于窗口）；
@@ -9421,6 +9672,16 @@ async function selftest() {
       /* ---------- 1) 悬停交接 ---------- */
       try {
         await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left", dockPos: "auto" });
+        /* 预热一次：弹层视图懒创建（首次要建视图 + 载文档 + 解码壁纸），fitRect
+           会慢到错过 320ms 兜底 → 面包屑记 "timeout"（探针实例里尤其明显）。
+           先空开一次再测，量到的才是稳态——真实可见窗口里首开也只有 2 帧的事。 */
+        try {
+          await js('document.getElementById("vtab").dispatchEvent(new MouseEvent("mouseenter"))');
+          for (let i = 0; i < 60; i++) { await sleep(50); if (popupFit && popupFit.fullH) break; }
+          stopFlyoutWatch();
+          await js("window.lgChrome.popupHide()");
+          await sleep(800);
+        } catch (e) {}
         await js('delete document.body.dataset.flyoutHandoff');
         await js('document.getElementById("vtab").dispatchEvent(new MouseEvent("mouseenter"))');
         let fit = null;
@@ -9456,7 +9717,9 @@ async function selftest() {
         await setCfg({ vtabCollapsed: false });
         const exp = JSON.parse(await js('(function(){var p=document.getElementById("btn-vpin");return JSON.stringify({display:getComputedStyle(p).display,html:p.innerHTML,title:p.title})})()'));
         out.railHead = { rail, exp };
-        out.railHeadPass = !!(rail.pin === "none" && rail.col !== "none" && /rotate\(40/.test(rail.pinHTML) === true &&
+        /* R36：钉子回到窄条上（"固定功能不可用"的反馈）——窄条两颗都可点；
+           斜钉（未钉住）在窄条与展开态都按状态画 */
+        out.railHeadPass = !!(rail.pin !== "none" && rail.col !== "none" && /rotate\(40/.test(rail.pinHTML) === true &&
           exp.display !== "none" && /rotate\(40/.test(exp.html) === false && /fill="currentColor"/.test(exp.html) && /钉住|收起侧栏/.test(exp.title));
       } catch (e) { out.railHeadErr = String((e && e.stack) || e); out.railHeadPass = false; }
       flush();
@@ -9476,53 +9739,46 @@ async function selftest() {
       } catch (e) { out.headerErr = String((e && e.stack) || e); out.headerPass = false; }
       flush();
 
-      /* ---------- 4) 坞四个位置 ---------- */
+      /* ---------- 4) 坞：独立覆盖视图，页面从它底下穿过（R36 口径） ---------- */
       try {
-        await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabSide: "left", dockItems: [{ icon: "home", title: "首页", href: "@home" }] });
+        await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left", dockItems: [{ icon: "home", title: "首页", href: "@home" }] });
+        await sleep(700); // 坞视图量尺寸 + 落位
         const res = {};
-        for (const pos of ["left", "right", "top", "bottom"]) {
-          await setCfg({ dockPos: pos });
+        const cases = [["left", "left"], ["right", "left"], ["top", "left"], ["bottom", "left"], ["right", "right"]];
+        for (const [pos, side] of cases) {
+          await setCfg({ dockPos: pos, vtabSide: side });
+          await sleep(550);
           const [w2, h2] = mainWin.getContentSize();
           const ins = inset();
-          const d = JSON.parse(await rectOf("dock"));
-          const dataDock = await js("document.body.dataset.dock");
           const at = tabs.get(activeTabId);
           const vb = at && at.view ? at.view.getBounds() : null;
-          let geo = false;
-          let view = false;
-          if (pos === "left") {
-            geo = ins.x === 46 + 56 && d.l === 46 && d.w === 56 && d.t === 80 && d.b === 0;
-            view = !!vb && vb.x === 102 && vb.width === w2 - 102;
-          } else if (pos === "right") {
-            // 侧栏在左：坞贴窗口右缘（让位在 ins.right）
-            geo = ins.x === 46 && ins.right === 56 && d.r === 0 && d.l === w2 - 56 && d.w === 56 && d.t === 80 && d.b === 0;
-            view = !!vb && vb.x === 46 && vb.width === w2 - 46 - 56;
-          } else if (pos === "top") {
-            geo = ins.y === 80 + 56 && d.t === 80 && d.h === 56 && d.l === 46 && d.r === 0;
-            view = !!vb && vb.y === 136 && vb.height === h2 - 136;
-          } else {
-            geo = ins.footer === 56 && d.b === 0 && d.h === 56 && d.l === 46 && d.r === 0;
-            view = !!vb && vb.height === h2 - 80 - 56;
-          }
-          res[pos] = { ins, dock: d, dataDock, view: vb, geo, viewOk: view, ok: !!geo && !!view && dataDock === pos };
-        }
-        /* 镜像：侧栏在右 + 坞在右 —— 坞的右边界 = 侧栏分界线（--vtab-cur） */
-        await setCfg({ dockPos: "right", vtabSide: "right" });
-        {
-          const [w3, h3] = mainWin.getContentSize();
-          const ins3 = inset();
-          const d3 = JSON.parse(await rectOf("dock"));
-          const at3 = tabs.get(activeTabId);
-          const vb3 = at3 && at3.view ? at3.view.getBounds() : null;
-          res.rightMirror = {
-            ins: ins3, dock: d3, view: vb3,
-            ok: ins3.x === 0 && ins3.right === 46 + 56 && d3.r === 46 && d3.w === 56 &&
-              !!vb3 && vb3.x === 0 && vb3.width === w3 - 46 - 56,
-          };
+          const db = dockView && !dockView.webContents.isDestroyed() ? dockView.getBounds() : null;
+          const cap = { ...dockCapsule };
+          const M = 6;
+          const availX = ins.x;
+          const availW = w2 - ins.x - (ins.right || 0);
+          const availY = ins.y;
+          const availH = h2 - ins.y - (ins.footer || 0);
+          let ex = 0;
+          let ey = 0;
+          if (pos === "left") { ex = availX + M; ey = availY + Math.round((availH - cap.h) / 2); }
+          else if (pos === "right") { ex = availX + availW - cap.w - M; ey = availY + Math.round((availH - cap.h) / 2); }
+          else if (pos === "top") { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + M; }
+          else { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + availH - cap.h - M; }
+          const expX = side === "right" ? 0 : 46;
+          const expRight = side === "right" ? 46 : 0;
+          const noPad = ins.x === expX && (ins.right || 0) === expRight && ins.y === 80 && (ins.footer || 0) === 0;
+          const viewOk = !!vb && vb.x === ins.x && vb.y === ins.y && vb.width === availW && vb.height === availH;
+          const dockOk = !!db && cap.w > 0 && db.x === ex && db.y === ey && db.width === cap.w && db.height === cap.h;
+          /* 页面内容从坞底下穿过：页面矩形必须完整覆盖坞矩形 */
+          const overlap = !!vb && !!db && vb.x <= db.x && vb.y <= db.y && vb.x + vb.width >= db.x + db.width && vb.y + vb.height >= db.y + db.height;
+          const srcHidden = await js('(function(){var e=document.getElementById("dock");return !e||getComputedStyle(e).display==="none"})()');
+          const key = pos + (side === "right" ? "R" : "");
+          res[key] = { ins, view: vb, dock: db, cap, expect: { x: ex, y: ey }, dataDock: await js("document.body.dataset.dock"), noPad, viewOk, dockOk, overlap, srcHidden, ok: noPad && viewOk && dockOk && overlap && srcHidden };
         }
         await setCfg({ dockPos: "auto", vtabSide: "left" });
         out.dock = res;
-        out.dockPass = ["left", "right", "top", "bottom", "rightMirror"].every((k) => res[k].ok);
+        out.dockPass = Object.keys(res).every((k) => res[k].ok && res[k].dataDock === (k === "rightR" ? "right" : k));
       } catch (e) { out.dockErr = String((e && e.stack) || e); out.dockPass = false; }
       flush();
 
@@ -9558,6 +9814,245 @@ async function selftest() {
       flush();
 
       out.pass = !!(out.handoffPass && out.railHeadPass && out.headerPass && out.dockPass && out.zoomPass && out.ocrPass);
+      flush();
+    } else if (argv.includes("--lg-v39test")) {
+      /* v3.9.0（R36）八项：
+         1) 坞 = 独立覆盖视图：页面不再让位（inset 无 pad）、坞胶囊四位置居中、
+            页面矩形完整覆盖坞矩形（内容从它底下穿过）、外壳里的 #dock 恒隐；
+         2) 网页 HTML 全屏：坞隐藏 + 视图落整窗，退出恢复（先试真 Fullscreen API，
+            隐藏窗口没用户手势时退化为 emit 事件，断言的是我们自己的处理链）；
+         3) 钉子状态机：三个起点（窄条 / 常驻展开 / 展开+紧凑）各点一下都有
+            可见效果（宽度 46↔212 且 rail/compact 翻转）；窄条上钉子可点；
+         4) 浮层收回握手：关路径面包屑 = ack（不是 140ms 兜底），浮层里的钉子
+            有 data-pop 回传键；
+         5) 缩放提示：标签上无缩放徽标、右上角 #zoomhud 显示比例且 ≠100% 常驻；
+         6) 头像芯片贴右缘（navrow 不再为三键留 138px）；
+         7) 图标/文字标尺：关键选择器的 computed 尺寸 === 标尺值（含坞视图里的）；
+         8) 题目页工具条已删（配置键不存在）。 */
+      const out = { at: new Date().toISOString() };
+      const flush = () => fsx.writeFileSync(selftestShot, JSON.stringify(out, null, 2));
+      try { mainWin.setOpacity(0); } catch {}
+      try { mainWin.showInactive(); } catch {}
+      try { mainWin.setContentSize(1280, 800); } catch {}
+      for (let i = 0; i < 40 && tabs.size === 0; i++) await sleep(500);
+      await sleep(1000);
+      const js = (code) => mainWin.webContents.executeJavaScript(code, true);
+      const setCfg = async (patch) => {
+        Object.assign(cfg, patch);
+        saveConfig();
+        pushConfigToChrome();
+        layout();
+        await sleep(450);
+      };
+      const savedVt = { verticalTabs: cfg.verticalTabs, vtabCollapsed: cfg.vtabCollapsed, vtabCompact: cfg.vtabCompact, vtabSide: cfg.vtabSide, dockPos: cfg.dockPos, dockItems: cfg.dockItems };
+
+      /* ---------- 1) 坞覆盖视图 + 页面从它底下穿过 ---------- */
+      try {
+        await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left", dockPos: "auto", dockItems: [{ icon: "home", title: "首页", href: "@home" }] });
+        await sleep(800); // 坞视图量尺寸 + 落位
+        const res = {};
+        const cases = [["left", "left"], ["right", "left"], ["top", "left"], ["bottom", "left"], ["right", "right"]];
+        for (const [pos, side] of cases) {
+          await setCfg({ dockPos: pos, vtabSide: side });
+          await sleep(600);
+          const [w2, h2] = mainWin.getContentSize();
+          const ins = inset();
+          const at = tabs.get(activeTabId);
+          const vb = at && at.view ? at.view.getBounds() : null;
+          const db = dockView && !dockView.webContents.isDestroyed() ? dockView.getBounds() : null;
+          const cap = { ...dockCapsule };
+          const M = 6;
+          const availX = ins.x;
+          const availW = w2 - ins.x - (ins.right || 0);
+          const availY = ins.y;
+          const availH = h2 - ins.y - (ins.footer || 0);
+          let ex = 0;
+          let ey = 0;
+          if (pos === "left") { ex = availX + M; ey = availY + Math.round((availH - cap.h) / 2); }
+          else if (pos === "right") { ex = availX + availW - cap.w - M; ey = availY + Math.round((availH - cap.h) / 2); }
+          else if (pos === "top") { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + M; }
+          else { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + availH - cap.h - M; }
+          const expX = side === "right" ? 0 : 46;
+          const expRight = side === "right" ? 46 : 0;
+          const noPad = ins.x === expX && (ins.right || 0) === expRight && ins.y === 80 && (ins.footer || 0) === 0;
+          const viewOk = !!vb && vb.x === ins.x && vb.y === ins.y && vb.width === availW && vb.height === availH;
+          const dockOk = !!db && cap.w > 0 && db.x === ex && db.y === ey && db.width === cap.w && db.height === cap.h;
+          /* 页面内容从坞底下穿过：页面矩形必须完整覆盖坞矩形 */
+          const overlap = !!vb && !!db && vb.x <= db.x && vb.y <= db.y && vb.x + vb.width >= db.x + db.width && vb.y + vb.height >= db.y + db.height;
+          const srcHidden = await js('(function(){var e=document.getElementById("dock");return !e||getComputedStyle(e).display==="none"})()');
+          const key = pos + (side === "right" ? "R" : "");
+          res[key] = { ins, view: vb, dock: db, cap, expect: { x: ex, y: ey }, dataDock: await js("document.body.dataset.dock"), noPad, viewOk, dockOk, overlap, srcHidden, ok: noPad && viewOk && dockOk && overlap && srcHidden };
+        }
+        await setCfg({ dockPos: "auto", vtabSide: "left" });
+        out.dock = res;
+        out.dockPass = Object.keys(res).every((k) => res[k].ok && res[k].dataDock === (k === "rightR" ? "right" : k));
+      } catch (e) { out.dockErr = String((e && e.stack) || e); out.dockPass = false; }
+      flush();
+
+      /* ---------- 2) 网页 HTML 全屏：坞隐藏 + 视图落整窗 ---------- */
+      try {
+        await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left", dockPos: "bottom", dockItems: [{ icon: "home", title: "首页", href: "@home" }] });
+        await sleep(700);
+        const t = tabs.get(activeTabId);
+        const before = { dockShown, dock: dockShown ? dockView.getBounds() : null, view: t && t.view ? t.view.getBounds() : null };
+        /* 真 API 先试（隐藏窗口没有用户手势，Chromium 可能直接拒绝）；无论成败
+           再用 emit 事件走一遍处理链——断言的是坞隐藏 + 视图落整窗 + 退出恢复 */
+        let apiOn = false;
+        try {
+          await t.view.webContents.executeJavaScript(
+            '(function(){var d=document.createElement("div");d.id="lg-fs-probe";document.body.appendChild(d);var p=d.requestFullscreen&&d.requestFullscreen();if(p&&p.catch)p.catch(function(){});return !!p})()',
+            true
+          );
+          for (let i = 0; i < 20; i++) { await sleep(100); if (htmlFullscreenTabId != null) { apiOn = true; break; } }
+        } catch (e) {}
+        if (!apiOn) {
+          try { t.view.webContents.emit("enter-html-full-screen"); } catch (e) {}
+          for (let i = 0; i < 20; i++) { await sleep(100); if (htmlFullscreenTabId != null) break; }
+        }
+        await sleep(500);
+        const [w3, h3] = mainWin.getContentSize();
+        const mid = { fsTab: htmlFullscreenTabId, dockHidden: !dockShown, view: t && t.view ? t.view.getBounds() : null, win: [w3, h3] };
+        if (apiOn) {
+          await t.view.webContents.executeJavaScript('(document.exitFullscreen&&document.exitFullscreen())||true', true).catch(() => {});
+        } else {
+          try { t.view.webContents.emit("leave-html-full-screen"); } catch (e) {}
+        }
+        let fsOff = false;
+        for (let i = 0; i < 30; i++) { await sleep(100); if (htmlFullscreenTabId == null) { fsOff = true; break; } }
+        await sleep(600);
+        const after = { dockShown, view: t && t.view ? t.view.getBounds() : null };
+        out.fullscreen = { apiOn, before, mid, fsOff, after };
+        out.fullscreenPass = !!(mid.fsTab != null && mid.dockHidden && mid.view && mid.view.x === 0 && mid.view.y === 0 &&
+          mid.view.width === w3 && mid.view.height === h3 && fsOff && after.dockShown &&
+          before.view && after.view && after.view.x === before.view.x && after.view.y === before.view.y);
+      } catch (e) { out.fullscreenErr = String((e && e.stack) || e); out.fullscreenPass = false; }
+      flush();
+
+      /* ---------- 3) 钉子状态机：任何起点第一下都有可见效果 ---------- */
+      try {
+        const pinState = async () => JSON.parse(await js('JSON.stringify({rail:document.body.classList.contains("rail"),compact:document.body.classList.contains("compact"),pinDisplay:getComputedStyle(document.getElementById("btn-vpin")).display,pinHTML:document.getElementById("btn-vpin").innerHTML})'));
+        const st = {};
+        for (const [name, start] of [["rail", { vtabCollapsed: true, vtabCompact: false }], ["expanded", { vtabCollapsed: false, vtabCompact: false }], ["expandedCompact", { vtabCollapsed: false, vtabCompact: true }]]) {
+          await setCfg({ verticalTabs: true, vtabSide: "left", ...start });
+          const before = await pinState();
+          const beforeIns = inset().x;
+          const resp = await js('window.lgChrome.toggleVtab()');
+          await sleep(600);
+          const after = await pinState();
+          const afterIns = inset().x;
+          const visBefore = !before.rail && !before.compact;
+          const visAfter = !after.rail && !after.compact;
+          st[name] = { before, after, beforeIns, afterIns, resp, visBefore, visAfter, ok: visBefore !== visAfter && beforeIns !== afterIns && !!(resp && resp.ok) };
+        }
+        await setCfg({ vtabCollapsed: true, vtabCompact: false });
+        const railPin = await pinState();
+        out.pin = { st, railPin };
+        out.pinPass = !!(st.rail.ok && st.expanded.ok && st.expandedCompact.ok && railPin.rail && railPin.pinDisplay !== "none" && /rotate\(40/.test(railPin.pinHTML));
+      } catch (e) { out.pinErr = String((e && e.stack) || e); out.pinPass = false; }
+      flush();
+
+      /* ---------- 4) 浮层收回握手：面包屑 = ack ---------- */
+      try {
+        await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left" });
+        await js('delete document.body.dataset.flyoutClose');
+        await js('delete document.body.dataset.flyoutHandoff');
+        await js('document.getElementById("vtab").dispatchEvent(new MouseEvent("mouseenter"))');
+        let fit = null;
+        for (let i = 0; i < 90; i++) { await sleep(30); if (popupFit && popupFit.fullH) { fit = { ...popupFit }; break; } }
+        /* 交接信号要轮询等：探针实例是隐藏窗口，rAF 与定时器会被节流（同 v38） */
+        let shown = false;
+        let handoff = "";
+        for (let i = 0; i < 100; i++) {
+          await sleep(100);
+          const s = JSON.parse(await js('JSON.stringify({open:document.body.classList.contains("flyout-open"),handoff:document.body.dataset.flyoutHandoff||""})'));
+          shown = s.open;
+          handoff = s.handoff;
+          if (shown) break;
+        }
+        stopFlyoutWatch(); // 探针自己看，别让光标裁判把它收走
+        /* 浮层里那颗钉子真的有回传键（"盖住窄条 ≠ 点不到"） */
+        const popKey = popupView && !popupView.webContents.isDestroyed()
+          ? await popupView.webContents.executeJavaScript('(function(){var p=document.getElementById("btn-vpin");return p?p.getAttribute("data-pop"):null})()', true).catch(() => null)
+          : null;
+        popupHideHandoff = "";
+        await js("window.lgChrome.popupHide()");
+        let ack = "";
+        for (let i = 0; i < 40; i++) { await sleep(50); ack = popupHideHandoff; if (ack) break; }
+        const railBack = await js('getComputedStyle(document.getElementById("vtab")).visibility');
+        out.closeHandoff = { fit: !!fit, shown, handoff, popKey, ack, railBack };
+        out.closeHandoffPass = !!(fit && shown && popKey && ack === "ack" && railBack === "visible");
+      } catch (e) { out.closeHandoffErr = String((e && e.stack) || e); out.closeHandoffPass = false; }
+      flush();
+
+      /* ---------- 5) 缩放提示：标签无徽标 + 右上角 HUD ---------- */
+      try {
+        const t = tabs.get(activeTabId);
+        setZoom(t, 1.25);
+        await sleep(800);
+        const hud = JSON.parse(await js('(function(){var h=document.getElementById("zoomhud");var r=h.getBoundingClientRect();return JSON.stringify({text:h.textContent,on:h.classList.contains("on"),hot:h.classList.contains("hot"),vis:getComputedStyle(h).visibility,rightGap:Math.round(window.innerWidth-r.right),top:Math.round(r.top)})})()'));
+        const tabBadges = await js('document.querySelectorAll(".t-zoom").length');
+        setZoom(t, 1);
+        await sleep(800);
+        const back = JSON.parse(await js('(function(){var h=document.getElementById("zoomhud");return JSON.stringify({text:h.textContent,on:h.classList.contains("on"),hot:h.classList.contains("hot")})})()'));
+        out.zoomHud = { at125: hud, tabBadges, backTo100: back };
+        out.zoomHudPass = !!(hud.text === "125%" && hud.on && hud.vis === "visible" && hud.rightGap >= 140 && hud.rightGap <= 150 && hud.top <= 40 &&
+          tabBadges === 0 && back.text === "100%" && !back.on);
+      } catch (e) { out.zoomHudErr = String((e && e.stack) || e); out.zoomHudPass = false; }
+      flush();
+
+      /* ---------- 6) 头像芯片顶到右侧 ---------- */
+      try {
+        await setCfg({ verticalTabs: true, vtabSide: "left" });
+        const chip = JSON.parse(await js('(function(){var c=document.getElementById("user-chip");var r=c.getBoundingClientRect();var nr=document.getElementById("navrow");return JSON.stringify({rightGap:Math.round(window.innerWidth-r.right),padRight:parseFloat(getComputedStyle(nr).paddingRight)})})()'));
+        out.chip = chip;
+        out.chipPass = !!(chip.rightGap <= 12 && chip.padRight <= 12);
+      } catch (e) { out.chipErr = String((e && e.stack) || e); out.chipPass = false; }
+      flush();
+
+      /* ---------- 7) 图标/文字标尺（含坞视图） ---------- */
+      try {
+        const sizes = JSON.parse(await js(`JSON.stringify((function(){
+          var q=function(s){return document.querySelector(s)};
+          var box=function(s){var e=q(s);if(!e)return null;var r=e.getBoundingClientRect();return {w:Math.round(r.width),h:Math.round(r.height)}};
+          var fs=function(s){var e=q(s);return e?parseFloat(getComputedStyle(e).fontSize):null};
+          return {
+            tabIcon: box("#tabs .tab .t-icon"),
+            vtabIcon: box("#vtab .vtab .t-icon"),
+            curIcon: box("#vtab-current .vc-icon"),
+            headBtn: box("#vtab-head .icon-btn svg"),
+            setIco: box("#vtab-set .vico svg"),
+            omni: box("#omnibox svg"),
+            tabFont: fs("#tabs .tab"),
+            vtabFont: fs("#vtab .vtab"),
+            hudFont: fs("#zoomhud")
+          };
+        })())`));
+        const dockIcon = dockView && dockReady && !dockView.webContents.isDestroyed()
+          ? await dockView.webContents.executeJavaScript('(function(){var e=document.querySelector("#dock a svg");return e?Math.round(e.getBoundingClientRect().width):null})()', true).catch(() => null)
+          : null;
+        const dockFace = dockView && dockReady && !dockView.webContents.isDestroyed()
+          ? await dockView.webContents.executeJavaScript('(function(){var e=document.querySelector("#dock .dock-group");return e?{fake:e.classList.contains("lg-fake"),face:e.classList.contains("lg-face-b")}:null})()', true).catch(() => null)
+          : null;
+        out.sizes = { shell: sizes, dockIcon, dockFace };
+        out.sizesPass = !!(sizes.vtabIcon && sizes.vtabIcon.w === 16 && (!sizes.tabIcon || sizes.tabIcon.w === 0 || sizes.tabIcon.w === 16) &&
+          sizes.curIcon && sizes.curIcon.w === 16 && sizes.headBtn && sizes.headBtn.w === 16 && sizes.setIco && sizes.setIco.w === 16 &&
+          sizes.omni && sizes.omni.w === 14 && sizes.vtabFont === 12.5 && (!sizes.tabFont || sizes.tabFont === 12.5) &&
+          dockIcon === 20 && dockFace && dockFace.fake && dockFace.face);
+      } catch (e) { out.sizesErr = String((e && e.stack) || e); out.sizesPass = false; }
+      flush();
+
+      /* ---------- 8) 题目页工具条已删（配置键与设置项都不在） ---------- */
+      try {
+        out.problemTools = { cfgKey: "problemEditor" in cfg };
+        out.problemToolsPass = !out.problemTools.cfgKey;
+      } catch (e) { out.problemToolsErr = String((e && e.stack) || e); out.problemToolsPass = false; }
+      flush();
+
+      /* 复原（探针不留痕：配置写回原值，坞回默认位） */
+      try {
+        await setCfg({ ...savedVt });
+      } catch (e) {}
+      out.pass = !!(out.dockPass && out.fullscreenPass && out.pinPass && out.closeHandoffPass && out.zoomHudPass && out.chipPass && out.sizesPass && out.problemToolsPass);
       flush();
     } else if (argv.includes("--lg-mattest")) {
       /* 材质对拍（"内外同一个效果"的机械守卫）：
@@ -10865,13 +11360,11 @@ async function selftest() {
                 declutter: document.documentElement.getAttribute('data-lg-declutter'),
                 quickSearch: document.documentElement.getAttribute('data-lg-quicksearch'),
                 listTools: document.documentElement.getAttribute('data-lg-listtools'),
-                problemEditor: document.documentElement.getAttribute('data-lg-problem-editor'),
                 wall: document.documentElement.getAttribute('data-lg-wall'),
                 desat: document.documentElement.getAttribute('data-lg-desat'),
                 ide: document.documentElement.getAttribute('data-lg-ide'),
                 listToolbar: !!document.getElementById('lg-listtools'),
                 quickBox: !!document.getElementById('lg-quicksearch'),
-                problemBar: !!document.getElementById('lg-problem-tools'),
                 /* 配色预设：四条基色变量是否真的落到页面上 */
                 preset: document.documentElement.getAttribute('data-lg-preset'),
                 anim: document.documentElement.getAttribute('data-lg-anim'),

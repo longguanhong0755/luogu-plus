@@ -137,7 +137,7 @@ function paint() {
   $("s-tabsleep").value = sleepMin;
   $("o-tabsleep").value = sleepMin > 0 ? sleepMin + " 分钟" : "关闭";
 
-  // 开关（默认值：ideNative/clean/quickSearch/restoreTabs/listTools/problemEditor 均默认开）
+  // 开关（默认值：ideNative/clean/quickSearch/restoreTabs/listTools 均默认开）
   $("ck-ide").checked = cfg.ideNative !== false;
   $("ck-clean").checked = cfg.clean !== false;
   $("ck-declutter").checked = !!cfg.declutter;
@@ -145,7 +145,6 @@ function paint() {
   $("ck-quick").checked = cfg.quickSearch !== false;
   $("ck-restore").checked = cfg.restoreTabs !== false;
   $("ck-listtools").checked = cfg.listTools !== false;
-  $("ck-problem").checked = cfg.problemEditor !== false;
   $("ck-codecopy").checked = cfg.codeCopy !== false;
   $("ck-diffmono").checked = !!cfg.diffMono;
   $("ck-hello").checked = cfg.homeHello !== false;
@@ -936,7 +935,6 @@ function bind() {
   ck("ck-quick", "quickSearch");
   ck("ck-restore", "restoreTabs");
   ck("ck-listtools", "listTools");
-  ck("ck-problem", "problemEditor");
   ck("ck-codecopy", "codeCopy");
   ck("ck-diffmono", "diffMono");
   ck("ck-anim", "animations");

@@ -16,14 +16,20 @@
   --lg-sans: "MiSans", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   --lg-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
   --header-h: 76px;   /* 标签条 34 + 工具行 42 */
-  --dock-w: 56px;
   --vtab-w: 212px;    /* 垂直标签栏展开宽度（与主进程 VTAB_W 对齐） */
   --vtab-rail: 46px;  /* 折叠窄条宽度（与主进程 VTAB_RAIL 对齐） */
   --vtab-edge: 4px;   /* 紧凑模式左缘热区宽度（与主进程 VTAB_EDGE 对齐） */
   /* 顶栏/底坞/页面共用的实际分界线：applyConfig 写入主进程 layout 的
      inset().x（紧凑=4 / 窄条=46 / 展开=212）。三个值只可能来自这一处。 */
   --vtab-cur: 46px;
-  --bdock-h: 56px;    /* 垂直模式底部坞条高度（与主进程 BDOCK_H 对齐） */
+  /* 图标/文字标尺（R36 统一）：同一视觉角色只有一个尺寸来源。
+     交互图标 ≥16、favicon 16、徽标 12、正文 12.5——探针按这张表断言。 */
+  --ico-lg: 20px;     /* 坞胶囊里的大图标 */
+  --ico-md: 16px;     /* 通用操作图标：工具栏/菜单/侧栏头/命令面板/favicon */
+  --ico-sm: 14px;     /* 内联小图标：地址栏、联想 */
+  --ico-badge: 12px;  /* 标签徽标（钉住/分屏） */
+  --fs-base: 12.5px;  /* 标签/菜单/按钮正文 */
+  --fs-sub: 11px;     /* 次要说明与计数 */
 }
 /* 兜底：applyConfig 尚未执行（或没拿到预设变量）时的暗色 */
 html[data-theme="dark"] {
@@ -95,7 +101,7 @@ html, body {
   margin-bottom: 3px;
   padding: 0 7px 0 10px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: var(--ink-dim);
   cursor: pointer;
   transition: color 0.12s, background 0.12s;
@@ -114,12 +120,12 @@ html, body {
   background: var(--surface-2);
   /* 面的材质与投影由 material.css 登记表统一给（选中 = 一块面） */
 }
-.tab .t-icon { width: 13px; height: 13px; flex: none; display: grid; place-items: center; }
-.tab .t-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.tab .t-icon img { width: 12px; height: 12px; border-radius: 3px; }
+.tab .t-icon { width: var(--ico-md); height: var(--ico-md); flex: none; display: grid; place-items: center; }
+.tab .t-icon svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tab .t-icon img { width: var(--ico-md); height: var(--ico-md); border-radius: 3px; }
 .tab .t-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab .t-close {
-  width: 15px; height: 15px;
+  width: 16px; height: 16px;
   border: none; border-radius: 4px;
   background: transparent;
   color: var(--ink-faint);
@@ -165,9 +171,9 @@ html[data-theme="dark"] .tab .t-close:hover { background: rgba(255, 255, 255, 0.
   font-size: 12.5px; font-weight: 600;
 }
 
-#vtab-current .vc-icon { width: 13px; height: 13px; flex: none; display: grid; place-items: center; }
-#vtab-current .vc-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-#vtab-current .vc-icon img { width: 12px; height: 12px; border-radius: 3px; }
+#vtab-current .vc-icon { width: var(--ico-md); height: var(--ico-md); flex: none; display: grid; place-items: center; }
+#vtab-current .vc-icon svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#vtab-current .vc-icon img { width: var(--ico-md); height: var(--ico-md); border-radius: 3px; }
 #vtab-current .vc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #vtab-current.loading .vc-icon { animation: lg-spin 1s steps(8) infinite; }
 
@@ -256,7 +262,7 @@ body.rail #vtab-head { justify-content: center; padding-left: 0; }
   transition: border-color 0.15s, background 0.15s;
 }
 #omnibox:focus-within { border-color: var(--ink); }
-#omnibox svg { width: 13px; height: 13px; fill: none; stroke: var(--ink-faint); stroke-width: 2; flex: none; }
+#omnibox svg { width: var(--ico-sm); height: var(--ico-sm); fill: none; stroke: var(--ink-faint); stroke-width: 2; flex: none; }
 #omni-input {
   flex: 1; min-width: 0;
   border: none; outline: none;
@@ -309,52 +315,19 @@ body.loading #loadbar { opacity: 1; }
   100% { transform: translateX(350%); }
 }
 
-/* ================= 侧坞（四个位置可选，见设置页「侧坞」卡片） =================
-   位置由 body[data-dock] 决定（applyConfig 按 cfg.dockPos 写；默认"跟随布局"
-   = 水平布局左侧 / 垂直布局底部）：
-     left/right = 竖列（顶栏之下通高，悬浮胶囊整体居中）；
-     top/bottom = 横条（跨内容区，页面由主进程 inset() 让出同一条）。
-   左右边界吃 --vtab-cur（侧栏分界线）——坞永远在内容区一侧，不钻到侧栏底下，
-   也不会在页面区留下空档（坞外壳与页面 inset 同一份 cfg 算出来）。 */
+/* ================= 侧坞（R36：已迁到独立覆盖视图 src/dock/） =================
+   坞不再占用外壳层、也不再让页面让位——页面内容从它底下穿过，坞只是一条悬浮
+   在页面之上的栏（落位在主进程 dockBounds()，四位置各留 6px 边距）。
+   外壳里的 #dock 只当渲染源（renderDock 把 HTML 推给坞视图），这里整个隐掉；
+   下面这段是坞视图消费的形态规则（markup 相同、样式同源）。 */
 #dock {
-  position: fixed;
-  z-index: 10;
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 10px;
   background: transparent;
-  scrollbar-width: none;
 }
-#dock::-webkit-scrollbar { display: none; }
-body[data-dock="left"] #dock,
-body[data-dock="right"] #dock {
-  top: var(--header-h);
-  bottom: 0;
-  width: var(--dock-w);
-  flex-direction: column;
-  padding: 12px 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-body[data-dock="left"] #dock { left: var(--vtab-cur, 0px); right: auto; }
-body[data-dock="right"] #dock { left: auto; right: 0; }
-body[data-dock="top"] #dock,
-body[data-dock="bottom"] #dock {
-  left: var(--vtab-cur, 0px);
-  right: 0;
-  height: var(--bdock-h);
-  flex-direction: row;
-  padding: 0 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-body[data-dock="top"] #dock { top: var(--header-h); bottom: auto; }
-body[data-dock="bottom"] #dock { top: auto; bottom: 0; }
-/* 侧栏在右侧时镜像：坞的右边界 = 侧栏分界线（顶栏也是这么让的） */
-body[data-layout="vertical"][data-side="right"][data-dock="right"] #dock { right: var(--vtab-cur, 0px); }
-body[data-layout="vertical"][data-side="right"][data-dock="top"] #dock,
-body[data-layout="vertical"][data-side="right"][data-dock="bottom"] #dock { left: 0; right: var(--vtab-cur, 0px); }
+html[data-lg-shell="1"] #dock { display: none; }
 /* 横条里的组/脚横排，图标与分隔线跟着转向 */
 body[data-dock="top"] .dock-group,
 body[data-dock="top"] .dock-foot,
@@ -385,7 +358,7 @@ body[data-dock="bottom"] #dock .sep { width: 1px; height: 20px; margin: 0 4px; }
   transition: background 0.12s, color 0.12s;
   flex: none;
 }
-#dock a svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#dock a svg { width: var(--ico-lg); height: var(--ico-lg); fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #dock a:hover { background: var(--surface-2); color: var(--ink); }
 #dock a.active { background: var(--surface-2); color: var(--ink); }
 #dock a.active::before {
@@ -446,7 +419,7 @@ body.compact #vtab-resize,
 #vtab-head .icon-btn { -webkit-app-region: no-drag; }
 #vtab-head .icon-btn { width: 26px; height: 26px; }
 #vtab-head #btn-vpin { margin-left: auto; }
-#vtab-head .icon-btn svg { width: 15px; height: 15px; }
+#vtab-head .icon-btn svg { width: var(--ico-md); height: var(--ico-md); }
 
 #vtabs {
   /* flex-basis auto：外壳里靠 flex 撑满定高，浮层里按内容收（面板被夹住时
@@ -485,7 +458,7 @@ body.compact #vtab-resize,
 
 /* 休眠标签：整体变淡（一眼看出"没加载"），徽章是 💤 */
 .vtab.sleeping, .tab.sleeping { opacity: 0.5; }
-.tab .t-sleep, .vtab .t-sleep { font-size: 10px; flex: none; }
+.tab .t-sleep, .vtab .t-sleep { font-size: var(--fs-sub); flex: none; }
 
 /* 紧凑模式（Zen Compact）：垂直栏整个收没，只留 4px 热区条。
    悬停热区浮出完整侧栏（走弹出层浮层，不在这里画）。 */
@@ -539,9 +512,9 @@ body.compact #vtab { display: none !important; }
 .vgchip.drop-zone { outline: 1px dashed var(--gc, var(--hairline)); outline-offset: 1px; }
 /* 液态玻璃下活动项换成玻璃面（与水平标签活动牌同源同变量） */
 
-.vtab .t-icon { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
-.vtab .t-icon svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.vtab .t-icon img { width: 13px; height: 13px; border-radius: 3px; }
+.vtab .t-icon { width: var(--ico-md); height: var(--ico-md); flex: none; display: grid; place-items: center; }
+.vtab .t-icon svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.vtab .t-icon img { width: var(--ico-md); height: var(--ico-md); border-radius: 3px; }
 .vtab .t-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vtab .t-close {
   width: 18px; height: 18px;
@@ -591,8 +564,8 @@ html[data-theme="dark"] .vtab .t-close:hover { background: rgba(255, 255, 255, 0
   transition: background 0.12s, color 0.12s;
 }
 #vtab-set:hover { background: var(--surface-2); color: var(--ink); }
-#vtab-set .vico { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
-#vtab-set .vico svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#vtab-set .vico { width: var(--ico-md); height: var(--ico-md); flex: none; display: grid; place-items: center; }
+#vtab-set .vico svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* 折叠窄条：行内布局与展开态逐像素一致，只是文字/徽标不显示——用 opacity
    而不是 display:none：图标位置一动，悬停加宽时就会横跳。侧栏左右内边距也与
@@ -601,9 +574,9 @@ body.rail #vtab { width: var(--vtab-rail); }
 body.rail #vtab .vtxt,
 body.rail #vtab .t-title,
 body.rail #vtab .t-badge { opacity: 0; }
-/* 窄条头部只留向下的三角（标签页操作）——"钉住"那颗不在折叠态出现（用户要求：
-   折叠态左上角只有向下的三角）。头部总高仍与展开态同为 44px，列表起点 y 才对
-   得上，悬停加宽不重排。 */
+/* 窄条头部两颗：向下的三角（标签页操作）+ 钉子（常驻展开/收起）。
+   R36 用户反馈"固定功能不可用"：钉子回到窄条上，收起态也能直接钉住。
+   头部总高仍与展开态同为 44px（20+4+20），列表起点 y 才对得上，悬停加宽不重排。 */
 body.rail #vtab-head {
   flex-direction: column;
   justify-content: center;
@@ -611,7 +584,6 @@ body.rail #vtab-head {
   gap: 4px;
 }
 body.rail #vtab-head .icon-btn { margin: 0; width: 30px; height: 20px; }
-body.rail #vtab-head #btn-vpin { display: none; }
 /* 窄条里的关闭按钮：悬停时在图标右上角冒出一颗小 ×（原来直接藏掉，
    窄条上根本关不了标签）。定位在按钮盒内部，不会被列表的滚动裁剪。 */
 body.rail .vtab { position: relative; }
@@ -619,11 +591,11 @@ body.rail .vtab .t-close {
   display: grid;
   position: absolute;
   right: 0; top: 0;
-  width: 15px; height: 15px;
+  width: 16px; height: 16px;
   border-radius: 50%;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
-  font-size: 10px;
+  font-size: 11px;
   opacity: 0;
   z-index: 2;
 }
@@ -652,9 +624,10 @@ body[data-layout="vertical"] #vtab { display: flex; }
    不再有"页面 4px、顶栏 46px"的两套账 */
 body[data-layout="vertical"] #top { left: var(--vtab-cur); }
 body[data-layout="vertical"] #tabstrip { display: none; }
-/* 标签条隐藏后工具行升到最顶，窗口三键跟着长到 44px，仍然是窗口最右上角 */
+/* 标签条隐藏后工具行升到最顶。窗口三键只占第一行（38px），工具行是第二行、
+   与三键不重叠——右侧不再替它留 138px（R36：头像芯片顶回窗口右侧） */
 body[data-layout="vertical"] #wctl { height: 38px; }
-body[data-layout="vertical"] #navrow { height: 42px; padding-left: 10px; padding-right: 138px; }
+body[data-layout="vertical"] #navrow { height: 42px; padding: 0 10px; }
 /* 横条坞的选中指示：贴内缘一道短线（竖列坞是外侧竖线，随方向转） */
 body[data-dock="bottom"] #dock a.active::before {
   left: 8px; right: 8px; top: auto; bottom: -4px;
@@ -713,7 +686,7 @@ body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-
 .tab .t-split,
 .vtab .t-split { width: 12px; height: 12px; flex: none; display: grid; place-items: center; color: var(--ink-faint); }
 .tab .t-split svg,
-.vtab .t-split svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.vtab .t-split svg { width: var(--ico-badge); height: var(--ico-badge); fill: none; stroke: currentColor; stroke-width: 1.8; }
 
 /* ================= 标签分组（Edge Tab Groups） ================= */
 /* 组牌：连续同组标签前面的一块色牌。点击折叠/展开，右键开组面板。
@@ -732,7 +705,7 @@ body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-
 .gchip { height: 24px; align-self: center; padding: 0 7px; border-radius: 7px; margin: 0 1px; }
 .gchip:hover,
 .vgchip:hover { background: var(--surface-2); }
-.g-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gc); flex: none; }
+.g-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--gc); flex: none; }
 .g-name {
   font-size: 12px;
   color: var(--ink);
@@ -785,8 +758,8 @@ body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-
   -webkit-app-region: no-drag;
 }
 .vghead:hover { background: var(--surface-2); }
-.vghead .g-arrow { width: 10px; height: 10px; flex: none; display: grid; place-items: center; color: var(--ink-dim); }
-.vghead .g-arrow svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.12s; }
+.vghead .g-arrow { width: 11px; height: 11px; flex: none; display: grid; place-items: center; color: var(--ink-dim); }
+.vghead .g-arrow svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.12s; }
 .vgroup.collapsed .g-arrow svg { transform: rotate(-90deg); }
 .vghead .g-name { font-size: 12px; color: var(--ink); max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vghead .g-name:empty::after { content: "未命名组"; color: var(--ink-faint); }
@@ -1044,9 +1017,9 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
   background: var(--surface);
   border-bottom: 1px solid var(--hairline);
 }
-.pal-item .t-icon { flex: none; width: 16px; height: 16px; display: grid; place-items: center; }
-.pal-item .t-icon svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.pal-item .t-icon img { width: 14px; height: 14px; border-radius: 3px; }
+.pal-item .t-icon { flex: none; width: var(--ico-md); height: var(--ico-md); display: grid; place-items: center; }
+.pal-item .t-icon svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.pal-item .t-icon img { width: var(--ico-md); height: var(--ico-md); border-radius: 3px; }
 .pal-item .pal-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pal-item {
   display: flex;
@@ -1070,15 +1043,15 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 .pal-item.on .pal-hint { color: var(--ink-dim); }
 .pal-empty { padding: 16px; text-align: center; font-size: 12.5px; color: var(--ink-faint); }
 
-/* ---------- 标签页徽标（静音 / 缩放）与拖拽排序 ---------- */
+/* ---------- 标签页徽标（钉住 / 休眠 / 分屏）与拖拽排序 ----------
+   R36：缩放百分比徽标已删（比例改在右上角 #zoomhud 显示），标签只留图标+文字。 */
 .t-badge { flex: none; color: var(--ink-faint); line-height: 1; }
 .t-badge svg {
-  width: 12px; height: 12px;
+  width: var(--ico-badge); height: var(--ico-badge);
   display: block;
   fill: none; stroke: currentColor;
   stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
 }
-.t-zoom { font-family: var(--lg-mono); font-size: 10px; letter-spacing: -0.03em; }
 .tab.dragging, .vtab.dragging { opacity: 0.5; }
 body.dragging, body.dragging * { cursor: grabbing !important; }
 
@@ -1143,3 +1116,30 @@ html[data-lg-bgvideo="1"] #wall { background-image: none; }
   line-height: 1;
 }
 #findbar button:hover { color: var(--ink); border-color: var(--ink); }
+
+/* ---------- 缩放比例提示（R36：标签徽标已删，比例改在这里实时显示） ----------
+   窗口右上角、窗口三键左侧；pointer-events:none（不吃点击，纯读数）。
+   变化时高亮浮出约 1.5 秒（.hot），之后缩放 ≠100% 留一枚淡色常驻（.on），
+   回到 100% 整颗隐去。数字与类由 chrome.js 的 zoomHudSync 按 tabs 快照写；
+   面（底色/模糊/高光/投影）走 material.css 的外壳登记表，与其它玻璃面同源。 */
+#zoomhud {
+  position: absolute;
+  right: 146px;              /* 138px 三键 + 8px 缝 */
+  top: 6px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 13px;
+  font-family: var(--lg-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.18s, visibility 0.18s;
+}
+#zoomhud.on { visibility: visible; opacity: 0.55; }
+#zoomhud.hot { visibility: visible; opacity: 1; color: var(--ink); }

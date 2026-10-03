@@ -135,12 +135,11 @@ html[data-lg-bgvideo="1"] .lg-wallpaper { background-image: none; }
    3. 外壳层登记表（html[data-lg-shell="1"]）
    ============================================================ */
 
-/* 顶栏 / 竖栏 / 坞组 / 页内查找条：薄档面。单边发丝线（哪一边有线）是形态，
+/* 顶栏 / 竖栏 / 缩放提示 / 页内查找条：薄档面。单边发丝线（哪一边有线）是形态，
    留在 chrome.css 里用相同线色画。 */
 html[data-lg-shell="1"] #top,
 html[data-lg-shell="1"] #vtab,
-html[data-lg-shell="1"] .dock-group,
-html[data-lg-shell="1"] .dock-foot,
+html[data-lg-shell="1"] #zoomhud,
 html[data-lg-shell="1"] #findbar {
   background-color: var(--lg-glass-bg) !important;
   background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
@@ -148,27 +147,18 @@ html[data-lg-shell="1"] #findbar {
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }
-html[data-lg-shell="1"] .dock-group,
-html[data-lg-shell="1"] .dock-foot,
+html[data-lg-shell="1"] #zoomhud,
 html[data-lg-shell="1"] #findbar {
   border: 1px solid var(--lg-glass-line) !important;
 }
-/* 坞本体是容器，不吃面：面在 .dock-group / .dock-foot 上 */
-html[data-lg-shell="1"] #dock {
-  background: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border: none !important;
-  box-shadow: none !important;
-}
+/* 坞已迁到独立覆盖视图（R36）：面与料见下面第 3b 节；外壳里只留渲染源节点，
+   不再有可见的 #dock 面。 */
 /* 选中/悬停/状态面：同一配方、中间档。悬停类状态只吃底色与高光（无边框），
    选中类状态再加上发丝线与投影——层级差一格，料是同一份。 */
 html[data-lg-shell="1"] .tab.active,
 html[data-lg-shell="1"] .vtab.active,
 html[data-lg-shell="1"] .icon-btn:hover,
 html[data-lg-shell="1"] .icon-btn.on,
-html[data-lg-shell="1"] #dock a:hover,
-html[data-lg-shell="1"] #dock a.active,
 html[data-lg-shell="1"] #tab-new:hover,
 html[data-lg-shell="1"] #vtab-new:hover,
 html[data-lg-shell="1"] #vtab-set:hover,
@@ -194,6 +184,23 @@ html[data-lg-shell="1"] #omnibox {
   box-shadow: inset 0 1px 0 var(--lg-glass-hi) !important;
 }
 html[data-lg-shell="1"] #omnibox:focus-within { border-color: var(--lg-glass-hi) !important; }
+
+/* ============================================================
+   3b. 坞覆盖层登记表（html[data-lg-dock="1"]）
+   坞是独立覆盖视图（R36：页面内容从它底下穿过），看不到真壁纸——面 = 假壁纸
+   背景 + 与外壳同源的同值上色（.lg-fake 配方，与弹层同一条路）。这里只补
+   边框 / 投影 / 悬停态这几条料；形状与布局在 src/dock/dock.css。
+   ============================================================ */
+html[data-lg-dock="1"] #dock .dock-group,
+html[data-lg-dock="1"] #dock .dock-foot {
+  border: 1px solid var(--lg-glass-line) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+html[data-lg-dock="1"] #dock a:hover,
+html[data-lg-dock="1"] #dock a.active {
+  background-color: var(--lg-glass-bg-2) !important;
+  background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
+}
 
 /* ============================================================
    4. 弹层登记表（html[data-lg-popup="1"]）
@@ -313,8 +320,7 @@ select {
   border: 1px solid var(--lg-glass-line) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }
-#lg-quicksearch,
-#lg-problem-tools {
+#lg-quicksearch {
   background: var(--lg-glass-bg) !important;
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
