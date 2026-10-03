@@ -170,7 +170,7 @@ const DEFAULT_CONFIG = {
      折叠窄条宽度固定 46，不受影响。 */
   vtabWidth: 212,
   /* 垂直标签栏放哪一侧（Edge 支持左/右）：left=默认，right=贴窗口右缘。
-     所有几何消费者（页面 inset / 分屏 / 抽屉 / 坞 / 弹层锚点 / 悬停卡片）
+     所有几何消费者（页面 inset / 分屏 / 抽屉 / 坞 / 弹层锚点）
      都从 inset() 取，不各写一套。 */
   vtabSide: "left",
   /* 侧坞放哪一边（上/下/左/右）："auto" = 跟随布局（水平布局左侧、垂直布局
@@ -1164,11 +1164,13 @@ function layout() {
   const ins = inset();
   const fullW = Math.max(1, w - ins.x - (ins.right || 0));
   const fullH = Math.max(1, h - ins.y - (ins.footer || 0));
-  const drawerW = drawerOpen && drawerView ? Math.round(fullW * 0.52) : 0;
+  /* 题目页自带 IDE 模式（R38）：活动标签铺满整窗，分屏与抽屉一起挂起 */
+  const ideFull = inPageIdeFull(activeTabId) && tabs.has(activeTabId);
+  const drawerW = !ideFull && drawerOpen && drawerView ? Math.round(fullW * 0.52) : 0;
   const tabW = Math.max(1, fullW - drawerW);
   /* 分屏拼合：活动标签所在组的窗格几何按 splitPanes 排（IDE 抽屉优先，
      抽屉开着分屏暂时挂起）。焦点在窗格间移动只换 activeTabId，几何不变。 */
-  const grp = !drawerW && activeTabId != null ? splitGroupOf(activeTabId) : null;
+  const grp = !drawerW && !ideFull && activeTabId != null ? splitGroupOf(activeTabId) : null;
   const paneMap = new Map();
   if (grp) {
     for (const p of splitPanes(grp, tabW, fullH).panes) {
@@ -1177,8 +1179,10 @@ function layout() {
   }
   for (const [tid, t] of tabs) {
     if (!t.view) continue; // 休眠标签没有视图，等唤醒时再由 layout 摆位
-    /* 网页 HTML 全屏（视频 / IDE 全屏）：该标签视图落整窗——外壳与坞都被让开 */
-    const b = tid === htmlFullscreenTabId
+    /* 网页 HTML 全屏（视频）与题目页自带 IDE 模式：该标签视图落整窗——
+       外壳（标签条/地址栏/侧栏）与坞都被让开，页面盖满整窗 = 真·全屏 */
+    const fullWin = tid === htmlFullscreenTabId || (ideFull && tid === inPageIdeTabId);
+    const b = fullWin
       ? { x: 0, y: 0, width: Math.max(1, w), height: Math.max(1, h) }
       : (paneMap.get(tid) || { x: ins.x, y: ins.y, width: tabW, height: fullH });
     try {
@@ -1194,7 +1198,7 @@ function layout() {
         width: Math.max(1, fullW - tabW),
         height: fullH,
       });
-      drawerView.setVisible(drawerOpen);
+      drawerView.setVisible(drawerOpen && !ideFull);
     } catch {}
   }
   if (popupView) {
@@ -1496,6 +1500,7 @@ function splitPanes(g, tabW, fullH) {
 function splitRect() {
   if (!mainWin || mainWin.isDestroyed()) return null;
   if (drawerOpen && drawerView) return null;
+  if (inPageIdeFull(activeTabId)) return null; // 题目页 IDE 全屏：分割条收掉
   const g = activeTabId != null ? splitGroupOf(activeTabId) : null;
   if (!g) return null;
   const [w, h] = mainWin.getContentSize();
@@ -1577,104 +1582,12 @@ function closeGlance() {
 }
 
 /* ============================================================
-   标签悬停卡片（Edge 的 hover card）：鼠标在标签行上停住 → 侧栏旁边浮出一张
-   小卡片（图标 + 完整标题 + 网址）。它是独立的小 WebContentsView：站点视图
-   永远盖在外壳之上，外壳里画的卡片会被网页吃掉。卡片只在停住时出现，视图
-   矩形就是卡片本身（不吃别处的点击）；层序 = 网页之上、弹出层之下。
-   ============================================================ */
-let tabTipView = null;
-let tabTipReady = false;
-let tabTipQueue = null;
-let tabTipShown = false;
-const TABTIP_W = 340;
-const TABTIP_H = 54;
-
-function ensureTabTipView() {
-  if (tabTipView) return tabTipView;
-  const v = new WebContentsView({
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      spellcheck: false,
-      backgroundThrottling: false,
-      preload: path.join(__dirname, "preload-tabtip.js"),
-    },
-  });
-  try { v.setBackgroundColor("#00000000"); } catch {}
-  mainWin.contentView.addChildView(v);
-  tabTipView = v;
-  tabTipReady = false;
-  v.webContents.on("did-finish-load", () => {
-    tabTipReady = true;
-    if (tabTipQueue) {
-      try { v.webContents.send("tabtip:show", tabTipQueue); } catch {}
-      tabTipQueue = null;
-    }
-  });
-  v.webContents.loadFile(path.join(__dirname, "src", "tabtip", "tabtip.html")).catch(() => {});
-  return v;
-}
-function hideTabTip() {
-  if (!tabTipShown) return;
-  tabTipShown = false;
-  try { if (tabTipView) tabTipView.setVisible(false); } catch {}
-}
-function showTabTip(p) {
-  if (!mainWin || mainWin.isDestroyed() || !p || !p.rect) return hideTabTip();
-  const v = ensureTabTipView();
-  const [w, h] = mainWin.getContentSize();
-  const ins = inset();
-  /* 卡片贴在侧栏外侧（垂直栏的另一边；右侧模式就贴到左侧），纵向对齐标签行、夹进窗口。
-     悬停浮层开着时（整条面板盖住窄条）：卡片要贴到"面板"外缘——还按窄条算的话
-     会整张压在面板底下（弹层永远比卡片高一层），用户根本看不见。 */
-  const fly = popupShown && popupFit && popupFit.fullH ? popupFit : null;
-  const x = Math.max(8, cfg.verticalTabs
-    ? (vtabSide() === "right"
-      ? (fly ? fly.originX - TABTIP_W - 8 : w - ins.right - TABTIP_W - 8)
-      : (fly ? fly.originX + fly.contentW + 8 : ins.x + 8))
-    : 12);
-  let y = Math.round(p.rect.y + p.rect.height / 2 - TABTIP_H / 2);
-  y = Math.max(8, Math.min(y, Math.max(8, h - TABTIP_H - 8)));
-  const width = Math.max(180, Math.min(TABTIP_W, w - x - 12));
-  const payload = {
-    cssText: p.cssText || "",
-    theme: p.theme || "light",
-    glass: p.glass || "flat",
-    title: p.title || "",
-    url: p.url || "",
-    favicon: p.favicon || "",
-    // 假壁纸的窗口几何：卡片视图只有 340×54，按视图尺寸兜底会把壁纸压成一小片
-    winW: w,
-    winH: h,
-    x,
-    y,
-  };
-  try { v.setBounds({ x, y, width, height: TABTIP_H }); } catch {}
-  if (tabTipReady) {
-    try { v.webContents.send("tabtip:show", payload); } catch {}
-  } else {
-    tabTipQueue = payload;
-  }
-  try { v.setVisible(true); } catch {}
-  /* 层序：先把自己抬到网页之上，再抬弹出层（弹层永远在最上；卡片与弹层
-     在几何上也不重叠——卡片在侧栏外侧） */
-  try {
-    mainWin.contentView.removeChildView(v);
-    mainWin.contentView.addChildView(v);
-  } catch {}
-  raisePopup();
-  tabTipShown = true;
-}
-ipcMain.handle("tabtip:show", (_e, p) => { showTabTip(p); return { ok: true }; });
-ipcMain.on("tabtip:hide", () => hideTabTip());
-
-/* ============================================================
    坞覆盖视图（R36）
    坞从外壳层搬到独立覆盖视图：页面内容从它底下穿过（不再让位），坞只是一条
    悬浮在页面之上的栏。外壳仍是渲染者（dock:sync 推 HTML + 整套主题变量），
    这一层负责：落位（四位置居中、离页面区 6px）、显隐（网页全屏时隐藏）、
    点击（dockTargetOf 映射，与旧的外壳 dockTarget 逐条一致）。
-   栈序：页面视图 < 坞 < 悬停卡片 < 弹层（raisePopup 里一并把坞抬回）。
+   栈序：页面视图 < 坞 < 弹层（raisePopup 里一并把坞抬回）。
    ============================================================ */
 let dockView = null;
 let dockReady = false;
@@ -1682,6 +1595,13 @@ let dockSyncPayload = null;       // 外壳最近一份 HTML/主题：did-finish
 let dockCapsule = { w: 0, h: 0 }; // 坞视图上报的胶囊尺寸
 let dockShown = false;            // 视图当前可见（raisePopup 里据此重挂）
 let htmlFullscreenTabId = null;   // 正处在网页 HTML 全屏的标签：坞隐藏、视图落整窗
+/* 题目页自带 IDE 模式（洛谷题目页的「进入 IDE 模式」）：R38 用户要求"IDE 状态
+   要真·全屏"。活动标签的页面视图铺满整窗（外壳的标签条/地址栏/侧栏整条让位）、
+   坞隐藏、分屏与抽屉挂起；页面里点「退出 IDE 模式」或切走标签即恢复。 */
+let inPageIdeTabId = null;
+function inPageIdeFull(id) {
+  return id != null && inPageIdeTabId != null && inPageIdeTabId === id;
+}
 
 function ensureDockView() {
   if (dockView) return dockView;
@@ -1747,6 +1667,7 @@ function dockBounds() {
    并排）。两种都让坞自动让位——R36 只把"网页自己进全屏"接上了，抽屉这条
    路径当时漏了。F11 窗口全屏不算（外壳仍在，坞跟着外壳一起在才自洽）。 */
 function ideModeNow() {
+  if (inPageIdeFull(activeTabId)) return true; // 题目页自带 IDE 模式（R38）
   if (drawerOpen && drawerView) return true;
   const g = splitGroupOf(activeTabId);
   if (!g) return false;
@@ -1780,10 +1701,12 @@ function layoutDock() {
     try { mainWin.contentView.removeChildView(v); mainWin.contentView.addChildView(v); } catch {}
     raisePopup();
   }
-  /* 假壁纸几何（tabtip 同契约）：坞视图要知道自己在窗口里的坐标与窗口尺寸 */
+  /* 假壁纸几何（与弹层同契约）：坞视图要知道自己在窗口里的坐标与窗口尺寸。
+     dock 一并下发：每次落位都把方向对齐到主进程解析的位置（配置变了但外壳
+     还没来得及重发时，坞不会带着旧方向落位）。 */
   try {
     const [w, h] = mainWin.getContentSize();
-    v.webContents.send("dock:rect", { x: b.x, y: b.y, winW: w, winH: h });
+    v.webContents.send("dock:rect", { x: b.x, y: b.y, winW: w, winH: h, dock: dockPos() });
   } catch {}
 }
 
@@ -1829,7 +1752,10 @@ ipcMain.on("dock:sync", (_e, p) => {
   const b = dockBounds();
   dockSyncPayload = {
     html: String(p.html || ""),
-    dock: String(p.dock || "bottom"),
+    /* 方向唯一来源 = 主进程解析后的位置（R38）：外壳那份是 relay，可能还停在
+       旧配置上；坞视图的排布方向必须和 dockBounds() 的落位同源，否则左/右位置
+       会出现"两颗竖排胶囊被按行并排"的两条坞（用户截图报的 bug）。 */
+    dock: dockPos(),
     cssText: String(p.cssText || ""),
     theme: String(p.theme || "light"),
     glass: String(p.glass || "flat"),
@@ -1974,33 +1900,108 @@ function leaveGroup(id) {
   scheduleSaveTabs();
   return true;
 }
-function joinGroup(id, gid) {
+/* 加入分组（Edge 语义）：anchorId 指定组内锚点（拖到某个组内标签上 → 插到它
+   前/后，Edge 的"拖到标签上并入"），不传则落到组块末尾（老行为：菜单加入、
+   落到组块中间）。已经在组里也走一遍定位——同组内拖动 = 组内排序。 */
+function joinGroup(id, gid, anchorIdRaw, before) {
   const t = tabs.get(id);
   const g = tabGroups.get(gid);
   if (!t || !g) return false;
-  if (t.groupId === gid) return true;
-  // 先算组块末尾（此时自己还没入组，否则 last 会算成自己、
+  // 先算组块（此时自己还没入组，否则 last 会算成自己、
   // indexOf 扑空把标签插到标签条最前）
-  const members = groupMembers(gid);
-  const last = members.length ? members[members.length - 1] : null;
+  const members = groupMembers(gid).filter((x) => x !== id);
+  const anchor = anchorIdRaw != null && members.includes(Number(anchorIdRaw)) ? Number(anchorIdRaw) : null;
+  if (t.groupId === gid && anchor == null) return true; // 已在组里、没给锚点：原地不动
   t.groupId = gid;
-  // 挪到组块末尾保持连续（Edge 语义：组内标签一定连成一片）
   tabOrder = tabOrder.filter((x) => x !== id);
-  if (last != null) tabOrder.splice(tabOrder.indexOf(last) + 1, 0, id);
-  else tabOrder.push(id);
+  if (anchor != null) {
+    const at = tabOrder.indexOf(anchor);
+    tabOrder.splice(before ? at : at + 1, 0, id);
+  } else {
+    // 挪到组块末尾保持连续（Edge 语义：组内标签一定连成一片）
+    const last = members.length ? members[members.length - 1] : null;
+    if (last != null) tabOrder.splice(tabOrder.indexOf(last) + 1, 0, id);
+    else tabOrder.push(id);
+  }
   pruneGroups();
   pushTabs();
   scheduleSaveTabs();
   return true;
 }
+
+/* 拖到某个标签上（Edge 的建组手势）：目标没组 → 用两者新建一个组（按视觉顺序
+   排好，拖到目标前 = 拖的在前）；目标已有组 → 并入该组并插到目标前/后。
+   钉住区不属于任何组，钉住标签不参与。 */
+function mergeTabsIntoGroup(id, targetIdRaw, before) {
+  const a = tabs.get(id);
+  const targetId = Number(targetIdRaw);
+  const b = tabs.get(targetId);
+  if (!a || !b || id === targetId) return false;
+  if (a.pinned || b.pinned) return false;
+  if (b.groupId != null) return joinGroup(id, b.groupId, targetId, before);
+  leaveGroupSilently(id);
+  const g = makeGroup();
+  a.groupId = g.id;
+  b.groupId = g.id;
+  tabOrder = tabOrder.filter((x) => x !== id);
+  const at = tabOrder.indexOf(targetId);
+  if (at < 0) tabOrder.push(id);
+  else tabOrder.splice(before ? at : at + 1, 0, id);
+  pruneGroups();
+  pushTabs();
+  scheduleSaveTabs();
+  return g;
+}
+
+/* 整组排序（Edge：拖动组头移动整块）：把成员块整体挪到 anchorId 所在位置的
+   前/后（anchorId=null → 末尾）。钉住前缀不许被插队。 */
+function reorderGroup(gid, anchorIdRaw, before) {
+  const members = groupMembers(gid);
+  if (!members.length) return false;
+  const anchorId = anchorIdRaw != null ? Number(anchorIdRaw) : null;
+  if (anchorId != null && members.includes(anchorId)) return false; // 落到自己身上：不动
+  const others = tabOrder.filter((x) => !members.includes(x));
+  const pinnedCount = others.filter((x) => { const t = tabs.get(x); return t && t.pinned; }).length;
+  let at = others.length;
+  if (anchorId != null) {
+    const i = others.indexOf(anchorId);
+    if (i >= 0) at = before ? i : i + 1;
+  }
+  at = Math.max(at, pinnedCount);
+  tabOrder = others.slice(0, at).concat(members, others.slice(at));
+  pushTabs();
+  scheduleSaveTabs();
+  return true;
+}
+
+/* 拖动落点统一入口（外壳与悬停浮层共用）：targetGid = 拖到组头/组牌上（加入该组，
+   折叠组也能当落点）；targetId = 拖到某个标签上（建组/并组）；before = 落在目标前。 */
+function groupDropApply(p) {
+  const id = p && p.id != null ? Number(p.id) : NaN;
+  if (!tabs.has(id)) return { ok: false };
+  const targetGid = p && p.targetGid != null ? Number(p.targetGid) : null;
+  if (targetGid != null) {
+    if (!tabGroups.has(targetGid)) return { ok: false };
+    return { ok: joinGroup(id, targetGid, null, null) };
+  }
+  const targetId = p && p.targetId != null ? Number(p.targetId) : null;
+  if (targetId == null || !tabs.has(targetId)) return { ok: false };
+  return { ok: !!mergeTabsIntoGroup(id, targetId, !!(p && p.before)) };
+}
+/* 新建组记录（唯一入口）：默认组名对齐 Edge 的「1 组 / 2 组…」（用户没改名时
+   组牌上显示的就是它，面板输入框里也是这个名字），颜色按调色板轮转不重复。 */
+function makeGroup() {
+  const gid = ++groupSeq;
+  const g = { id: gid, name: gid + " 组", color: GROUP_PALETTE[groupColorCursor++ % GROUP_PALETTE.length], collapsed: false };
+  tabGroups.set(gid, g);
+  return g;
+}
 function newGroupFor(id) {
   if (!tabs.has(id)) return null;
   leaveGroupSilently(id);
-  const gid = ++groupSeq;
-  const g = { id: gid, name: "", color: GROUP_PALETTE[groupColorCursor++ % GROUP_PALETTE.length], collapsed: false };
-  tabGroups.set(gid, g);
+  const g = makeGroup();
   // 直接落籍、不挪位置：一个标签的组块天然连续，原位不动
-  tabs.get(id).groupId = gid;
+  tabs.get(id).groupId = g.id;
   pushTabs();
   scheduleSaveTabs();
   return g;
@@ -2016,10 +2017,8 @@ function createGroupFromTabs(ids) {
   const list = (ids || []).filter((x) => tabs.has(x) && !tabs.get(x).pinned);
   if (list.length < 2) return null;
   for (const id of list) leaveGroupSilently(id);
-  const gid = ++groupSeq;
-  const g = { id: gid, name: "", color: GROUP_PALETTE[groupColorCursor++ % GROUP_PALETTE.length], collapsed: false };
-  tabGroups.set(gid, g);
-  for (const id of list) tabs.get(id).groupId = gid;
+  const g = makeGroup();
+  for (const id of list) tabs.get(id).groupId = g.id;
   const members = tabOrder.filter((x) => list.includes(x));
   const others = tabOrder.filter((x) => !list.includes(x));
   const firstId = members[0];
@@ -2183,7 +2182,6 @@ function applyPopupRect(w, h) {
 
 function showPopup(payload) {
   if (!mainWin || mainWin.isDestroyed()) return;
-  hideTabTip(); // 菜单/面板接管弹层：悬停卡片先让位（它比弹层低一层）
   const v = ensurePopupView();
   raisePopup();
   popupShown = true;
@@ -2234,7 +2232,6 @@ function showPopup(payload) {
 function hidePopup() {
   stopFlyoutWatch();
   flyoutHold = false; // 拖拽中被打断（点空白/Esc）时别把挂起状态留下
-  hideTabTip();
   const wasFlyout = !!(popupFit && popupFit.fullH); // 悬停浮层（整条面板）
   popupFit = null;
   if (glanceView) closeGlance(); // 速览壳被点掉/Esc：卡片视图一起收
@@ -2629,8 +2626,7 @@ function wirePageView(id, view) {
      同一时刻只可能有一个标签处于 HTML 全屏（Electron 会把窗口一起带进全屏）。 */
   wc.on("enter-html-full-screen", () => {
     htmlFullscreenTabId = id;
-    hideTabTip();
-    layoutDock();
+      layoutDock();
     layout();
   });
   wc.on("leave-html-full-screen", () => {
@@ -2708,6 +2704,8 @@ function wirePageView(id, view) {
   wc.on("did-start-loading", () => {
     // 新文档开始加载：注入标记复位（旧文档的样式表随文档一起没了）
     wc.__lgInjected = false;
+    // 旧文档的 IDE 模式判定随文档一起失效（新页面要重新上报）
+    if (inPageIdeTabId === id) inPageIdeTabId = null;
     // 图标一并复位：否则地址栏输入新网址跳走后，标签还挂着上一个站的图标
     // （新站的 page-favicon-updated 要等解析到 <link> 才来，中间一直显示旧图标）
     updateTabMeta(id, { loading: true, favicon: "" });
@@ -2762,6 +2760,7 @@ function wirePageView(id, view) {
 
   // 域名锁 + 新窗口 → 新标签（站外解锁的标签不受域名锁限制）
   wc.on("will-navigate", (e, url) => {
+    if (inPageIdeTabId === id) inPageIdeTabId = null; // 导航离开：IDE 全屏判定作废
     if (/^luogu-glass:\/\//i.test(url)) {
       e.preventDefault();
       handleAppCommand(url);
@@ -2987,7 +2986,7 @@ function setActiveTab(id) {
   tt.lastActive = Date.now();
   // 分屏：活动标签所在组全员同显（IDE 抽屉开着时分屏挂起，只显活动标签）。
   // 焦点在窗格之间移动走 webContents focus 事件（只换 activeTabId，不动这里）。
-  const g = !(drawerOpen && drawerView) ? splitGroupOf(id) : null;
+  const g = !(drawerOpen && drawerView) && !inPageIdeFull(id) ? splitGroupOf(id) : null;
   // 聚焦模式下点组内另一个标签（标签条/快捷键）：聚焦目标跟着走
   if (g && g.focusId && g.ids.includes(id)) g.focusId = id;
   const visSet = g ? (g.focusId && g.ids.includes(g.focusId) ? [g.focusId] : g.ids) : [id];
@@ -3025,6 +3024,7 @@ function closeTab(id) {
   }
   const idx = tabOrder.indexOf(id);
   unsplitSilent(id); // 分屏成员被关：幸存者回到单栏全宽
+  if (inPageIdeTabId === id) inPageIdeTabId = null;
   try {
     if (t.view) {
       mainWin.contentView.removeChildView(t.view);
@@ -3056,6 +3056,7 @@ function destroyTab(id) {
   const t = tabs.get(id);
   if (!t) return;
   unsplitSilent(id);
+  if (inPageIdeTabId === id) inPageIdeTabId = null;
   try {
     if (t.view) {
       mainWin.contentView.removeChildView(t.view);
@@ -4544,6 +4545,27 @@ ipcMain.handle("lg-app:command", (_e, c) => {
 
 /* 注入脚本 → Ctrl+滚轮缩放：按 wheel 事件所属的标签步进（不是活动标签——
    鼠标悬停在后台视图上滚也缩的是那个视图） */
+/* 注入脚本 → 题目页自带 IDE 模式（洛谷「进入 IDE 模式」）开关。按 sender 定位
+   标签（后台标签进入的模式不该影响前台），进入 = 该标签铺满整窗、外壳与坞让位。 */
+ipcMain.on("lg-app:ide-mode", (e, on) => {
+  let id = null;
+  for (const [tid, tab] of tabs) {
+    if (tab.view && tab.view.webContents === e.sender) { id = tid; break; }
+  }
+  if (id == null) return;
+  if (on) {
+    if (inPageIdeTabId !== id) {
+      inPageIdeTabId = id;
+      hidePopup();   // 全屏时菜单/浮层先收（弹层永远在最上，会压在页面上）
+      closeGlance();
+    }
+  } else if (inPageIdeTabId === id) {
+    inPageIdeTabId = null;
+  }
+  layout();
+  layoutDock();
+});
+
 ipcMain.handle("lg-app:zoom", (_e, dir) => {
   let t = null;
   for (const [, tab] of tabs) {
@@ -5190,6 +5212,11 @@ ipcMain.handle("tab:group-close", (_e, gid) => {
   return { ok: true };
 });
 ipcMain.handle("tab:group-newtab", (_e, gid) => ({ ok: newTabInGroup(gid) != null }));
+/* 拖动落点（Edge 语义）：拖到标签上 = 建组/并组；拖到组头/组牌上 = 加入该组 */
+ipcMain.handle("tab:group-drop", (_e, p) => groupDropApply(p));
+ipcMain.handle("popup:group-drop", (_e, p) => groupDropApply(p));
+/* 整组排序（拖动组头）：把该组块整体挪到 anchorId 前/后 */
+ipcMain.handle("tab:group-move", (_e, p) => ({ ok: reorderGroup(p && p.groupId, p && p.anchorId, !!(p && p.before)) }));
 
 /* ---------- 整理标签页（Edge「整理标签页」对应能力） ----------
    三个动作 + 一步撤销。整理必须"保分组"：钉住是独立前缀、分组块保持连续，
@@ -7108,6 +7135,14 @@ async function selftest() {
           `(function(){ var bs=document.querySelectorAll("#pop-root .am-item"); var b=bs[${pick.i}]; if(!b) return "no-item";
              b.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
              return "sent"; })()`, true);
+        /* 链路面包屑：① 覆盖层发出的键（popup 文档 dataset）② 外壳收到的键与
+           "外壳手里有没有这个键"（外壳 body dataset）——两跳分开记，断在哪一目了然 */
+        await sleep(500);
+        out.pickChain = {
+          popupKey: await popupView.webContents.executeJavaScript('document.documentElement.dataset.lgPick || ""', true).catch(() => ""),
+          shellKey: await mainWin.webContents.executeJavaScript('document.body.dataset.lgPicked || ""', true).catch(() => ""),
+          shellHit: await mainWin.webContents.executeJavaScript('document.body.dataset.lgPickedHit || ""', true).catch(() => ""),
+        };
       }
       const t0 = Date.now();
       let jobSeen = null, switched = false;
@@ -7115,9 +7150,25 @@ async function selftest() {
         await sleep(1000);
         if (acctJob) jobSeen = { stage: acctJob.stage, message: acctJob.message, hasCaptcha: !!acctJob.captcha, ms: Date.now() - t0 };
         if (cfg.activeAccountId !== out.before.activeAccountId) { switched = true; break; }
-        if (!acctJob && Date.now() - t0 > 7000) break; // 没 job 也没换账号 = 点击根本没触发
+        /* 没 job 也没换账号 = 点击根本没触发。阈值给 20s：切换前主进程要跑
+           probeSessionUser（隐藏窗口加载洛谷首页 + DOM 轮询），本机实测可到
+           10s+ —— 7s 会把"慢但成功"误判成"点了没反应"。 */
+        if (!acctJob && Date.now() - t0 > 20000) break;
       }
       out.switch = { switched, jobSeen, elapsedMs: Date.now() - t0, activeNow: cfg.activeAccountId };
+      /* 外壳侧现场：doSwitchAccount 有没有跑起来、卡在哪（switchJob/switchErr 是
+         外壳的脚本级绑定，同 realm 的 executeJavaScript 读得到） */
+      try {
+        out.switchShell = JSON.parse(await mainWin.webContents.executeJavaScript(
+          'JSON.stringify({ job: switchJob ? { stage: switchJob.stage, message: switchJob.message } : null, err: switchErr || "", active: accountsState.activeId || "", hit: document.body.dataset.lgPickedHit || "", key: document.body.dataset.lgPicked || "" })',
+          true));
+      } catch (e) { out.switchShellErr = String(e); }
+      /* 事后解剖：切换卡在 probeSessionUser（网络探测）这条路上吗？跑一次计时 */
+      try {
+        const t1 = Date.now();
+        const u = await probeSessionUser(acctSession(out.before.accounts[1] ? out.before.accounts[1].id : ""));
+        out.switchProbe = { ms: Date.now() - t1, uid: (u && u.uid) || "", name: (u && u.name) || "" };
+      } catch (e) { out.switchProbeErr = String(e); }
       try {
         out.chipAfter = await mainWin.webContents.executeJavaScript(
           `(function(){ var c=document.getElementById("user-chip"); return c?(c.textContent||"").slice(0,40):null; })()`, true);
@@ -9153,7 +9204,7 @@ async function selftest() {
             落点标记（插入线/放置区高亮）、浮层行带拖拽标记；
          3) 分组 Edge 式：.vgroup 组块（组头/缩进/连续组色线/折叠计数）、
             多选建组（Ctrl/Shift 选择 + 菜单入口）、双击就地改名；
-         4) 悬停卡片：独立小视图出现/内容/矩形/收起；
+         4) 悬停卡片已删除（R38）：外壳无相关函数/桥、主进程无卡片视图；
          5) 宽度可拖：160~400 夹取 + 落盘 + inset/--vtab-w 同源；
          6) 侧栏可放右侧：几何镜像（inset().right、#top 让右、浮层贴右缘）；
          7) 搜索标签页大列表（图标 + 标题 + 网址 + 计数）。 */
@@ -9572,56 +9623,15 @@ async function selftest() {
       } catch (e) { out.groupsErr = String((e && e.stack) || e); out.groupsPass = false; }
       flush();
 
-      /* ---------- 4) 悬停卡片：独立小视图 + 内容 + 矩形 + 收起 ---------- */
+      /* ---------- 4) 悬停卡片已删除（R38 用户要求"左上角那张卡片删掉"）----------
+         水平模式下它固定弹在窗口左上角（x 固定 12、y 夹到 8），与鼠标位置无关；
+         用户要求删除。这里断言删除干净：外壳没有 scheduleTabTip/cancelTabTip、
+         预加载桥没有 tabTip/tabTipHide、主进程没有卡片视图。 */
       try {
-        const [winW, winH] = mainWin.getContentSize();
-        // 先把上一段可能留着的浮层/姿态清掉：本段的期望值按"窄条"算，姿态要确定
-        await js("window.lgChrome.popupHide()");
-        await sleep(150);
-        await setVt({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left" });
-        const insL = inset().x;
-        const tipWired = await js('typeof scheduleTabTip === "function"');
-        showTabTip({ title: "卡片标题", url: "https://lg-v37-tip.invalid/x", favicon: "", rect: { x: 0, y: 120, width: 200, height: 34 }, cssText: "", theme: "light", glass: "flat" });
-        await sleep(600);
-        const tipDoc =
-          tabTipView && !tabTipView.webContents.isDestroyed()
-            ? JSON.parse(
-                await tabTipView.webContents.executeJavaScript(
-                  `(function(){var r=document.getElementById("tip-root");return JSON.stringify({title:(r.querySelector(".tip-title")||{}).textContent,url:(r.querySelector(".tip-url")||{}).textContent,face:r.classList.contains("lg-fake")&&r.classList.contains("lg-face-b")});})()`,
-                  true
-                )
-              )
-            : null;
-        const bL = tabTipView ? tabTipView.getBounds() : null;
-        const shownBefore = tabTipShown;
-        hideTabTip();
-        await sleep(150);
-        const shownAfter = tabTipShown;
-        // 右侧模式：卡片翻到左侧
-        await setVt({ vtabSide: "right" });
-        const insR0 = inset().right;
-        showTabTip({ title: "T", url: "https://x.invalid/", favicon: "", rect: { x: 0, y: 200, width: 200, height: 34 }, cssText: "", theme: "light", glass: "flat" });
-        await sleep(400);
-        const bR = tabTipView ? tabTipView.getBounds() : null;
-        hideTabTip();
-        // 浮层开着时：卡片要锚到"面板"外缘（还按窄条算会整张压在整条面板底下）
-        await setVt({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left" });
-        const fitTip = await openFlyout();
-        showTabTip({ title: "T2", url: "https://lg-v37-tip2.invalid/", favicon: "", rect: { x: 0, y: 300, width: 200, height: 34 }, cssText: "", theme: "light", glass: "flat" });
-        await sleep(400);
-        const bFly = tabTipView ? tabTipView.getBounds() : null;
-        hideTabTip();
-        await js("window.lgChrome.popupHide()");
-        await sleep(150);
-        await setVt({ vtabSide: "left" });
-        out.tip = { doc: tipDoc, left: bL, right: bR, fly: bFly, fitTip, insL, insR0, winW, winH, shownBefore, shownAfter, wired: tipWired };
-        out.tipPass = !!(
-          tipDoc && tipDoc.title === "卡片标题" && tipDoc.url === "https://lg-v37-tip.invalid/x" && tipDoc.face &&
-          bL && bL.width >= 180 && bL.x === insL + 8 && bL.y >= 8 && bL.y <= winH - 54 &&
-          shownBefore && shownAfter === false && out.tip.wired &&
-          bR && Math.abs(bR.x - (winW - insR0 - 340 - 8)) <= 1 &&
-          fitTip && bFly && bFly.x === fitTip.originX + fitTip.contentW + 8
-        );
+        const shellFn = await js('typeof scheduleTabTip + "|" + typeof cancelTabTip');
+        const bridge = await js('typeof window.lgChrome.tabTip + "|" + typeof window.lgChrome.tabTipHide');
+        out.tip = { shellFn, bridge, view: typeof tabTipView };
+        out.tipPass = shellFn === "undefined|undefined" && bridge === "undefined|undefined" && out.tip.view === "undefined";
       } catch (e) { out.tipErr = String((e && e.stack) || e); out.tipPass = false; }
       flush();
 
@@ -10415,6 +10425,268 @@ async function selftest() {
       /* ---------- 复原 + 汇总 ---------- */
       try { await setCfg({ ...saved }); } catch (e) {}
       out.pass = !!(out.dockRenderPass && out.dockIdePass && out.pinPass && out.sniffPass && out.glassPass && out.adblockPass && out.ideNativePass);
+      flush();
+    } else if (argv.includes("--lg-v311test")) {
+      /* v3.11.0（R38）四项：
+         1) 坞方向：四种位置轮测——左/右 = 竖排一列（#dock flex-direction:column、
+            两颗胶囊同列上下叠），上/下 = 横排一行（row、左右并排）；主进程
+            dockPos() 是方向唯一来源（dock:sync 覆写 + dock:rect 补发），改位置后
+            坞视图的 body[data-dock] 立刻跟上；落位与方向同源（左 = inset.x+6）；
+         2) 悬停卡片已删：外壳无 scheduleTabTip/cancelTabTip、桥无 tabTip/tabTipHide、
+            主进程无卡片视图；在标签行上悬停 1s 不冒出任何新视图（用户报的"左上角
+            那张卡片"）；
+         3) 题目页自带 IDE 模式（洛谷「进入 IDE 模式」）→ 真·全屏：合成编辑器容器 +
+            「退出 IDE 模式」文案 → 注入层上报 → 该标签视图落整窗、坞隐藏、
+            data-lg-ide=1（面板原生不透明，不再透出壁纸）；移除后全部还原；
+         4) 分组拖动（Edge 语义）：外壳合成 pointer 手势拖到标签中段 → 建组（默认名
+            "N 组"）；组头落点（含折叠组）入组；组内锚点排序；拖出组块出组；
+            整组拖动排序；全程组块连续。 */
+      const out = { at: new Date().toISOString() };
+      const flush = () => fsx.writeFileSync(selftestShot, JSON.stringify(out, null, 2));
+      try { mainWin.setOpacity(0); } catch {}
+      try { mainWin.showInactive(); } catch {}
+      try { mainWin.setContentSize(1280, 800); } catch {}
+      for (let i = 0; i < 40 && tabs.size === 0; i++) await sleep(500);
+      await sleep(1200);
+      const js = (code) => mainWin.webContents.executeJavaScript(code, true);
+      const setCfg = async (patch) => {
+        Object.assign(cfg, patch);
+        saveConfig();
+        pushConfigToChrome();
+        layout();
+        await sleep(500);
+      };
+      const invokeFor = (ch, ...args) => {
+        const h = ipcMain._invokeHandlers && ipcMain._invokeHandlers.get(ch);
+        if (!h) return null;
+        return h({ sender: mainWin.webContents }, ...args);
+      };
+      const saved = { verticalTabs: cfg.verticalTabs, vtabCollapsed: cfg.vtabCollapsed, vtabCompact: cfg.vtabCompact, vtabSide: cfg.vtabSide, dockPos: cfg.dockPos, dockItems: cfg.dockItems, ideNative: cfg.ideNative };
+
+      /* ---------- 1) 坞方向（四位置轮测） ---------- */
+      try {
+        await setCfg({
+          verticalTabs: false, dockPos: "left",
+          dockItems: [{ icon: "home", title: "首页", href: "@home" }, { icon: "list", title: "题库", href: "https://www.luogu.com.cn/problem/list" }],
+        });
+        await sleep(1600);
+        const dv = dockView && !dockView.webContents.isDestroyed() ? dockView : null;
+        if (!dv) throw new Error("no dock view");
+        const read = async () => {
+          const raw = await dv.webContents.executeJavaScript(`(function(){
+            var root = document.getElementById("dock");
+            var de = document.documentElement;
+            var cs = getComputedStyle(root);
+            var caps = [].slice.call(root.querySelectorAll(".dock-group, .dock-foot"));
+            var box = function (e) { var r = e.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
+            return JSON.stringify({ dir: cs.flexDirection, dock: document.body.dataset.dock,
+              view: { x: Number(de.dataset.lgViewX || 0), y: Number(de.dataset.lgViewY || 0) },
+              caps: caps.map(box), w: root.offsetWidth, h: root.offsetHeight });
+          })()`, true);
+          return JSON.parse(raw);
+        };
+        const res = {};
+        for (const pos of ["left", "right", "top", "bottom"]) {
+          await setCfg({ dockPos: pos });
+          await sleep(1300);
+          res[pos] = await read();
+          res[pos].bounds = dockBounds();
+        }
+        let shot = false;
+        try {
+          await setCfg({ dockPos: "left" });
+          await sleep(1200);
+          const img = await dv.webContents.capturePage();
+          if (img && !img.isEmpty()) { fsx.writeFileSync(selftestShot.replace(/\.json$/i, "") + "-dock-left.png", img.toPNG()); shot = true; }
+        } catch (e) {}
+        const stacked = (r) => r.caps.length >= 2 && Math.abs(r.caps[1].x - r.caps[0].x) <= 2 && r.caps[1].y >= r.caps[0].y + r.caps[0].h - 2;
+        const inline = (r) => r.caps.length >= 2 && Math.abs(r.caps[1].y - r.caps[0].y) <= 2 && r.caps[1].x >= r.caps[0].x + r.caps[0].w - 2;
+        const [cw, chh] = mainWin.getContentSize();
+        const ins0 = inset();
+        out.dockDir = { ...res, shot, win: [cw, chh] };
+        out.dockDirPass = !!(
+          res.left.dir === "column" && res.left.dock === "left" && stacked(res.left) &&
+          res.right.dir === "column" && res.right.dock === "right" && stacked(res.right) &&
+          res.top.dir === "row" && res.top.dock === "top" && inline(res.top) &&
+          res.bottom.dir === "row" && res.bottom.dock === "bottom" && inline(res.bottom) &&
+          res.left.bounds && Math.abs(res.left.bounds.x - (ins0.x + 6)) <= 1 &&
+          res.right.bounds && Math.abs(res.right.bounds.x + res.right.bounds.width - (cw - (ins0.right || 0) - 6)) <= 1 &&
+          res.top.bounds && Math.abs(res.top.bounds.y - (ins0.y + 6)) <= 1 &&
+          res.bottom.bounds && Math.abs(res.bottom.bounds.y + res.bottom.bounds.height - (chh - 6)) <= 1
+        );
+      } catch (e) { out.dockDirErr = String((e && e.stack) || e); out.dockDirPass = false; }
+      flush();
+
+      /* ---------- 2) 悬停卡片已删 ---------- */
+      try {
+        const shellFn = await js('typeof scheduleTabTip + "|" + typeof cancelTabTip');
+        const bridge = await js('typeof window.lgChrome.tabTip + "|" + typeof window.lgChrome.tabTipHide');
+        const popBridge = popupView && !popupView.webContents.isDestroyed()
+          ? await popupView.webContents.executeJavaScript('typeof window.lgPopup.tabTip + "|" + typeof window.lgPopup.tabTipHide', true).catch(() => "n/a")
+          : "n/a";
+        await setCfg({ verticalTabs: false, dockPos: "left" });
+        const viewUrls = () => mainWin.contentView.children.map((v) => {
+          try { return String(v.webContents.getURL() || "").split("/").slice(-2).join("/"); } catch (e) { return "?"; }
+        });
+        const viewsBefore = viewUrls();
+        await js('(function(){var r=document.querySelector("#tabs .tab[data-id]");if(r)r.dispatchEvent(new MouseEvent("mouseover",{bubbles:true}));return !!r;})()');
+        await sleep(1400);
+        const viewsAfter = viewUrls();
+        const newViews = viewsAfter.filter((u) => viewsBefore.indexOf(u) < 0);
+        out.noCard = { shellFn, bridge, popBridge, view: typeof tabTipView, viewsBefore, viewsAfter, newViews };
+        /* 悬停不许冒出任何"卡片"类视图（tabtip 的文档已删，这里防复活） */
+        out.noCardPass = shellFn === "undefined|undefined" && bridge === "undefined|undefined" &&
+          (popBridge === "undefined|undefined" || popBridge === "n/a") &&
+          out.noCard.view === "undefined" && newViews.every((u) => !/tabtip/i.test(u));
+      } catch (e) { out.noCardErr = String((e && e.stack) || e); out.noCardPass = false; }
+      flush();
+
+      /* ---------- 3) 题目页自带 IDE 模式 → 真·全屏 ---------- */
+      try {
+        await setCfg({ verticalTabs: false, dockPos: "left", ideNative: true });
+        let t2 = tabs.get(activeTabId);
+        if (!t2 || !/\/problem\//.test(t2.url || "")) {
+          navigateActive("https://www.luogu.com.cn/problem/P1002");
+          for (let i = 0; i < 70; i++) { await sleep(500); const tt = tabs.get(activeTabId); if (tt && /\/problem\//.test(tt.url || "")) break; }
+          t2 = tabs.get(activeTabId);
+        }
+        if (!t2 || !/\/problem\//.test(t2.url || "") || !t2.view || t2.view.webContents.isDestroyed()) {
+          out.ideInPage = { skipped: "network", url: t2 ? t2.url : "" };
+          out.ideInPagePass = true; // 网络不可用记 skip（与 adblock 段同口径）
+        } else {
+          await sleep(1200);
+          const [w0, h0] = mainWin.getContentSize();
+          const before = { bounds: t2.view.getBounds(), dock: dockShown, ide: inPageIdeTabId, attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true) };
+          await t2.view.webContents.executeJavaScript(`(function(){
+            var host = document.createElement("div");
+            host.id = "lg-v311-ide";
+            host.innerHTML = '<div class="editor-top-bar"><span class="code-editor-container" style="display:block;width:420px;height:220px;background:#ffffff"></span><a href="#">退出 IDE 模式</a></div>';
+            document.body.appendChild(host);
+            return true;
+          })()`, true);
+          const dbg0 = await t2.view.webContents.executeJavaScript('JSON.stringify({hook: typeof window.__lgIdeInPage, probe: window.__lgIdeInPage ? window.__lgIdeInPage() : null, path: location.pathname, title: document.title.slice(0,40), url: location.href.slice(0,80)})', true).catch((e) => "err:" + e);
+          let reported = null;
+          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId === t2.id) { reported = i; break; } }
+          await sleep(800);
+          const dbg1 = await t2.view.webContents.executeJavaScript('JSON.stringify({probe: window.__lgIdeInPage ? window.__lgIdeInPage() : null})', true).catch((e) => "err:" + e);
+          const during = {
+            dbg0, dbg1,
+            ide: inPageIdeTabId,
+            bounds: t2.view.getBounds(),
+            dock: dockShown,
+            attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
+            bg: await t2.view.webContents.executeJavaScript('getComputedStyle(document.querySelector(".code-editor-container")).backgroundColor', true),
+            glassCls: await t2.view.webContents.executeJavaScript('document.querySelector(".code-editor-container").className.indexOf("lg-glass") >= 0', true),
+          };
+          await t2.view.webContents.executeJavaScript('(function(){var h=document.getElementById("lg-v311-ide");if(h)h.remove();return true})()', true);
+          let cleared = null;
+          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId == null) { cleared = i; break; } }
+          await sleep(800);
+          const after = {
+            ide: inPageIdeTabId,
+            bounds: t2.view.getBounds(),
+            dock: dockShown,
+            attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
+          };
+          const alphaOf = (c) => {
+            const m = String(c || "").match(/rgba?\(([^)]+)\)/);
+            if (!m) return 1;
+            const parts = m[1].split(",");
+            return parts.length > 3 ? parseFloat(parts[3]) : 1;
+          };
+          out.ideInPage = { before, reported, during, cleared, after, win: [w0, h0] };
+          out.ideInPagePass = !!(
+            before.ide == null && before.dock === true && before.attr === "0" &&
+            reported != null &&
+            during.ide === t2.id && during.bounds.x === 0 && during.bounds.y === 0 &&
+            during.bounds.width === w0 && during.bounds.height === h0 &&
+            during.dock === false && during.attr === "1" &&
+            during.glassCls === false && alphaOf(during.bg) >= 0.99 &&
+            cleared != null && after.ide == null && after.dock === true && after.attr === "0" &&
+            after.bounds.y === inset().y
+          );
+        }
+      } catch (e) { out.ideInPageErr = String((e && e.stack) || e); out.ideInPagePass = false; }
+      flush();
+
+      /* ---------- 4) 分组拖动（Edge 语义，模型 + 一次外壳手势） ---------- */
+      try {
+        await setCfg({ verticalTabs: false, dockPos: "left" });
+        const gids = [];
+        const mkTab = async () => {
+          const id = createTab(HOME_URL, { activate: false });
+          for (let i = 0; i < 20; i++) { await sleep(120); if (tabs.has(id) && tabs.get(id).view) break; }
+          return id;
+        };
+        const a = await mkTab();
+        const b = await mkTab();
+        const c = await mkTab();
+        const d = await mkTab();
+        const e = await mkTab();
+        await sleep(900);
+        /* 外壳手势：把 a 拖到 b 的中段（合并意图）→ 建组 */
+        const gesture = JSON.parse(await js(`(function(){
+          var rows = document.querySelectorAll("#tabs .tab[data-id]");
+          if (rows.length < 2) return JSON.stringify({ err: "need-2-tabs", n: rows.length });
+          var A = rows[0], B = rows[1];
+          var ra = A.getBoundingClientRect(), rb = B.getBoundingClientRect();
+          var ax = Math.round(ra.left + ra.width / 2), ay = Math.round(ra.top + ra.height / 2);
+          var bx = Math.round(rb.left + rb.width / 2), by = Math.round(rb.top + rb.height / 2);
+          var ev = function (type, x, y, el) {
+            return el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 1, isPrimary: true }));
+          };
+          ev("pointerdown", ax, ay, A);
+          ev("pointermove", ax + 8, ay, document);
+          ev("pointermove", bx, by, document);
+          var marked = B.className.indexOf("drop-merge") >= 0;
+          ev("pointerup", bx, by, document);
+          return JSON.stringify({ marked: marked, a: Number(A.getAttribute("data-id")), b: Number(B.getAttribute("data-id")) });
+        })()`));
+        await sleep(900);
+        const ga = tabs.get(gesture.a) ? tabs.get(gesture.a).groupId : null;
+        const gb = tabs.get(gesture.b) ? tabs.get(gesture.b).groupId : null;
+        const g = ga != null ? tabGroups.get(ga) : null;
+        const gestureOk = !!(ga != null && ga === gb && g && /^\d+ 组$/.test(g.name || "") && !!g.color);
+        /* 组头落点（含折叠组）：c 与 d 都拖到组头 → 入组 */
+        await invokeFor("tab:group-update", { groupId: ga, patch: { collapsed: true } });
+        await sleep(300);
+        await invokeFor("tab:group-drop", { id: c, targetGid: ga });
+        await invokeFor("tab:group-drop", { id: d, targetGid: ga });
+        await sleep(600);
+        const membersAfterHead = groupMembers(ga).slice();
+        const collapsedStillOk = !!(tabGroups.get(ga) && tabGroups.get(ga).collapsed === true && membersAfterHead.includes(c) && membersAfterHead.includes(d));
+        /* 组内锚点排序：a 插到 c 前面 */
+        await invokeFor("tab:group-join", { id: a, groupId: ga });
+        await invokeFor("tab:group-drop", { id: a, targetId: c, before: true });
+        await sleep(500);
+        const membersOrdered = groupMembers(ga).slice();
+        const anchorOk = membersOrdered.indexOf(a) === membersOrdered.indexOf(c) - 1;
+        /* 拖出组块：b 移出 */
+        await invokeFor("tab:group-leave", b);
+        await sleep(400);
+        const leftOk = tabs.get(b).groupId == null && !groupMembers(ga).includes(b);
+        /* 整组拖动排序：整块挪到 e 之后 */
+        await invokeFor("tab:group-update", { groupId: ga, patch: { collapsed: false } });
+        await invokeFor("tab:group-move", { groupId: ga, anchorId: e, before: false });
+        await sleep(500);
+        const mem = groupMembers(ga).slice();
+        const idx = mem.map((x) => tabOrder.indexOf(x));
+        const contiguous = idx.length > 0 && idx[idx.length - 1] - idx[0] === idx.length - 1;
+        const movedOk = tabOrder.indexOf(e) < tabOrder.indexOf(mem[0]);
+        /* 收尾：把这五个测试标签关掉（不留痕） */
+        for (const id of [a, b, c, d, e]) { try { if (tabs.has(id)) closeTab(id); } catch (err) {} }
+        await sleep(600);
+        out.groupsDrag = {
+          gesture, gestureOk, collapsedStillOk, anchorOk, leftOk, movedOk, contiguous,
+          membersAfterHead, membersOrdered, finalMembers: mem, order: tabOrder.slice(),
+        };
+        out.groupsDragPass = !!(gesture.marked === true && gestureOk && collapsedStillOk && anchorOk && leftOk && movedOk && contiguous);
+      } catch (e) { out.groupsDragErr = String((e && e.stack) || e); out.groupsDragPass = false; }
+      flush();
+
+      /* ---------- 复原 ---------- */
+      try { await setCfg({ ...saved }); } catch (e) {}
+      out.pass = !!(out.dockDirPass && out.noCardPass && out.ideInPagePass && out.groupsDragPass);
       flush();
     } else if (argv.includes("--lg-mattest")) {
       /* 材质对拍（"内外同一个效果"的机械守卫）：

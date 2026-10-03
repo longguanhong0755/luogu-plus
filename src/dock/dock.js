@@ -13,6 +13,11 @@ let winH = 0;
 
 function applyGeometry(p) {
   const de = document.documentElement;
+  /* 方向跟主进程解析后的位置走：dock:rect 每次落位都带一份（配置刚改、外壳
+     还没重发 dock:sync 时，坞不会带着旧方向落位成"两条"）。 */
+  if (p.dock === "left" || p.dock === "right" || p.dock === "top" || p.dock === "bottom") {
+    document.body.dataset.dock = p.dock;
+  }
   winW = Math.round(p.winW || p.w || window.innerWidth);
   winH = Math.round(p.winH || p.h || window.innerHeight);
   viewX = Math.round(p.x || 0);

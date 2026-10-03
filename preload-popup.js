@@ -30,9 +30,8 @@ contextBridge.exposeInMainWorld("lgPopup", {
   tabReorder: (id, beforeId, zone) => ipcRenderer.invoke("popup:tab-reorder", { id: Number(id), beforeId: beforeId == null ? null : Number(beforeId), zone: zone === "pinned" || zone === "normal" ? zone : null }),
   /* 拖拽期间挂住浮层：光标拖出面板时主进程先别收回（否则拖到一半面板没了） */
   hold: (on) => ipcRenderer.send("popup:hold", !!on),
-  /* 悬停卡片（与外壳侧同一套）：在浮层的标签行上停住 → 浮出标题 + 网址 */
-  tabTip: (p) => ipcRenderer.invoke("tabtip:show", p),
-  tabTipHide: () => ipcRenderer.send("tabtip:hide"),
+  /* 浮层里的分组拖动：与外壳同一套落点语义（拖到标签上建组/并组、拖到组头加入） */
+  groupDrop: (m) => ipcRenderer.invoke("popup:group-drop", m),
   onClear: (cb) => ipcRenderer.on("popup:clear", () => cb()),
-  version: "6",
+  version: "7",
 });

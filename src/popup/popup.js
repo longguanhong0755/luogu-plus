@@ -176,6 +176,8 @@ function show(p) {
 document.addEventListener("mousedown", (e) => {
   const hit = e.target.closest ? e.target.closest("[data-pop]") : null;
   if (hit) {
+    /* 面包屑：探针/排障据此判断"点击键有没有从覆盖层发出去"（链路第一跳） */
+    try { document.documentElement.dataset.lgPick = String(hit.getAttribute("data-pop") || ""); } catch (err) {}
     /* 浮层里的标签行：按下不动作（否则一按下就切走了，根本拖不起来）。
        点一下的动作改在 pointerup 里补（没拖动才算点击）。 */
     if (hit.hasAttribute("data-drag-row")) return;
@@ -249,9 +251,14 @@ document.addEventListener("dragstart", (e) => e.preventDefault());
 const ROW_SEL = ".vtab[data-id]";
 let vdrag = null;
 function clearMarks() {
-  root.querySelectorAll(".drop-before, .drop-after, .drop-zone").forEach((el) => {
-    el.classList.remove("drop-before", "drop-after", "drop-zone");
+  root.querySelectorAll(".drop-before, .drop-after, .drop-zone, .drop-merge").forEach((el) => {
+    el.classList.remove("drop-before", "drop-after", "drop-zone", "drop-merge");
   });
+}
+/* 行的组归属（克隆里的 .vgroup[data-gid] 就是它） */
+function rowGidOf(el) {
+  const g = el && el.closest ? el.closest(".vgroup[data-gid]") : null;
+  return g ? Number(g.dataset.gid) : null;
 }
 function markDrop(row, before) {
   clearMarks();
@@ -262,16 +269,9 @@ function markDrop(row, before) {
     if (pins) pins.classList.add("drop-zone");
     return;
   }
-  let chip = row.previousElementSibling;
-  while (chip && !chip.classList.contains("vgchip")) {
-    if (!chip.classList.contains("vtab")) break;
-    chip = chip.previousElementSibling;
-  }
-  if (!chip || !chip.classList.contains("vgchip")) return;
-  chip.classList.add("drop-zone");
-  for (let el = chip.nextElementSibling; el && !el.classList.contains("vgchip"); el = el.nextElementSibling) {
-    if (el.classList.contains("vtab")) el.classList.add("drop-zone");
-  }
+  /* 分组块：落点行所在的整块 .vgroup 一起高亮（与外壳同一套观感） */
+  const grp = row.closest(".vgroup");
+  if (grp) grp.classList.add("drop-zone");
 }
 function endDrag(commit) {
   const d = vdrag;
@@ -287,6 +287,15 @@ function endDrag(commit) {
     return;
   }
   if (!commit) return;
+  /* 拖到标签上 / 拖到组头上（Edge 的建组手势，R38）：与外壳共用主进程通道 */
+  if (d.merge && d.merge.kind === "tab") {
+    window.lgPopup.groupDrop({ id: d.id, targetId: d.merge.targetId, before: d.merge.before });
+    return;
+  }
+  if (d.merge && d.merge.kind === "group") {
+    window.lgPopup.groupDrop({ id: d.id, targetGid: d.merge.targetGid });
+    return;
+  }
   let next = d.el.nextElementSibling;
   while (next && !next.getAttribute("data-id")) next = next.nextElementSibling;
   const zone = d.el.closest("#vtab-pins") ? "pinned" : "normal";
@@ -297,7 +306,7 @@ document.addEventListener("pointerdown", (e) => {
   const row = e.target.closest ? e.target.closest(ROW_SEL) : null;
   if (!row || !row.hasAttribute("data-drag-row")) return;
   if (e.target.closest(".t-close")) return;
-  vdrag = { id: Number(row.getAttribute("data-id")), el: row, sx: e.clientX, sy: e.clientY, moved: false };
+  vdrag = { id: Number(row.getAttribute("data-id")), el: row, sx: e.clientX, sy: e.clientY, moved: false, merge: null };
 });
 document.addEventListener("pointermove", (e) => {
   if (!vdrag) return;
@@ -311,53 +320,33 @@ document.addEventListener("pointermove", (e) => {
     if (window.lgPopup.hold) window.lgPopup.hold(true);
   }
   const over = document.elementFromPoint(e.clientX, e.clientY);
-  const row = over && over.closest ? over.closest(ROW_SEL) : null;
-  if (!row || row === vdrag.el) return;
+  if (!over || !over.closest) return;
+  /* 落点类型判定（与外壳同规则，R38）：组头上 = 加入该组（折叠组也能当落点）；
+     标签中段 = 与它建组/并组（Edge 的"拖到标签上"）；其余 = 普通插入 */
+  const head = over.closest(".vghead[data-gid]");
+  if (head && Number(head.dataset.gid) !== rowGidOf(vdrag.el)) {
+    vdrag.merge = { kind: "group", targetGid: Number(head.dataset.gid) };
+    clearMarks();
+    (head.closest(".vgroup") || head).classList.add("drop-zone");
+    return;
+  }
+  const row = over.closest(ROW_SEL);
+  if (!row || row === vdrag.el) { vdrag.merge = null; return; }
   const r = row.getBoundingClientRect();
+  const frac = (e.clientY - r.top) / Math.max(1, r.height);
+  if (!row.closest("#vtab-pins") && frac >= 0.3 && frac <= 0.7) {
+    vdrag.merge = { kind: "tab", targetId: Number(row.getAttribute("data-id")), before: frac < 0.5 };
+    clearMarks();
+    row.classList.add("drop-merge");
+    return;
+  }
+  vdrag.merge = null;
   const before = e.clientY < r.top + r.height / 2;
   row.parentElement.insertBefore(vdrag.el, before ? row : row.nextSibling);
   markDrop(row, before);
 });
 document.addEventListener("pointerup", () => { if (vdrag) endDrag(true); });
 document.addEventListener("pointercancel", () => { if (vdrag) endDrag(false); });
-
-/* ---------- 悬停卡片（与外壳侧同一套） ----------
-   在浮层的标签行上停住约 0.5 秒 → 面板外侧浮出图标 + 完整标题 + 网址。
-   浮层文档的坐标原点就是窗口原点（面板左上角 = 窗口左上角），rect 直接可用。 */
-let tipTimer = null;
-let tipId = null;
-function tipCancel() {
-  clearTimeout(tipTimer);
-  tipId = null;
-  if (window.lgPopup.tabTipHide) window.lgPopup.tabTipHide();
-}
-function tipSchedule(row) {
-  const id = row.getAttribute("data-id");
-  if (tipId === id) return;
-  clearTimeout(tipTimer);
-  tipId = id;
-  if (vdrag) return;
-  tipTimer = setTimeout(() => {
-    const tEl = row.querySelector(".t-title");
-    const img = row.querySelector(".t-icon img");
-    const r = row.getBoundingClientRect();
-    window.lgPopup.tabTip({
-      title: tEl ? tEl.textContent : "",
-      url: row.getAttribute("data-url") || "",
-      favicon: img ? img.src : "",
-      rect: { x: r.left, y: r.top, width: r.width, height: r.height },
-      cssText: document.documentElement.style.cssText || "",
-      theme: document.documentElement.getAttribute("data-theme") || "light",
-      glass: document.documentElement.getAttribute("data-glass") || "flat",
-    });
-  }, 520);
-}
-document.addEventListener("mouseover", (e) => {
-  const row = e.target && e.target.closest ? e.target.closest(ROW_SEL) : null;
-  if (row) tipSchedule(row);
-  else tipCancel();
-});
-document.addEventListener("mouseleave", tipCancel);
 
 window.lgPopup.onShow(show);
 // 窗口缩放：主进程补发窗口尺寸，假壁纸几何跟着更新

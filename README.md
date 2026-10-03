@@ -31,10 +31,13 @@ luogu-glass/
 ## 功能一览
 
 - **外壳**：Edge 式垂直标签栏（默认收起；悬停=整条展开浮出，与"点箭头常驻展开"逐像素同一条——整高贴边、方角、盖住窄条、头尾按钮同位置，悬停不挤压页面、常驻展开才挤压；宽度可拖、可放左侧或右侧）/ 顶部标签条二选一；
-  Edge 式标签分组（组头行 + 连续组色线 + 多选建组 + 就地改名）与 15 种拼合布局；悬停卡片（标题 + 网址）；悬停浮层/右键菜单/命令面板都能整理标签页（排序/去重/自动建组，可撤销）；
+  Edge 式标签分组（组头行 + 连续组色线 + 多选建组 + 就地改名 + **拖动合并**：
+  拖到标签上建组/并组、拖到组头加入（折叠组也行）、拖出即移出、整组拖动排序）与
+  15 种拼合布局；悬停浮层/右键菜单/命令面板都能整理标签页（排序/去重/自动建组，可撤销）；
   垂直模式顶栏两行（标题行：图标 + 网页描述居中，右端窗口三键；工具行：前进后退 + 网址 + 账号）；
-  侧坞是悬浮栏（设置里选上/下/左/右，页面内容从它底下穿过、不再让位；网页自己
-  进入全屏、或打开分屏编辑器/题目页并排 IDE 时自动收起）；悬停展开与窄条交接零
+  侧坞是悬浮栏（设置里选上/下/左/右，页面内容从它底下穿过、不再让位；方向跟着
+  位置走：左/右 = 一竖列、上/下 = 一横条；网页自己进入全屏、题目页进入自带
+  IDE 模式、或打开分屏编辑器时自动收起）；悬停展开与窄条交接零
   闪烁（浮层画好才收窄条、收回也先画回侧栏再撤浮层）；缩放比例在窗口右上角实时
   显示（标签上不写比例）；
   下载面板；账号芯片下拉；命令面板（Ctrl+Shift+P）；快捷键总览（F1）
@@ -64,6 +67,9 @@ luogu-glass/
 - **注入时序**：嗅探原生明暗（`window.__lgNativeTheme`，**在 insertCSS 之前**跑、
   只认不透明底色、认不出返回 `unknown` 不参与判定）→ `insertCSS` →
   `executeJavaScript(inject.js)` → `apply(cfg)`；全部 CSS 变量内联到 `<html>`
+- **题目页自带 IDE 模式**（R38）：inject.js 判定（`/problem/` + 编辑器容器可见 +
+  「退出 IDE 模式」文案）→ `data-lg-ide="1"`（与 /ide 页同一套原生规则）+
+  `lgApp.ideMode` 上报 → 主进程让该标签视图铺满整窗（外壳与坞让位 = 真·全屏）
 
 ## 开发
 
@@ -90,6 +96,8 @@ LuoguLab.exe --lg-selftest=out --lg-pagetest    # 列表页与题目页的功能
 LuoguLab.exe --lg-selftest=out --lg-dump-promo  # 推广卡 DOM dump（调试）
 LuoguLab.exe --lg-hidden --lg-v36test --lg-url=about:blank   # 隔离隐藏实例全量回归
 LuoguLab.exe --lg-hidden --lg-v310test --lg-url=https://www.luogu.com.cn/  # v3.10.0 全量
+LuoguLab.exe --lg-hidden --lg-v311test --lg-url=https://www.luogu.com.cn/problem/P1002
+              # v3.11.0：坞方向四位置 / 悬停卡片已删 / 题目页 IDE 真全屏 / 分组拖动
               # 隐藏 = 全程不亮窗不抢前台（--lg-hidden / LG_HIDDEN=1）
 LuoguLab.exe --lg-autologin --lg-user=… --lg-pass=…   # 自动登录（验证码人工辅助：
               # 抓图落盘 autologin-captcha.png → 把答案写入 %APPDATA%/LuoguLab/captcha-answer.txt）
@@ -102,7 +110,7 @@ omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色
 ## 部署状态（2026-10-01）
 
 - 桌面交付：`C:\Users\Administrator\Desktop\LuoguLab\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.8.0）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.11.0）
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
 - 设计迭代史见 `design-log.md`（R1~R33，全部有探针/截图证据）

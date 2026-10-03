@@ -424,7 +424,9 @@
     var path = location.pathname;
 
     // IDE 页特殊处理：Monaco 自带完整配色，强行套主题/滤镜会导致色彩错乱。
-    var isIde = /\/ide(\/|$)/.test(path);
+    // R38：题目页自带的「进入 IDE 模式」（页面内分屏，URL 还是 /problem/xxx）也算
+    // IDE 页——编辑器面板按原生不透明渲染（不再透出壁纸），应用侧同时进真·全屏。
+    var isIde = /\/ide(\/|$)/.test(path) || inPageIde;
     var ideNative = isIde && cfg.ideNative !== false;
     root.setAttribute("data-lg-ide", ideNative ? "1" : "0");
     // 非洛谷页标记：inject 的外部样式表按它决定给不给玻璃（壁纸层）。
@@ -646,6 +648,9 @@
       teardownListTools();
       teardownQuickSearch();
     }
+
+    // 题目页自带 IDE 模式的判定（R38）：apply 后复核一次（DOM 已就绪时立刻生效）
+    ideInPageQueue();
   }
 
   /* ============================================================
@@ -1963,6 +1968,7 @@
   var glassTick = 0;
   setInterval(function () {
     if (isLuoguPage) {
+      ideInPageQueue(); // 题目页自带 IDE 模式的兜底巡检（观察者漏拍时补）
       sweepPromos();
       sweepDeclutter();
       sweepCodeCopy();
@@ -2135,16 +2141,62 @@
       sweepPromos();
     }, 300);
   }
-  var glassObserver = new MutationObserver(function (muts) {
-    for (var i = 0; i < muts.length; i++) {
-      var m = muts[i];
-      if (m.type === "childList") {
-        for (var j = 0; j < m.addedNodes.length; j++) queueGlass(m.addedNodes[j]);
-      } else if (m.target && !/\blg-(glass|noveil)/.test(m.target.className || "")) {
-        queueGlass(m.target); // 类名/内联样式变了：重新评估这一块
+  /* ---------- 题目页自带 IDE 模式（R38）----------
+     洛谷题目页的「进入 IDE 模式」是页面内的分屏（不是 /ide 路由）：URL 仍是
+     /problem/xxx，DOM 里冒出编辑器容器 + 「退出 IDE 模式」入口。应用侧据此进
+     "真·全屏"（该标签页面视图铺满整窗、外壳与坞让位），编辑器面板也按原生
+     不透明渲染（apply 里 data-lg-ide 定夺，与 /ide 页同一套规则）。
+     判定用双条件（编辑器容器可见 + 退出文案）防误判；状态变化才上报主进程。 */
+  function ideInPageDetect() {
+    if (!isLuoguPage || !/^\/problem\//.test(location.pathname || "")) return false;
+    try {
+      var box = document.querySelector(".code-editor-container, .editor-top-bar, .io-editor-container");
+      if (!box) return false;
+      var r = box.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) return false;
+      var scope = document.querySelector(".editor-top-bar, .io-editor-container, .ide-container") || document;
+      var nodes = scope.querySelectorAll("a, button, span, div");
+      for (var i = 0; i < nodes.length && i < 300; i++) {
+        var s = (nodes[i].textContent || "").trim();
+        if (s.length <= 16 && s.indexOf("退出 IDE") >= 0) return true;
       }
-    }
+      return false;
+    } catch (e) { return false; }
+  }
+  var inPageIde = false;
+  var ideQueueTimer = 0;
+  function ideInPageSync() {
+    var on = ideInPageDetect();
+    if (on === inPageIde) return;
+    inPageIde = on;
+    try { if (window.lgApp && window.lgApp.ideMode) window.lgApp.ideMode(on); } catch (e) {}
+    apply(state.cfg); // 面板按原生渲染 / 退出后把玻璃还回来（data-lg-ide 在 apply 里定）
+  }
+  function ideInPageQueue() {
+    clearTimeout(ideQueueTimer);
+    ideQueueTimer = setTimeout(ideInPageSync, 250);
+  }
+  /* 调试出口（探针/实测用）：直接看判定与桥，不用等防抖 */
+  window.__lgIdeInPage = function () {
+    return { on: ideInPageDetect(), state: inPageIde, bridge: !!(window.lgApp && window.lgApp.ideMode) };
+  };
+  window.__lgIdeSync = ideInPageSync;
+
+  var glassObserver = new MutationObserver(function (muts) {
+    /* 清扫循环整段兜底：某个节点让 queueGlass 抛错时，后面的推广/IDE 判定
+       不能跟着被跳过（曾经一次抛错就让整批队列哑掉） */
+    try {
+      for (var i = 0; i < muts.length; i++) {
+        var m = muts[i];
+        if (m.type === "childList") {
+          for (var j = 0; j < m.addedNodes.length; j++) queueGlass(m.addedNodes[j]);
+        } else if (m.target && !/\blg-(glass|noveil)/.test(m.target.className || "")) {
+          queueGlass(m.target); // 类名/内联样式变了：重新评估这一块
+        }
+      }
+    } catch (e) {}
     queuePromo();
+    ideInPageQueue(); // 编辑器容器是 Vue 异步插进来的：DOM 一变就复核 IDE 模式
   });
   // 调试出口：探针/实测可以直接触发一次全量扫面看结果
   window.__lgGlassSweep = sweepGlassSurfaces;

@@ -232,9 +232,23 @@ function buildTabEl(t, cls) {
   return el;
 }
 
-/* ---------- 拖拽排序（水平标签条与垂直标签栏共用） ---------- */
-let drag = null; // { id, el, vertical, sx, sy, moved }
+/* ---------- 拖拽排序（水平标签条与垂直标签栏共用） ----------
+   R38 起带 Edge 的分组语义：拖到某个标签上 = 与它建组/并组；拖到组头/组牌上 =
+   加入该组；拖组头 = 整组移动。drag 形状：
+     标签拖动 { id, el, vertical, sx, sy, moved, merge }
+       merge = null（普通插入）| {kind:"tab",targetId,before} | {kind:"group",targetGid}
+     整组拖动 { gid, el, vertical, sx, sy, moved, merge:{anchorId,before} } */
+let drag = null;
 let justDragged = 0; // 拖完瞬间的时间戳：click 在 pointerup 之后才派，drag 已被清空
+/* 标签的组归属 / 组的第一位成员（整组拖动拿它当锚点） */
+function tabGidOf(id) {
+  const t = tabsState.tabs.find((tt) => tt.id === id);
+  return t && t.group != null ? t.group : null;
+}
+function firstMemberIdOf(gid) {
+  const t = tabsState.tabs.find((tt) => tt.group === gid);
+  return t ? t.id : null;
+}
 /* 拖拽期间让主进程暂停浮层收回：拖到面板外/窄条外时浮层不该被光标裁判收走
    （否则拖到一半面板就没了，落点也没了）。 */
 let flyoutHold = false;
@@ -267,9 +281,15 @@ function initDrag(box, vertical) {
   box.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     if (e.target.closest(".t-close")) return;
+    /* 组头/组牌：整组拖动（Edge：拖动组把整块挪走） */
+    const head = e.target.closest(".vghead[data-gid], .gchip[data-gid]");
+    if (head) {
+      drag = { gid: Number(head.dataset.gid), el: head, vertical, sx: e.clientX, sy: e.clientY, moved: false, merge: null };
+      return;
+    }
     const el = e.target.closest(".tab, .vtab");
     if (!el) return;
-    drag = { id: Number(el.dataset.id), el, vertical, sx: e.clientX, sy: e.clientY, moved: false };
+    drag = { id: Number(el.dataset.id), el, vertical, sx: e.clientX, sy: e.clientY, moved: false, merge: null };
   });
 }
 /* 拖拽落定：只报"放到谁前面"（move 语义）+ 落点区（钉住/普通）。窄条里钉住
@@ -283,6 +303,22 @@ function finishDrag(d) {
   justDragged = Date.now();
   d.el.classList.remove("dragging");
   document.body.classList.remove("dragging");
+  /* 整组拖动（Edge：拖组头移动整块）：只报锚点，主进程把整块搬过去 */
+  if (d.gid != null) {
+    const m = d.merge;
+    if (m && m.anchorId != null) window.lgChrome.groupMove(d.gid, m.anchorId, m.before);
+    return;
+  }
+  /* 拖到标签上 / 拖到组头上（Edge 的建组手势，R38）：主进程按落点建组或并组。
+     这两种不做实时换位——落点靠高亮表示，最终位置由主进程按锚点算。 */
+  if (d.merge && d.merge.kind === "tab") {
+    window.lgChrome.groupDrop({ id: d.id, targetId: d.merge.targetId, before: d.merge.before });
+    return;
+  }
+  if (d.merge && d.merge.kind === "group") {
+    window.lgChrome.groupDrop({ id: d.id, targetGid: d.merge.targetGid });
+    return;
+  }
   const idOf = (el) => (el && el.dataset && el.dataset.id ? Number(el.dataset.id) : NaN);
   let next = d.el.nextElementSibling;
   while (next && isNaN(idOf(next))) next = next.nextElementSibling;
@@ -295,13 +331,9 @@ function finishDrag(d) {
   /* 分组归属（Edge 语义）：落进某个组的正中间（左右邻居同组）= 入组；
      拖离自己的组块（两侧都没有本组成员）= 出组。先归属后重排：
      join 会把标签挪到组块末尾，reorder 再按精确落点摆回来。 */
-  const gidOf = (x) => {
-    const t = tabsState.tabs.find((tt) => tt.id === x);
-    return t && t.group != null ? t.group : null;
-  };
-  const cur = gidOf(d.id);
-  const prevG = prev ? gidOf(idOf(prev)) : null;
-  const nextG = next ? gidOf(idOf(next)) : null;
+  const cur = tabGidOf(d.id);
+  const prevG = prev ? tabGidOf(idOf(prev)) : null;
+  const nextG = next ? tabGidOf(idOf(next)) : null;
   (async () => {
     if (zone === "pinned") {
       if (cur != null) await window.lgChrome.groupLeave(d.id); // 钉住区不属于任何组
@@ -333,21 +365,59 @@ document.addEventListener("pointermove", (e) => {
   }
   const over = document.elementFromPoint(e.clientX, e.clientY);
   if (!over || !over.closest) return;
+
+  /* ---- 整组拖动：落点 = 别的标签 / 别的组头（报锚点 + 前/后） ---- */
+  if (drag.gid != null) {
+    const headEl = over.closest(".vghead[data-gid], .gchip[data-gid]");
+    const rowEl = over.closest(".tab[data-id], .vtab[data-id]");
+    let anchorEl = null;
+    if (headEl && Number(headEl.dataset.gid) !== drag.gid) anchorEl = headEl;
+    else if (rowEl && rowEl !== drag.el && tabGidOf(Number(rowEl.dataset.id)) !== drag.gid) anchorEl = rowEl;
+    if (!anchorEl) { drag.merge = null; return; }
+    const r = anchorEl.getBoundingClientRect();
+    const before = drag.vertical ? e.clientY < r.top + r.height / 2 : e.clientX < r.left + r.width / 2;
+    const anchorId = anchorEl.dataset.id != null ? Number(anchorEl.dataset.id) : firstMemberIdOf(Number(anchorEl.dataset.gid));
+    drag.merge = { anchorId, before };
+    clearDropMarks();
+    (anchorEl.closest(".vgroup") || anchorEl).classList.add("drop-zone");
+    return;
+  }
+
+  /* ---- 落点类型判定（Edge 语义，R38）----
+     ① 悬在别的组头/组牌上 → 加入该组（折叠组也能当落点，Edge 同款）；
+     ② 悬在别的标签的**中段**（不是贴边）→ 与它建组/并组（"拖到标签上"手势）；
+     ③ 其余位置 → 普通插入（插入线 + 实时换位）。 */
+  const headEl = over.closest(".vghead[data-gid], .gchip[data-gid]");
+  if (headEl && Number(headEl.dataset.gid) !== tabGidOf(drag.id)) {
+    drag.merge = { kind: "group", targetGid: Number(headEl.dataset.gid) };
+    clearDropMarks();
+    (headEl.closest(".vgroup") || headEl).classList.add("drop-zone");
+    return;
+  }
+  const row = over.closest(drag.vertical ? ".vtab[data-id]" : ".tab[data-id]");
+  if (!row || row === drag.el) { drag.merge = null; return; }
+  const r = row.getBoundingClientRect();
+  const frac = drag.vertical
+    ? (e.clientY - r.top) / Math.max(1, r.height)
+    : (e.clientX - r.left) / Math.max(1, r.width);
+  if (!row.closest("#vtab-pins") && frac >= 0.3 && frac <= 0.7) {
+    drag.merge = { kind: "tab", targetId: Number(row.dataset.id), before: frac < 0.5 };
+    clearDropMarks();
+    row.classList.add("drop-merge");
+    return;
+  }
+  drag.merge = null;
   if (drag.vertical) {
     /* 垂直：允许跨"钉住区 ↔ 标签列表"（Edge 的拖进/拖出钉住），所以不再要求
        同容器——落点行在哪个容器里，落下去就是哪个区（zone 见 finishDrag）。 */
-    const row = over.closest(".vtab[data-id]");
-    if (!row || row === drag.el) return;
-    const r = row.getBoundingClientRect();
     const before = e.clientY < r.top + r.height / 2;
     row.parentElement.insertBefore(drag.el, before ? row : row.nextSibling);
     markDrop(row, before);
   } else {
-    const tgt = over.closest(".tab");
-    if (!tgt || tgt === drag.el || tgt.parentElement !== drag.el.parentElement) return;
-    const r = tgt.getBoundingClientRect();
+    if (row.parentElement !== drag.el.parentElement) return;
     const before = e.clientX < r.left + r.width / 2;
-    tgt.parentElement.insertBefore(drag.el, before ? tgt : tgt.nextSibling);
+    row.parentElement.insertBefore(drag.el, before ? row : row.nextSibling);
+    markDrop(row, before); // 水平条也补插入指示线（R38）
   }
 });
 document.addEventListener("pointerup", () => {
@@ -448,7 +518,11 @@ function buildGroupChip(g, count, cls) {
   }
   el.title =
     (g.name || "未命名组") + "（" + count + " 个标签）\n点击" + (g.collapsed ? "展开" : "折叠") + "，右键打开组菜单";
-  el.addEventListener("click", () => window.lgChrome.groupUpdate(g.id, { collapsed: !g.collapsed }));
+  el.addEventListener("click", () => {
+    if (drag && drag.moved) return; // 刚拖完不要顺手折叠（整组拖动的落点）
+    if (Date.now() - justDragged < 150) return;
+    window.lgChrome.groupUpdate(g.id, { collapsed: !g.collapsed });
+  });
   el.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -484,7 +558,11 @@ function buildGroupHead(g, count) {
   el.title =
     (g.name || "未命名组") + "（" + count + " 个标签）\n点击" + (g.collapsed ? "展开" : "折叠") +
     "，双击改名，右键打开组菜单";
-  el.addEventListener("click", () => window.lgChrome.groupUpdate(g.id, { collapsed: !g.collapsed }));
+  el.addEventListener("click", () => {
+    if (drag && drag.moved) return; // 刚拖完不要顺手折叠（整组拖动的落点）
+    if (Date.now() - justDragged < 150) return;
+    window.lgChrome.groupUpdate(g.id, { collapsed: !g.collapsed });
+  });
   el.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -531,38 +609,6 @@ function startGroupRename(gid, nameEl) {
     else if (e.key === "Escape") { e.preventDefault(); finish(false); }
   });
   nameEl.addEventListener("blur", () => finish(true));
-}
-
-/* ---------- 悬停卡片（Edge 的 hover card） ----------
-   鼠标在标签行上停住约 0.5 秒 → 侧栏旁边浮出一张小卡片（图标 + 完整标题 +
-   网址）。行只有 212px，标题被截断、网址根本看不见——卡片补的就是这个。
-   移动/离开即收；拖拽中不弹。 */
-let tipTimer = null;
-let tipId = null;
-function cancelTabTip() {
-  clearTimeout(tipTimer);
-  tipId = null;
-  if (window.lgChrome.tabTipHide) window.lgChrome.tabTipHide();
-}
-function scheduleTabTip(id) {
-  if (tipId === id) return;
-  clearTimeout(tipTimer);
-  tipId = id;
-  if (drag) return;
-  tipTimer = setTimeout(() => {
-    const t = tabsState.tabs.find((x) => x.id === id);
-    if (!t) return;
-    const el = document.querySelector('.vtab[data-id="' + id + '"], .tab[data-id="' + id + '"]');
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    window.lgChrome.tabTip({
-      title: t.title || "",
-      url: t.url || "",
-      favicon: t.favicon || "",
-      rect: { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) },
-      ...popupThemePayload(), // cssText/theme/glass：卡片的配色与假壁纸与外壳同源
-    });
-  }, 520);
 }
 
 /* 普通标签按"相邻同组切块"分 runs（钉住的不参与：垂直栏在独立图标区、
@@ -884,13 +930,16 @@ function dockSyncToMain() {
   const dock = document.getElementById("dock");
   if (!dock || !window.lgChrome.dockSync) return;
   const de = document.documentElement;
-  const sig = dock.innerHTML + "||" + (de.style.cssText || "") + "||" + (de.getAttribute("data-theme") || "") + "||" + (de.getAttribute("data-glass") || "");
-  if (sig === dockSig) return;
-  dockSig = sig;
   const dp = document.body.dataset.dock;
   const dockPosNow = dp === "left" || dp === "right" || dp === "top" || dp === "bottom"
     ? dp
     : (cfgState.verticalTabs ? "bottom" : "left");
+  /* 位置必须进签名：坞视图的排布方向由它决定（左/右 = 竖排、上/下 = 横排）。
+     漏了它时"只改位置、HTML 与主题都没变"会被去重挡掉——坞视图留着旧方向，
+     主进程却按新位置落位（R38 修的"坞两条"的另一半根因）。 */
+  const sig = dockPosNow + "||" + dock.innerHTML + "||" + (de.style.cssText || "") + "||" + (de.getAttribute("data-theme") || "") + "||" + (de.getAttribute("data-glass") || "");
+  if (sig === dockSig) return;
+  dockSig = sig;
   window.lgChrome.dockSync({ html: dock.innerHTML, dock: dockPosNow, ...popupThemePayload() });
 }
 
@@ -2320,17 +2369,6 @@ function bind() {
     });
     edgeEl.addEventListener("mouseleave", () => clearTimeout(flyoutTimer));
   }
-  /* 悬停卡片：两条标签栏都吃（事件委托到容器上，行会反复重建） */
-  for (const boxId of ["vtab", "tabs"]) {
-    const box = document.getElementById(boxId);
-    if (!box) continue;
-    box.addEventListener("mouseover", (e) => {
-      const row = e.target && e.target.closest ? e.target.closest(".tab[data-id], .vtab[data-id]") : null;
-      if (row) scheduleTabTip(Number(row.dataset.id));
-      else cancelTabTip();
-    });
-    box.addEventListener("mouseleave", cancelTabTip);
-  }
   /* 分屏分割条池：几何由主进程 chrome:split 推下来（{ bars:[...] }，条数随
      布局变——等分列 2 条、网格 3 条、聚焦时 0 条）。每条独占一个比例字段
      （colRatio/rowRatio/colRatio2/rowRatio2），拖拽按比例换算回传（50ms
@@ -2629,6 +2667,12 @@ if (!window.lgChrome) {
   window.lgChrome.onPopupPicked((p) => {
     const k = p && typeof p === "object" ? p.k : p;
     const fn = popActions[k];
+    /* 面包屑（链路第二跳）：键到了外壳没有、外壳手里有没有这个键——
+       "菜单看得见点下去没反应"的排查就靠这两条 */
+    try {
+      document.body.dataset.lgPicked = String(k || "");
+      document.body.dataset.lgPickedHit = typeof fn === "function" ? "1" : "0";
+    } catch (e) {}
     if (typeof fn === "function") {
       try { fn(p && typeof p === "object" ? p.v : undefined); } catch (e) {}
     }

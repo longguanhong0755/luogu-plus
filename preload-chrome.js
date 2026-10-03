@@ -123,6 +123,15 @@ contextBridge.exposeInMainWorld("lgChrome", {
   groupUngroup: (groupId) => ipcRenderer.invoke("tab:group-ungroup", groupId),
   groupClose: (groupId) => ipcRenderer.invoke("tab:group-close", groupId),
   groupNewTab: (groupId) => ipcRenderer.invoke("tab:group-newtab", groupId),
+  /* 分组拖动落点（Edge 语义）：拖到某个标签上 = 与它新建分组（它没组）或并入
+     它所在的组（它已有组）；拖到组头/组牌上 = 加入该组；before 表示落在目标前。
+     整组排序走 groupMove（groupId + beforeGid，null = 放到最后）。 */
+  groupDrop: (m) => ipcRenderer.invoke("tab:group-drop", m),
+  groupMove: (groupId, anchorId, before) => ipcRenderer.invoke("tab:group-move", {
+    groupId: Number(groupId),
+    anchorId: anchorId == null ? null : Number(anchorId),
+    before: !!before,
+  }),
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
   openSettings: () => ipcRenderer.invoke("lg-app:open-settings"),
   openHome: () => ipcRenderer.invoke("lg-app:open-home"),
@@ -132,10 +141,6 @@ contextBridge.exposeInMainWorld("lgChrome", {
   accountCancel: () => ipcRenderer.invoke("lg-account:cancel"),
   setConfig: (patch) => ipcRenderer.invoke("lg-config:set", patch),
   tabContextMenu: (id, sel) => ipcRenderer.invoke("tab:context-menu", { id, sel: Array.isArray(sel) ? sel : [] }),
-  /* 悬停卡片（Edge 的 hover card）：鼠标在标签行上停住 → 侧栏旁边浮出
-     完整标题 + 网址（独立小视图，网页之上、弹层之下） */
-  tabTip: (p) => ipcRenderer.invoke("tabtip:show", p),
-  tabTipHide: () => ipcRenderer.send("tabtip:hide"),
   /* 主进程侧动作的提示（多选建组这类原生菜单里的操作） */
   onToast: (cb) => ipcRenderer.on("chrome:toast", (_e, m) => cb(m)),
   downloadReveal: (id) => ipcRenderer.invoke("lg-download:reveal", id),

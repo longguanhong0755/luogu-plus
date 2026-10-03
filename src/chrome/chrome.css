@@ -321,12 +321,19 @@ body.loading #loadbar { opacity: 1; }
    下面这段是坞视图消费的形态规则（markup 相同、样式同源）。 */
 #dock {
   display: flex;
+  /* 方向跟着位置走（唯一来源 = body[data-dock]，主进程按解析后的位置下发）：
+     左/右 = 竖排一列（导航胶囊在上、齿轮在下），上/下 = 横排一行。
+     R38 修：R36 重写时丢了 left/right 的竖排规则，`#dock` 退回 flex 默认 row →
+     左/右位置两颗胶囊并排成"两条"（用户截图报的"坞出现两行"）。 */
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   gap: 10px;
   background: transparent;
 }
 html[data-lg-shell="1"] #dock { display: none; }
+body[data-dock="top"] #dock,
+body[data-dock="bottom"] #dock { flex-direction: row; }
 /* 横条里的组/脚横排，图标与分隔线跟着转向 */
 body[data-dock="top"] .dock-group,
 body[data-dock="top"] .dock-foot,
@@ -507,6 +514,19 @@ body.compact #vtab { display: none !important; }
 }
 .vtab.drop-before::after { top: -1.5px; }
 .vtab.drop-after::after { bottom: -1.5px; }
+/* 水平条同款插入线（R38 补）：落点行的左/右缘一条竖线。用 inset 投影画，
+   不动 .tab 的定位（标签牌有圆角，线跟着圆角收一点，观感一致） */
+.tab.drop-before { box-shadow: inset 2px 0 0 var(--ink); }
+.tab.drop-after { box-shadow: inset -2px 0 0 var(--ink); }
+/* 拖到标签上 = 与它建组/并组（Edge 的建组手势，R38）：整行高亮成"要合并"的样子 */
+.tab.drop-merge, .vtab.drop-merge {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+/* 拖到组头/组牌上 = 加入该组（折叠组也能当落点） */
+.gchip.drop-zone, .vghead.drop-zone { outline: 1px dashed var(--gc, var(--hairline)); outline-offset: 1px; border-radius: 8px; }
+/* 整组拖动中：组头/组牌半透明（与标签拖动同一套观感） */
+.vghead.dragging, .gchip.dragging { opacity: 0.5; }
 #vtab-pins.drop-zone {
   outline: 1px dashed var(--hairline);
   outline-offset: 2px;

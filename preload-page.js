@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld("lgApp", {
   /* 翻译：页面侧 fetch 会被 CORS 拦，统一由主进程出网（划词与整页翻译共用）。
      传数组走批量；返回 {ok, texts, target} 或 {ok:false, message}。 */
   translate: (texts) => ipcRenderer.invoke("lg-app:translate", { texts: Array.isArray(texts) ? texts : [texts] }),
+  /* 题目页自带 IDE 模式（洛谷「进入 IDE 模式」）开关：注入层判定后上报，
+     主进程据此让该标签铺满整窗（外壳与坞让位 = 真·全屏）。 */
+  ideMode: (on) => ipcRenderer.send("lg-app:ide-mode", !!on),
   /* 外壳版本号：注入脚本可用它做能力探测 */
-  version: "5",
+  version: "6",
 });
