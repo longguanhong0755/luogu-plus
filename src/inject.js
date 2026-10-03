@@ -1190,34 +1190,44 @@
   };
   apply(null); // 先用默认值兜底，主进程随后会用真实配置覆盖
 
-  /* ---------- 洁净模式加强：侧栏商业推广卡清扫 ----------
-     保守策略：仅侧栏内、文本很短、命中商业关键词、且带商业链接或图片的卡片。
-     只打 data-lg-promo 标记，由 CSS 在 clean 开启时隐藏——关闭洁净模式立即还原。 */
-  var PROMO_RE = /(省选计划|冲刺省队|网校|限时优惠|报名中|训练营|冲刺营|基础组|提高组)/;
-  var COMMERCIAL_HREF_RE = /(\/class|course|mall|province|olympiad|\.pdf)/i;
+  /* ---------- 洁净模式加强：商业推广卡清扫 ----------
+     保守策略：仅侧栏/右栏内、文本不长、命中商业关键词、且带商业链接或图片的
+     卡片。只打 data-lg-promo 标记，由 CSS 在 clean 开启时隐藏——关闭立即还原。
+     R37 加强（用户："如果是开着的话就说明你的过滤广告能力不够强"）：
+     ① 容器白名单补右栏（.lg-right / .am-u-lg-3）——题解/文章页的推广卡在右栏，
+        旧白名单只认侧栏与首页，"省选计划"那张一直漏网；
+     ② 关键词补"洛谷推荐 / 省队 / 集训队"；③ 文本上限 60 → 160（那张卡带一段
+        介绍文字，被旧上限挡掉）；④ 卡片选择器补 .am-panel/.section（洛谷右栏
+        面板的另一种壳）；⑤ 挂到 MutationObserver 的批次里（queuePromo），
+        Vue 一渲染就判，不再等 2.5s 巡检那一拍。 */
+  var PROMO_RE = /(省选计划|冲刺省队|网校|限时优惠|报名中|训练营|冲刺营|基础组|提高组|洛谷推荐|省队|集训队)/;
+  var COMMERCIAL_HREF_RE = /(class\.luogu\.com\.cn|\/class|course|mall|province|olympiad|\.pdf)/i;
+  var PROMO_SIDE_SEL = ".side, .sidebar-container, .user-nav, [class*='sidebar'], .lg-right, .am-u-lg-3, .lg-index-content";
 
   function sweepPromos() {
     if (document.documentElement.getAttribute("data-lg-clean") !== "1") return;
-    var cards = document.querySelectorAll(".l-card, .card, .lg-article");
+    var cards = document.querySelectorAll(".l-card, .card, .lg-article, .am-panel, .section");
     for (var i = 0; i < cards.length; i++) {
       var el = cards[i];
-      if (el.hasAttribute("data-lg-promo") || el.getAttribute("data-lg-promo") === "0") continue;
-      var inSide =
-        el.closest(".side, .sidebar-container, .user-nav, [class*='sidebar']") ||
-        el.closest(".lg-index-content");
+      if (el.hasAttribute("data-lg-promo")) continue;
+      var inSide = el.closest(PROMO_SIDE_SEL);
       if (!inSide) { el.setAttribute("data-lg-promo", "0"); continue; }
       var txt = (el.textContent || "").trim();
-      if (txt.length > 60 || !PROMO_RE.test(txt)) {
+      /* 空壳（Vue 还没填内容）先不判死：留着下一拍/下一批再看，
+         否则"先渲染壳、后填字"的卡片会被永远记成 0。 */
+      if (!txt) continue;
+      if (txt.length > 160 || !PROMO_RE.test(txt)) {
         el.setAttribute("data-lg-promo", "0");
         continue;
       }
-      var link = el.querySelector("a");
-      var href = link ? link.getAttribute("href") || "" : "";
-      if (COMMERCIAL_HREF_RE.test(href) || el.querySelector("img")) {
-        el.setAttribute("data-lg-promo", "1");
-      } else {
-        el.setAttribute("data-lg-promo", "0");
+      var links = el.querySelectorAll("a");
+      var hit = false;
+      for (var j = 0; j < links.length; j++) {
+        if (COMMERCIAL_HREF_RE.test(links[j].getAttribute("href") || "")) { hit = true; break; }
       }
+      /* 命中了关键词但还没有商业信号（链接/图还没渲染出来）时也不判死，
+         等下一批；判死的只有"文本已渲染且不像推广"的那些。 */
+      if (hit || el.querySelector("img")) el.setAttribute("data-lg-promo", "1");
     }
   }
 
@@ -2081,6 +2091,13 @@
        （纯色 + 细线），liquid 拿到玻璃。以前只在 liquid 下扫，flat 用户的
        站点面板就只能保持站点自己的实心色，"里面实心、外面素面"两回事。 */
     if (!isLuoguPage) return;
+    /* IDE 页"保持原生"（R37）：Monaco 那类不透明深色面以前会被扫成 .lg-glass
+       （挂上 backdrop-filter + 半透明卡片）——用户截图里"壁纸透过深色模糊"的
+       编辑器就是它。原生模式下一个面都不许动；已经贴上的类顺手摘干净。 */
+    if (document.documentElement.getAttribute("data-lg-ide") === "1") {
+      if (document.querySelector(".lg-glass,.lg-glass-soft,.lg-noveil")) unglassAll();
+      return;
+    }
     var root = rootEl && rootEl.nodeType === 1 ? rootEl : document.body;
     if (!root) return;
     glassifyOne(root);
@@ -2108,6 +2125,16 @@
       for (var i = 0; i < batch.length; i++) sweepGlassSurfaces(batch[i]);
     }, 250);
   }
+  /* 推广卡也吃同一批 DOM 变化（R37）：右栏那张卡是 Vue 异步渲染出来的，
+     只靠 2.5s 巡检会先露出来一两秒。这里 300ms 防抖跑一次幂等清扫。 */
+  var promoSweepTimer = null;
+  function queuePromo() {
+    if (promoSweepTimer) return;
+    promoSweepTimer = setTimeout(function () {
+      promoSweepTimer = null;
+      sweepPromos();
+    }, 300);
+  }
   var glassObserver = new MutationObserver(function (muts) {
     for (var i = 0; i < muts.length; i++) {
       var m = muts[i];
@@ -2117,6 +2144,7 @@
         queueGlass(m.target); // 类名/内联样式变了：重新评估这一块
       }
     }
+    queuePromo();
   });
   // 调试出口：探针/实测可以直接触发一次全量扫面看结果
   window.__lgGlassSweep = sweepGlassSurfaces;

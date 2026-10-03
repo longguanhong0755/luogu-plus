@@ -14,11 +14,14 @@ body[data-dock] #dock {
   top: auto; right: auto; bottom: auto; left: auto;
   width: fit-content;
   height: fit-content;
-  padding: 0;
+  /* 6px 余量：.lg-face-b 的外投影与选中指示线画在胶囊边界之外，视图矩形
+     只有把这点余量包进来它们才不会被 WebContentsView 边界裁掉（主进程按
+     dock.js 上报的 offsetWidth/Height 落位，所以这里加了它自然也算进去）。 */
+  padding: 6px;
   overflow: visible;
   background: transparent;
 }
-/* 胶囊自带圆角与投影：贴着视图边缘，外层不再留余量 */
+/* 胶囊自带圆角与投影：外层只留上面那 6px 投影余量 */
 #dock .dock-group,
 #dock .dock-foot { margin: 0; }
 /* 坞不是网页：右键/中键/拖拽一律压掉（点击由 dock.js 回传主进程） */

@@ -21,8 +21,24 @@
    （供 hover/描边这类局部状态消费）。任何文件都不许再声明材质，只有这里可以。
    ============================================================ */
 
-/* ---------- 0. 别名与兜底：第二套名字全部指向同一份值 ---------- */
+/* ---------- 0. 别名与兜底：第二套名字全部指向同一份值 ----------
+   R37：10 个 --lg-glass-* 在这里给一份**首帧兜底**（flat / 浅色档，与
+   main.js materialVars() 的 flat 档同值）。原因：登记表里的面都写
+   var(--lg-glass-card) 而没有内联兜底，主进程载荷到达之前（insertCSS 之后、
+   apply 之前那一瞬）这些变量还不存在 → 整页的面被算成透明，用户看到的
+   "刚开出来的页面比别的页透"就是这个窗口。载荷一到立即被内联值覆盖，
+   这里只是让"零载荷"也有料可用。 */
 :root {
+  --lg-glass-bg: rgba(255, 255, 255, 0.92);
+  --lg-glass-bg-2: rgba(255, 255, 255, 0.92);
+  --lg-glass-card: rgba(255, 255, 255, 0.92);
+  --lg-glass-soft: rgba(255, 255, 255, 0.92);
+  --lg-glass-solid: rgba(255, 255, 255, 0.98);
+  --lg-glass-line: rgba(24, 24, 27, 0.14);
+  --lg-glass-hi: rgba(255, 255, 255, 0);
+  --lg-glass-sheen: rgba(255, 255, 255, 0);
+  --lg-glass-blur: none;
+  --lg-glass-drop: none;
   --surface: var(--lg-glass-card, rgba(255, 255, 255, 0.92));
   --surface-2: color-mix(in srgb, var(--lg-glass-soft, rgba(255, 255, 255, 0.92)) 92%, var(--ink, #18181b));
   --hairline: var(--lg-glass-line, rgba(24, 24, 27, 0.14));
@@ -97,6 +113,12 @@ html[data-lg-bgvideo="1"] .lg-wallpaper { background-image: none; }
    （blur/saturate/brightness），因为这里没有真 backdrop-filter 可用；压在
    压暗之上再叠面色（::after），层序与真玻璃一致。 */
 .lg-fake {
+  /* 定位上下文是配方的一部分：::before（假壁纸）用 left/top:-pop-x/y + 窗口尺寸、
+     ::after（面色）用 inset:0 —— 静态元素会让这两者以**初始包含块**（整个视图）
+     为准。坞胶囊曾经是 static：后一颗胶囊的整幅面盖住整条坞（图标全被压掉、
+     两块面拼成一条连续渐变、壁纸副本按视图原点错位）。弹层的面本来就是
+     绝对定位、速览根元素本来就填满视图，都不受影响。 */
+  position: relative;
   isolation: isolate;
   overflow: hidden;
 }

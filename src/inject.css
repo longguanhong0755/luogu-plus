@@ -53,21 +53,23 @@ html[data-lg-wall="1"] #app-old {
   transform: translateZ(0);
 }
 
-/* 页面骨架放透明，露出背景层 */
-#app.lfe-body,
-.main-container,
-.main-container main,
-.main-container footer,
-#app-old,
-.columba-content-wrap,
-.columba-content-wrap header,
-.sidebar-container,
-.columba-content-wrap > .side,
-.columba-content-wrap > .main,
-.theme-page,
-.theme-frosted,
-.theme-page::before,
-.theme-frosted::before {
+/* 页面骨架放透明，露出背景层。R37：IDE 页开"保持原生"时整块不生效
+   （html[data-lg-ide="1"]）——原生模式要连骨架底色都还给洛谷，只留我们的
+   样式表不碰它；关掉该开关时属性是 "0"，行为与以前逐字一致。 */
+html:not([data-lg-ide="1"]) #app.lfe-body,
+html:not([data-lg-ide="1"]) .main-container,
+html:not([data-lg-ide="1"]) .main-container main,
+html:not([data-lg-ide="1"]) .main-container footer,
+html:not([data-lg-ide="1"]) #app-old,
+html:not([data-lg-ide="1"]) .columba-content-wrap,
+html:not([data-lg-ide="1"]) .columba-content-wrap header,
+html:not([data-lg-ide="1"]) .sidebar-container,
+html:not([data-lg-ide="1"]) .columba-content-wrap > .side,
+html:not([data-lg-ide="1"]) .columba-content-wrap > .main,
+html:not([data-lg-ide="1"]) .theme-page,
+html:not([data-lg-ide="1"]) .theme-frosted,
+html:not([data-lg-ide="1"]) .theme-page::before,
+html:not([data-lg-ide="1"]) .theme-frosted::before {
   background-image: none !important;
   background-color: transparent !important;
 }
@@ -140,29 +142,33 @@ code, .inline-code, .lfe-marked code {
   border-radius: 5px;
 }
 
-/* ---------- IDE (Monaco) ---------- */
-.code-editor-container {
+/* ---------- IDE (Monaco) ----------
+   R37：整块挂 html:not([data-lg-ide="1"]) —— "IDE 页保持原生"打开时，
+   Monaco 的不透明编辑面必须原样保留（以前这里无条件把它压成半透明
+   --lg-glass-card，题目页壁纸在底下透上来，就是用户截图里"壁纸透过深色
+   模糊"的编辑器）；关掉开关时属性为 "0"，这一块与以前逐字一致。 */
+html:not([data-lg-ide="1"]) .code-editor-container {
   border-radius: var(--lg-radius);
   overflow: hidden;
   border: 1px solid var(--lg-glass-line);
   box-shadow: none !important;
 }
-.code-editor-container .editor-background {
+html:not([data-lg-ide="1"]) .code-editor-container .editor-background {
   background-color: var(--lg-glass-card) !important;
 }
-.code-editor-container .editor-top-bar {
+html:not([data-lg-ide="1"]) .code-editor-container .editor-top-bar {
   background: var(--lg-glass-card) !important;
   border-bottom: 1px solid var(--lg-glass-line) !important;
 }
 .editor-tab {
   border-radius: 6px 6px 0 0;
 }
-.monaco-editor,
-.monaco-editor-background,
-.monaco-editor .margin {
+html:not([data-lg-ide="1"]) .monaco-editor,
+html:not([data-lg-ide="1"]) .monaco-editor-background,
+html:not([data-lg-ide="1"]) .monaco-editor .margin {
   background-color: var(--lg-glass-card) !important;
 }
-.CodeMirror {
+html:not([data-lg-ide="1"]) .CodeMirror {
   background: var(--lg-glass-card) !important;
   border-radius: calc(var(--lg-radius) - 2px);
 }
@@ -248,6 +254,18 @@ html[data-lg-clean="1"] .mm-player-container {
 }
 /* 清扫器标记的商业推广卡（关闭洁净模式立即还原） */
 html[data-lg-clean="1"] [data-lg-promo="1"] {
+  display: none !important;
+}
+/* 右栏商业推广卡（R37 加强）：洛谷把"省选计划"这类同源推广卡渲染进题解/
+   文章页的**右栏**（.lg-right / .am-u-lg-3），卡里带一条到 class.luogu.com.cn
+   （付费课程站）的链接。按这条链接静态判掉——不依赖清扫器的关键词/容器
+   白名单，Vue 一渲染就命中，也不会误伤正常卡片（那个域只用于课程推广）。 */
+html[data-lg-clean="1"] .lg-right .lg-article:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-clean="1"] .lg-right .card:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-clean="1"] .lg-right .am-panel:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-clean="1"] .am-u-lg-3 .lg-article:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-clean="1"] .am-u-lg-3 .card:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-clean="1"] .am-u-lg-3 .am-panel:has(a[href*="class.luogu.com.cn"]) {
   display: none !important;
 }
 
@@ -364,55 +382,57 @@ html[data-lg-declutter="1"] .theme-frosted::before {
 }
 #lg-quicksearch input::placeholder { color: #a1a1aa; }
 
-/* ---------- IDE 页面适配（/ide，Monaco 外围单色化） ---------- */
-/* 顶栏与底部 I/O 面板容器跟随主题着色 */
-.editor-top-bar,
-.editor-bottom-bar,
-.io-editor-container,
-.input-editor-container,
-.output-editor-container {
+/* ---------- IDE 页面适配（/ide，Monaco 外围单色化） ----------
+   R37：整块挂 html:not([data-lg-ide="1"])——"IDE 页保持原生"打开时这些
+   外围条/文本域/页签一律不碰（原生配色与边框原样）；关掉开关时为 "0"，
+   行为与以前一致。顺手修掉四行 `))` 语法错（border 声明因此从来没生效过）。 */
+html:not([data-lg-ide="1"]) .editor-top-bar,
+html:not([data-lg-ide="1"]) .editor-bottom-bar,
+html:not([data-lg-ide="1"]) .io-editor-container,
+html:not([data-lg-ide="1"]) .input-editor-container,
+html:not([data-lg-ide="1"]) .output-editor-container {
   background: var(--lg-glass-card) !important;
 }
 /* 代码页签：去白块，改线框 */
-.editor-tabs .editor-tab,
-.editor-tab.editor-title {
+html:not([data-lg-ide="1"]) .editor-tabs .editor-tab,
+html:not([data-lg-ide="1"]) .editor-tab.editor-title {
   background: transparent !important;
   color: var(--lg-ink, #18181b) !important;
   box-shadow: none !important;
-  border: 1px solid var(--lg-glass-line)) !important;
+  border: 1px solid var(--lg-glass-line) !important;
   border-radius: 6px !important;
 }
 /* 语言选择器（C++11 下拉） */
-.combo-wrapper.lang-select .text,
-.editor-actions-container .text {
+html:not([data-lg-ide="1"]) .combo-wrapper.lang-select .text,
+html:not([data-lg-ide="1"]) .editor-actions-container .text {
   background: transparent !important;
   color: var(--lg-ink, #18181b) !important;
 }
-.lang-select select,
-.combo-wrapper select,
-.editor-actions-container select {
+html:not([data-lg-ide="1"]) .lang-select select,
+html:not([data-lg-ide="1"]) .combo-wrapper select,
+html:not([data-lg-ide="1"]) .editor-actions-container select {
   background: var(--lg-glass-card) !important;
   color: var(--lg-ink, #18181b) !important;
-  border: 1px solid var(--lg-glass-line)) !important;
+  border: 1px solid var(--lg-glass-line) !important;
   border-radius: 6px !important;
 }
 /* 输入/输出文本域 */
-.io-editor-container textarea,
-.input-editor-container textarea,
-.output-editor-container textarea {
+html:not([data-lg-ide="1"]) .io-editor-container textarea,
+html:not([data-lg-ide="1"]) .input-editor-container textarea,
+html:not([data-lg-ide="1"]) .output-editor-container textarea {
   background: var(--lg-glass-card) !important;
   color: var(--lg-ink, #18181b) !important;
-  border: 1px solid var(--lg-glass-line)) !important;
+  border: 1px solid var(--lg-glass-line) !important;
   border-radius: 6px !important;
 }
 /* Monaco 光标行：浅黄高亮改为发丝线 */
-.monaco-editor .current-line {
+html:not([data-lg-ide="1"]) .monaco-editor .current-line {
   background: transparent !important;
-  border: 1px solid var(--lg-glass-line)) !important;
+  border: 1px solid var(--lg-glass-line) !important;
 }
 /* IDE 内按钮一律去彩色 */
-.ide button,
-.ide .ui.button {
+html:not([data-lg-ide="1"]) .ide button,
+html:not([data-lg-ide="1"]) .ide .ui.button {
   filter: grayscale(1) !important;
 }
 

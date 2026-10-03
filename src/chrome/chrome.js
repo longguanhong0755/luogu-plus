@@ -1490,9 +1490,8 @@ function syncPinUI() {
   // 紧凑模式下侧栏收没（只留热区），视作"未展开"——点一下就是常驻展开
   const expanded = !document.body.classList.contains("rail") && !document.body.classList.contains("compact");
   pin.classList.toggle("on", expanded);
-  /* 图标是一枚钉子：钉住（常驻展开）= 竖直实心；没钉住（悬停浮层里）= 斜着。
-     折叠窄条上整颗不出现（CSS：body.rail #vtab-head #btn-vpin{display:none}）——
-     用户要求折叠态左上角只有向下的三角。 */
+  /* 图标是一枚钉子：钉住（常驻展开）= 竖直实心；没钉住（窄条/悬停浮层里）= 斜着。
+     三种姿态都在同一坐标（R37：头部几何统一），点哪都是它。 */
   pin.innerHTML = svg(expanded ? "nailOn" : "nailOff");
   pin.title = expanded ? "收起侧栏（回到窄条，悬停自动展开）" : "钉住侧栏（常驻展开，不自动收回）";
 }
@@ -1786,6 +1785,7 @@ const SHORTCUTS = [
   ["Ctrl+R / F5", "重新加载"],
   ["Ctrl+L", "聚焦地址栏"],
   ["Ctrl+I", "打开或切到 IDE 标签页"],
+  ["Ctrl+Alt+I", "分屏编辑器（题目右侧并排 IDE）"],
   ["Ctrl+滚轮", "放大 / 缩小页面"],
   ["Ctrl+H", "浏览历史记录"],
   ["Ctrl+=", "放大页面"],

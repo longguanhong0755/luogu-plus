@@ -670,6 +670,7 @@ const acctPartition = (id) => "persist:acct-" + String(id).replace(/[^A-Za-z0-9_
 function acctSession(id) {
   const s = id ? session.fromPartition(acctPartition(id)) : session.defaultSession;
   wireDownloads(s);
+  wireAdBlock(s);
   return s;
 }
 /* 站外共享分区：非洛谷的 http(s) 标签（DeepSeek 等）统一跑这里，与洛谷账号
@@ -679,6 +680,7 @@ const SHARED_PARTITION = "persist:shared";
 function sharedSession() {
   const s = session.fromPartition(SHARED_PARTITION);
   wireDownloads(s);
+  wireAdBlock(s);
   return s;
 }
 
@@ -968,12 +970,31 @@ function startDevWatch() {
   dbg("[dev] hot-apply watching " + SRC);
 }
 
+/* 原生主题嗅探（R37 重写）：只认"真实不透明的底色"。
+   老版直接读 .theme-page/.main-container 的 backgroundColor，而这两条容器被
+   inject.css 无条件压成透明（骨架露背景层），正则命中 rgba(0,0,0,0) → 亮度 0
+   → 判成 dark：页面有没有这些容器决定整机"有时黑有时白"（用户报的"有的时候
+   会突然出现变成了黑夜模式"）。新版：跳过 alpha<0.9 的层、沿选择器链找第一个
+   不透明底色、都找不到返回 'unknown'（主进程只在明确 dark/light 时才更新）；
+   并且改到 insertCSS **之前**执行——那时站点自己的底色还没被我们压透明。 */
 const SNIFFER = `(function(){
   try {
-    var probe = document.querySelector('.theme-page') || document.querySelector('.main-container') || document.body;
-    var m = probe && getComputedStyle(probe).backgroundColor.match(/rgba?\\((\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/);
-    window.__lgNativeTheme = m ? ((0.2126*(+m[1]) + 0.7152*(+m[2]) + 0.0722*(+m[3]))/255 < 0.5 ? 'dark' : 'light') : 'light';
-  } catch (e) { window.__lgNativeTheme = 'light'; }
+    var L = function (c) {
+      var m = c && c.match(/rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*(?:,\\s*([\\d.]+)\\s*)?\\)/);
+      if (!m) return null;
+      var a = m[4] === undefined ? 1 : parseFloat(m[4]);
+      if (!(a >= 0.9)) return null;
+      return (0.2126 * (+m[1]) + 0.7152 * (+m[2]) + 0.0722 * (+m[3])) / 255;
+    };
+    var sels = ['.theme-page', '.main-container', 'main', '#app', 'body', 'html'];
+    for (var i = 0; i < sels.length; i++) {
+      var el = document.querySelector(sels[i]);
+      if (!el) continue;
+      var v = L(getComputedStyle(el).backgroundColor);
+      if (v !== null) { window.__lgNativeTheme = v < 0.5 ? 'dark' : 'light'; return window.__lgNativeTheme; }
+    }
+    window.__lgNativeTheme = 'unknown';
+  } catch (e) { window.__lgNativeTheme = 'unknown'; }
   return window.__lgNativeTheme;
 })()`;
 
@@ -996,7 +1017,15 @@ async function injectInto(wc) {
     try {
       wc.__lgCssKey = await wc.insertCSS(stylesFor(ext), { cssOrigin: "author" });
     } catch (e) { dbg("insertCSS failed: " + e); }
-    await wc.executeJavaScript(SNIFFER, true);
+    /* 原生主题嗅探在插入样式表**之前**（R37，顺序是修 bug 的一半）：注入后
+       inject.css 会把骨架容器压成透明，探针采到 rgba(0,0,0,0) → 判成 dark。
+       IDE 页原生就是深色、不代表整机主题，不参与判定（一开 IDE 全应用变黑
+       就是这条）。 */
+    let idePage = false;
+    try { idePage = /\/ide(\/|$)/.test(new URL(wc.getURL()).pathname); } catch {}
+    if (!idePage) {
+      try { await wc.executeJavaScript(SNIFFER, true); } catch {}
+    }
     await wc.executeJavaScript(INJECT_JS, true);
     // tabActive 按标签给：视频壁纸只让前台那份解码，页面自己判断不了前后台
     let isActive = true;
@@ -1713,12 +1742,30 @@ function dockBounds() {
   return { x, y, width: dockCapsule.w, height: dockCapsule.h };
 }
 
+/* IDE 模式（R37 用户要求："题目页展开 IDE 的时候要有全屏状态"）：
+   ① 分屏编辑器抽屉开着；② 当前标签是多窗格、其中有 /ide 页（题目页 + IDE
+   并排）。两种都让坞自动让位——R36 只把"网页自己进全屏"接上了，抽屉这条
+   路径当时漏了。F11 窗口全屏不算（外壳仍在，坞跟着外壳一起在才自洽）。 */
+function ideModeNow() {
+  if (drawerOpen && drawerView) return true;
+  const g = splitGroupOf(activeTabId);
+  if (!g) return false;
+  for (const id of g.ids) {
+    const t = tabs.get(id);
+    if (!t || !t.view || t.view.webContents.isDestroyed()) continue;
+    try {
+      if (/\/ide(\/|$)/.test(new URL(t.view.webContents.getURL()).pathname)) return true;
+    } catch (e) {}
+  }
+  return false;
+}
 function layoutDock() {
   const v = dockView;
   if (!v || !dockReady) return;
   const b = dockBounds();
-  /* 网页 HTML 全屏时坞自动隐藏（R36 用户要求：IDE 那种全屏页面） */
-  if (!b || htmlFullscreenTabId != null) {
+  /* 网页 HTML 全屏 / IDE 模式（抽屉、题目页+IDE 并排）时坞自动隐藏
+     （R36/R37 用户要求） */
+  if (!b || htmlFullscreenTabId != null || ideModeNow()) {
     if (dockShown) {
       dockShown = false;
       try { v.setVisible(false); } catch {}
@@ -2633,11 +2680,13 @@ function wirePageView(id, view) {
     }
     if (!isLocal) recordHistory(wc.getURL(), wc.getTitle());
     if (id === activeTabId) pushUser();
-    wc.executeJavaScript("window.__lgNativeTheme || 'light'", true)
+    wc.executeJavaScript("window.__lgNativeTheme || 'unknown'", true)
       .then((t) => {
         // 嗅探结果变了要同时重涂外壳和所有页面：页面的明暗现在也听
         // resolvedTheme（cfgForPages 下发），只推外壳页面就还停在旧色上。
-        if (t && t !== lastNative) {
+        // R37：只在明确 light/dark 时才认（'unknown' = 底色还没渲染出来/
+        // 容器全透明，不许把整机带偏），这是"突然变黑"的另一半根因。
+        if ((t === "dark" || t === "light") && t !== lastNative) {
           lastNative = t;
           pushConfigToChrome();
           applyConfigToPages();
@@ -3459,6 +3508,9 @@ const SHORTCUT_ACTIONS = [
   ["screenshot", "截图当前页", "CmdOrCtrl+Shift+S", () => screenshotActiveTab()],
   ["history", "历史记录（历史 / 下载）", "CmdOrCtrl+H", () => openHistoryTab()],
   ["ide", "打开或切到 IDE 标签页", "CmdOrCtrl+I", () => toggleIde()],
+  /* 分屏编辑器（题目右侧并排 IDE 的抽屉）：坞在 IDE 模式会自动隐藏，
+     这条键是藏起来之后的主要出口（命令面板里也有同一入口） */
+  ["drawer", "分屏编辑器（题目右侧并排 IDE）", "CmdOrCtrl+Alt+I", () => toggleDrawer()],
   ["back", "后退", "Alt+Left", () => { const t = tabs.get(activeTabId); t && t.view.webContents.goBack(); }],
   ["forward", "前进", "Alt+Right", () => { const t = tabs.get(activeTabId); t && t.view.webContents.goForward(); }],
   /* 页面缩放：Ctrl+= 与 Ctrl++ 都要接，键盘布局不同报出来的字符也不同 */
@@ -5741,6 +5793,33 @@ function pushDownloads() {
   if (mainWin && !mainWin.isDestroyed()) {
     try { mainWin.webContents.send("chrome:downloads", publicDownloads()); } catch {}
   }
+}
+/* ---------- 广告拦截（R37） ----------
+   请求级：同源推广取数口 /qiafan/*（题解页右栏"省选计划"那张卡的接口）与几家
+   常见第三方广告域直接 cancel。挂在与 wireDownloads 相同的三个会话挂点上
+   （acctSession / sharedSession / defaultSession），回调实时读 cfg.clean——
+   设置页"隐藏广告与推广"一关立刻放行，不需要重挂监听。
+   注意：Electron 的 webRequest 同一事件只认最后一个监听器；将来要再加
+   onBeforeRequest，必须并进这里，不要另挂第二个。 */
+const AD_URL_FILTERS = [
+  "*://*.luogu.com.cn/qiafan/*",
+  "*://*.googlesyndication.com/*",
+  "*://*.doubleclick.net/*",
+  "*://*.googleadservices.com/*",
+  "*://*/adsserver/*",
+];
+let adBlockCount = 0; // 探针面包屑：本进程拦掉的广告请求数
+function wireAdBlock(sess) {
+  if (!sess || sess.__lgAdWired) return;
+  sess.__lgAdWired = true;
+  try {
+    sess.webRequest.onBeforeRequest({ urls: AD_URL_FILTERS }, (details, cb) => {
+      if (cfg.clean === false) { cb({}); return; }
+      adBlockCount++;
+      dbg("[adblock] block " + String((details && details.url) || "").slice(0, 160));
+      cb({ cancel: true });
+    });
+  } catch (e) { dbg("wireAdBlock failed: " + e); }
 }
 function wireDownloads(sess) {
   if (!sess || sess.__lgDownWired) return;
@@ -10054,6 +10133,289 @@ async function selftest() {
       } catch (e) {}
       out.pass = !!(out.dockPass && out.fullscreenPass && out.pinPass && out.closeHandoffPass && out.zoomHudPass && out.chipPass && out.sizesPass && out.problemToolsPass);
       flush();
+    } else if (argv.includes("--lg-v310test")) {
+      /* v3.10.0（R37）六项：
+         1) 坞渲染：两颗胶囊各有定位上下文（.lg-fake position:relative，两块面
+            不再互相盖）、每个坞项都有 svg path、--pop-x/y === 视图原点+offset+
+            边框（假壁纸对齐）、#dock 有投影余量内边距；坞视图截图留档；
+         2) IDE 模式（抽屉开着）→ 坞自动隐藏，关掉恢复；无抽屉/无分屏时 ideModeNow=false；
+         3) 钉子三姿态同点：窄条 / 悬停浮层 / 常驻展开 的 #btn-vpin 窗口矩形全等；
+            浮层里对钉子坐标 elementFromPoint 命中的就是钉子，且点一下真能钉住（落盘）；
+         4) 主题嗅探：透明容器不许判 dark（旧 bug 的回归）、真深色判 dark、全透明判
+            unknown；当前页 __lgNativeTheme 不是 dark、resolvedTheme 保持 light；
+         5) 玻璃一致：跨标签（站点页 vs 本地页）--lg-glass-* 与 data-lg-theme/page/
+            repaint 全等且非空；不带载荷的弹层文档里 material.css 首帧兜底值可见；
+         6) 广告：三个会话都挂了拦截器；qiafan 请求被拦、对照请求放行（网络不可用记
+            skip）；合成右栏推广卡 → 静态 :has 规则即时隐藏 + 清扫器打 data-lg-promo=1；
+         7) IDE 原生：data-lg-ide="1" 时 Monaco 规则不生效（computed 背景 ≠ 玻璃档）、
+            清扫器不给面贴 .lg-glass；"0" 时两者都恢复。 */
+      const out = { at: new Date().toISOString() };
+      const flush = () => fsx.writeFileSync(selftestShot, JSON.stringify(out, null, 2));
+      try { mainWin.setOpacity(0); } catch {}
+      try { mainWin.showInactive(); } catch {}
+      try { mainWin.setContentSize(1280, 800); } catch {}
+      for (let i = 0; i < 40 && tabs.size === 0; i++) await sleep(500);
+      await sleep(1200);
+      const js = (code) => mainWin.webContents.executeJavaScript(code, true);
+      const pjs = (code) => {
+        const t = tabs.get(activeTabId);
+        return t && t.view && !t.view.webContents.isDestroyed()
+          ? t.view.webContents.executeJavaScript(code, true)
+          : Promise.reject(new Error("no-active-tab"));
+      };
+      const setCfg = async (patch) => {
+        Object.assign(cfg, patch);
+        saveConfig();
+        pushConfigToChrome();
+        layout();
+        await sleep(450);
+      };
+      /* 一次性 scratch 视图：跑嗅探/兜底这类"文档级"断言（不挂到窗口） */
+      const scratch = async (url, expr) => {
+        const v = new WebContentsView({ webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false } });
+        try {
+          await v.webContents.loadURL(url);
+          return await v.webContents.executeJavaScript(expr, true);
+        } finally {
+          try { v.webContents.close(); } catch (e) {}
+        }
+      };
+      const saved = { verticalTabs: cfg.verticalTabs, vtabCollapsed: cfg.vtabCollapsed, vtabCompact: cfg.vtabCompact, vtabSide: cfg.vtabSide, dockPos: cfg.dockPos, dockItems: cfg.dockItems };
+
+      /* ---------- 1) 坞渲染 ---------- */
+      try {
+        await setCfg({
+          verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left", dockPos: "bottom",
+          dockItems: [{ icon: "home", title: "首页", href: "@home" }, { icon: "list", title: "题库", href: "https://www.luogu.com.cn/problem/list" }],
+        });
+        await sleep(1400); // 坞视图量尺寸 + 落位
+        const dv = dockView && !dockView.webContents.isDestroyed() ? dockView : null;
+        if (!dv) throw new Error("no dock view");
+        const g = JSON.parse(await dv.webContents.executeJavaScript(`(function(){
+          var root = document.getElementById("dock");
+          var de = document.documentElement;
+          var vx = Number(de.dataset.lgViewX || 0), vy = Number(de.dataset.lgViewY || 0);
+          var caps = [].slice.call(root.querySelectorAll(".dock-group, .dock-foot"));
+          var items = [].slice.call(root.querySelectorAll("a[data-href]"));
+          var svgOk = items.length > 0 && items.every(function (a) { var p = a.querySelector("svg path"); return !!p && (p.getAttribute("d") || "").length > 8; });
+          var posOk = caps.length >= 2 && caps.every(function (el) { return getComputedStyle(el).position === "relative"; });
+          var fakeOk = caps.length >= 2 && caps.every(function (el) { return el.classList.contains("lg-fake") && el.classList.contains("lg-face-b"); });
+          var offOk = caps.every(function (el) {
+            var cs = getComputedStyle(el);
+            return Math.round(parseFloat(cs.getPropertyValue("--pop-x"))) === vx + el.offsetLeft + el.clientLeft &&
+                   Math.round(parseFloat(cs.getPropertyValue("--pop-y"))) === vy + el.offsetTop + el.clientTop;
+          });
+          return JSON.stringify({ vx: vx, vy: vy, caps: caps.length, items: items.length, svgOk: svgOk, posOk: posOk, fakeOk: fakeOk, offOk: offOk,
+            w: root.offsetWidth, h: root.offsetHeight, pad: parseFloat(getComputedStyle(root).paddingTop) });
+        })()`, true));
+        let shot = false;
+        try {
+          const img = await dv.webContents.capturePage();
+          if (img && !img.isEmpty()) { fsx.writeFileSync(selftestShot.replace(/\.json$/i, "") + "-dock.png", img.toPNG()); shot = true; }
+        } catch (e) {}
+        out.dockRender = { ...g, shot };
+        out.dockRenderPass = !!(g.items >= 3 && g.svgOk && g.posOk && g.fakeOk && g.offOk && g.pad >= 5 && g.w > 0 && g.h > 0);
+      } catch (e) { out.dockRenderErr = String((e && e.stack) || e); out.dockRenderPass = false; }
+      flush();
+
+      /* ---------- 2) IDE 模式（抽屉）自动隐藏坞 ---------- */
+      try {
+        const r = { before: { ide: ideModeNow(), shown: dockShown } };
+        toggleDrawer();
+        await sleep(800);
+        r.open = { ide: ideModeNow(), drawer: !!drawerOpen, shown: dockShown };
+        toggleDrawer();
+        await sleep(1000);
+        r.closed = { ide: ideModeNow(), drawer: !!drawerOpen, shown: dockShown };
+        out.dockIde = r;
+        out.dockIdePass = !!(r.before.ide === false && r.before.shown === true && r.open.ide === true && r.open.drawer === true &&
+          r.open.shown === false && r.closed.ide === false && r.closed.drawer === false && r.closed.shown === true);
+      } catch (e) { out.dockIdeErr = String((e && e.stack) || e); out.dockIdePass = false; }
+      flush();
+
+      /* ---------- 3) 钉子三姿态同点 + 浮层里点得动 ---------- */
+      try {
+        await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left" });
+        await sleep(800);
+        const rectShell = async () => JSON.parse(await js('(function(){var e=document.getElementById("btn-vpin");var r=e.getBoundingClientRect();return JSON.stringify({x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height)})})()'));
+        const snap = async (tag) => {
+          try {
+            const img = await mainWin.webContents.capturePage();
+            if (img && !img.isEmpty()) fsx.writeFileSync(selftestShot.replace(/\.json$/i, "") + "-" + tag + ".png", img.toPNG());
+          } catch (e) {}
+        };
+        const railRect = await rectShell();
+        await snap("pin-rail");
+        /* 悬停浮层：隐藏实例没有真光标，直接派发 mouseenter（v39 同法） */
+        await js('document.getElementById("vtab").dispatchEvent(new MouseEvent("mouseenter"))');
+        let fit = null;
+        for (let i = 0; i < 90; i++) { await sleep(30); if (popupFit && popupFit.fullH) { fit = { ...popupFit }; break; } }
+        for (let i = 0; i < 80; i++) { await sleep(100); if (popupShown) break; }
+        stopFlyoutWatch(); // 探针自己看，别让光标裁判把它收走（v39 同法）
+        /* 等浮层文档里的钉子真的画出来（隐藏实例首帧慢） */
+        let flyPin = null;
+        for (let i = 0; i < 40; i++) {
+          if (!popupView || popupView.webContents.isDestroyed()) break;
+          flyPin = await popupView.webContents.executeJavaScript('(function(){var e=document.getElementById("btn-vpin");return e?"yes":null})()', true).catch(() => null);
+          if (flyPin) break;
+          await sleep(150);
+        }
+        await sleep(300);
+        await snap("pin-flyout");
+        const pb = popupView && !popupView.webContents.isDestroyed() ? popupView.getBounds() : null;
+        const flyRaw = popupView && !popupView.webContents.isDestroyed()
+          ? await popupView.webContents.executeJavaScript(`(function(){
+              var e = document.getElementById("btn-vpin"); if (!e) return null;
+              var r = e.getBoundingClientRect();
+              var el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+              return JSON.stringify({ x: ${pb ? pb.x : 0} + Math.round(r.left), y: ${pb ? pb.y : 0} + Math.round(r.top),
+                w: Math.round(r.width), h: Math.round(r.height), pop: e.getAttribute("data-pop") || "",
+                hitPin: !!(el && (el === e || e.contains(el))), hitTag: el ? el.tagName : "" });
+            })()`, true).catch(() => null)
+          : null;
+        let flyRect = null;
+        try { flyRect = flyRaw ? JSON.parse(flyRaw) : null; } catch (e) { flyRect = null; }
+        let clickRes = null;
+        if (flyRect && flyRect.pop) {
+          /* 弹层的取键监听在 **mousedown** 上（popup.js：拖拽行按下不动作，
+             一般项按下即取键），合成 click 不会触发——这里按真实鼠标序列发 */
+          await popupView.webContents.executeJavaScript(
+            '(function(){var e=document.getElementById("btn-vpin");["mousedown","mouseup","click"].forEach(function(t){e.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}));});return 1})()',
+            true
+          ).catch(() => {});
+          for (let i = 0; i < 40; i++) { await sleep(100); if (cfg.vtabCollapsed === false) break; }
+          await sleep(600);
+          clickRes = { collapsed: cfg.vtabCollapsed, railClass: await js('document.body.classList.contains("rail")'), ins: inset().x };
+        }
+        const pinnedRect = await rectShell(); // 点完钉子 = 常驻展开态
+        const eq = (a, b) => !!a && !!b && Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1 && Math.abs(a.w - b.w) <= 1 && Math.abs(a.h - b.h) <= 1;
+        out.pin = { railRect, flyRect, pinnedRect, flyPin: !!flyPin, fit: !!fit, clickRes, sameRailFly: eq(railRect, flyRect), sameRailPinned: eq(railRect, pinnedRect) };
+        out.pinPass = !!(out.pin.sameRailFly && out.pin.sameRailPinned && flyRect && flyRect.hitPin && !!flyRect.pop &&
+          clickRes && clickRes.collapsed === false && clickRes.railClass === false && clickRes.ins === 212);
+        try { await js('window.lgChrome.popupHide()'); } catch (e) {}
+        await setCfg({ vtabCollapsed: true, vtabCompact: false });
+        await sleep(600);
+      } catch (e) { out.pinErr = String((e && e.stack) || e); out.pinPass = false; }
+      flush();
+
+      /* ---------- 4) 主题嗅探（透明容器不许判 dark） ---------- */
+      try {
+        const d = (html) => "data:text/html;charset=utf-8," + encodeURIComponent(html);
+        const A = await scratch(d('<style>body{margin:0;background:#f7f7f8}</style><div class="theme-page" style="background-color:rgba(0,0,0,0);height:24px"></div>'), SNIFFER);
+        const B = await scratch(d('<div class="theme-page" style="background-color:#0e0e12;height:24px"></div>'), SNIFFER);
+        const C = await scratch(d('<style>html,body{background:transparent}</style><div class="theme-page" style="background-color:transparent;height:24px"></div>'), SNIFFER);
+        const pageSniff = await pjs('window.__lgNativeTheme || "unset"').catch(() => "no-tab");
+        const themeNow = { lastNative: lastNative, resolved: resolvedTheme(), cfgTheme: cfg.theme };
+        out.sniff = { transparentContainer: A, opaqueDark: B, allTransparent: C, page: pageSniff, themeNow };
+        out.sniffPass = !!(A === "light" && B === "dark" && C === "unknown" && pageSniff !== "dark" && themeNow.resolved === "light");
+      } catch (e) { out.sniffErr = String((e && e.stack) || e); out.sniffPass = false; }
+      flush();
+
+      /* ---------- 5) 玻璃一致：跨标签同值 + 首帧兜底 ---------- */
+      try {
+        const tabVars = async (t) => JSON.parse(await t.view.webContents.executeJavaScript(`(function(){
+          var cs = getComputedStyle(document.documentElement);
+          return JSON.stringify({ card: cs.getPropertyValue("--lg-glass-card").trim(), soft: cs.getPropertyValue("--lg-glass-soft").trim(),
+            line: cs.getPropertyValue("--lg-glass-line").trim(), blur: cs.getPropertyValue("--lg-glass-blur").trim(),
+            theme: document.documentElement.getAttribute("data-lg-theme"), page: document.documentElement.getAttribute("data-lg-page"),
+            repaint: document.documentElement.getAttribute("data-lg-repaint") });
+        })()`, true));
+        const a = tabs.get(activeTabId);
+        const va = await tabVars(a);
+        createHomeTab(); // 本地页：与站点页吃同一份载荷
+        await sleep(1800);
+        const hb = tabs.get(activeTabId);
+        const vh = await tabVars(hb);
+        const same = va.card === vh.card && va.soft === vh.soft && va.line === vh.line && va.blur === vh.blur && va.theme === vh.theme && va.page === vh.page && va.repaint === vh.repaint;
+        const notEmpty = !!va.card && va.card !== "rgba(0, 0, 0, 0)" && /^rgba?\(/.test(va.card);
+        const fb = await scratch("file:///" + path.join(__dirname, "src", "popup", "popup.html").replace(/\\/g, "/"),
+          'getComputedStyle(document.documentElement).getPropertyValue("--lg-glass-card").trim()');
+        out.glass = { site: va, home: vh, same: same, notEmpty: notEmpty, fallback: fb };
+        out.glassPass = !!(same && notEmpty && fb === "rgba(255, 255, 255, 0.92)");
+        if (hb && hb.id != null) { try { closeTab(hb.id); } catch (e) {} }
+      } catch (e) { out.glassErr = String((e && e.stack) || e); out.glassPass = false; }
+      flush();
+
+      /* ---------- 6) 广告：请求级拦截 + 清扫器 + 静态规则 ---------- */
+      try {
+        const wired = {
+          acct: !!acctSession(cfg.activeAccountId).__lgAdWired,
+          shared: !!sharedSession().__lgAdWired,
+          dflt: !!session.defaultSession.__lgAdWired,
+        };
+        let net = { skip: true };
+        try {
+          const ctrl = await pjs('fetch("https://www.luogu.com.cn/problem/list", { cache: "no-store" }).then(function(r){ return r.ok ? "ok" : "http" + r.status }).catch(function(e){ return "ERR" })');
+          if (ctrl === "ok") {
+            const ad = await pjs('fetch("https://www.luogu.com.cn/qiafan/by-group/weijing", { cache: "no-store" }).then(function(){ return "ok" }).catch(function(){ return "blocked" })');
+            net = { skip: false, control: ctrl, ad: ad, blocked: ad === "blocked", count: adBlockCount };
+          } else {
+            net = { skip: true, control: ctrl };
+          }
+        } catch (e) { net = { skip: true, err: String((e && e.message) || e) }; }
+        const promoStatic = JSON.parse(await pjs(`(function(){
+          var right = document.createElement("div"); right.className = "lg-right am-u-lg-3";
+          var card = document.createElement("div"); card.className = "lg-article"; card.id = "lg-promo-probe";
+          card.innerHTML = '<a href="https://class.luogu.com.cn/course/yugu25sxa">省选计划A组 洛谷推荐</a><div>冲击省队 刷题与模拟 ￥5499</div>';
+          right.appendChild(card); document.body.appendChild(right);
+          return JSON.stringify({ staticHidden: getComputedStyle(card).display === "none", clean: document.documentElement.getAttribute("data-lg-clean") });
+        })()`));
+        await sleep(1400); // MutationObserver → queuePromo(300ms) → sweepPromos
+        const promoSwept = JSON.parse(await pjs(`(function(){
+          var card = document.getElementById("lg-promo-probe");
+          if (!card) return JSON.stringify({ gone: true });
+          return JSON.stringify({ mark: card.getAttribute("data-lg-promo"), display: getComputedStyle(card).display });
+        })()`));
+        await pjs('(function(){ var c = document.getElementById("lg-promo-probe"); if (c) { var w = c.closest(".lg-right"); (w || c).remove(); } return 1 })()').catch(() => {});
+        out.adblock = { wired: wired, net: net, promoStatic: promoStatic, promoSwept: promoSwept };
+        out.adblockPass = !!(wired.acct && wired.shared && wired.dflt && promoStatic.clean === "1" && promoStatic.staticHidden === true &&
+          promoSwept.mark === "1" && promoSwept.display === "none" && (net.skip || net.blocked));
+      } catch (e) { out.adblockErr = String((e && e.stack) || e); out.adblockPass = false; }
+      flush();
+
+      /* ---------- 7) IDE 原生：data-lg-ide="1" 不套玻璃 ---------- */
+      try {
+        const r = JSON.parse(await pjs(`(function(){
+          var de = document.documentElement;
+          var old = de.getAttribute("data-lg-ide");
+          var host = document.createElement("div"); host.id = "lg-ide-probe-host";
+          var d = document.createElement("div"); d.className = "monaco-editor";
+          d.style.cssText = "width:160px;height:90px";
+          host.appendChild(d); document.body.appendChild(host);
+          var parse = function (c) {
+            var m = (c || "").match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)/);
+            return m ? [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : +m[4]] : null;
+          };
+          var same = function (x, y) { return !!x && !!y && x[0] === y[0] && x[1] === y[1] && x[2] === y[2] && Math.abs(x[3] - y[3]) < 0.02; };
+          var glass = getComputedStyle(de).getPropertyValue("--lg-glass-card").trim();
+          de.setAttribute("data-lg-ide", "0");
+          var c0 = getComputedStyle(d).backgroundColor;
+          de.setAttribute("data-lg-ide", "1");
+          var c1 = getComputedStyle(d).backgroundColor;
+          var big = document.createElement("div");
+          big.style.cssText = "width:600px;height:300px;background-color:#101014";
+          host.appendChild(big);
+          de.setAttribute("data-lg-ide", "1");
+          if (window.__lgGlassSweep) window.__lgGlassSweep(big);
+          var sweptOn = big.className.indexOf("lg-glass") >= 0;
+          de.setAttribute("data-lg-ide", "0");
+          if (window.__lgGlassSweep) window.__lgGlassSweep(big);
+          var sweptOff = big.className.indexOf("lg-glass") >= 0;
+          host.remove();
+          de.setAttribute("data-lg-ide", old || "0");
+          return JSON.stringify({ glass: glass, themed: c0, native: c1,
+            themedMatches: same(parse(glass), parse(c0)), nativeDiffers: !same(parse(glass), parse(c1)),
+            sweptOn: sweptOn, sweptOff: sweptOff });
+        })()`));
+        out.ideNative = r;
+        out.ideNativePass = !!(r.themedMatches === true && r.nativeDiffers === true && r.sweptOn === false && r.sweptOff === true);
+      } catch (e) { out.ideNativeErr = String((e && e.stack) || e); out.ideNativePass = false; }
+      flush();
+
+      /* ---------- 复原 + 汇总 ---------- */
+      try { await setCfg({ ...saved }); } catch (e) {}
+      out.pass = !!(out.dockRenderPass && out.dockIdePass && out.pinPass && out.sniffPass && out.glassPass && out.adblockPass && out.ideNativePass);
+      flush();
     } else if (argv.includes("--lg-mattest")) {
       /* 材质对拍（"内外同一个效果"的机械守卫）：
          三层（外壳 / 页面 / 弹层）在**同一个窗口坐标**放同一个测试补丁
@@ -11660,6 +12022,8 @@ app.whenReady().then(() => {
   loadDownloads();
   // 本地页（设置/首页/历史）的会话也要接下载（不然从本地页点下载没记录）
   wireDownloads(session.defaultSession);
+  // 广告拦截同理：默认会话（外壳/本地页）也挂上，规则本身只认广告域
+  wireAdBlock(session.defaultSession);
   // 壁纸集合：先清掉目录里内容重复的文件（用户报"存在重复的背景"），
   // 随机/顺序模式下启动换一张，再挂自动轮换定时器
   dedupeWallpaperDir();

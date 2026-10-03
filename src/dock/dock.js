@@ -19,11 +19,15 @@ function applyGeometry(p) {
   viewY = Math.round(p.y || 0);
   de.style.setProperty("--lg-wall-w", winW + "px");
   de.style.setProperty("--lg-wall-h", winH + "px");
-  /* 假壁纸偏移 = 每颗胶囊在窗口里的坐标（视图原点 + 胶囊在视图内的偏移）：
-     视图矩形就是坞胶囊本身，不换算的话玻璃里的壁纸会整块错位。 */
+  /* 探针面包屑：坞视图自己在窗口里的坐标（断言 --pop-x/y 与壁纸对齐用） */
+  de.dataset.lgViewX = String(viewX);
+  de.dataset.lgViewY = String(viewY);
+  /* 假壁纸偏移 = 每颗胶囊的**padding 盒**在窗口里的坐标（视图原点 + 胶囊在
+     视图内的偏移 + 1px 边框）：::before 的 left/top 是相对 padding 盒算的，
+     不加 clientLeft/Top 会整体差一个边框宽度。 */
   root.querySelectorAll(".lg-fake").forEach((el) => {
-    el.style.setProperty("--pop-x", Math.round(viewX + el.offsetLeft) + "px");
-    el.style.setProperty("--pop-y", Math.round(viewY + el.offsetTop) + "px");
+    el.style.setProperty("--pop-x", Math.round(viewX + el.offsetLeft + el.clientLeft) + "px");
+    el.style.setProperty("--pop-y", Math.round(viewY + el.offsetTop + el.clientTop) + "px");
   });
 }
 

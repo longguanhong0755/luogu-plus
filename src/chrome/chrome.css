@@ -195,8 +195,7 @@ html[data-theme="dark"] .tab .t-close:hover { background: rgba(255, 255, 255, 0.
   -webkit-app-region: no-drag;
 }
 /* 左上角 Luogu++ 字样按用户要求撤掉（.vtitle 元素已删，样式一并清） */
-/* 折叠成窄条时只留展开箭头一颗按钮 */
-body.rail #vtab-head { justify-content: center; padding-left: 0; }
+/* 头部几何三种姿态共用一份（见 #vtab-head 基础规则）：窄条不再单独覆盖 */
 
 /* ---------- 窗口控制按钮（自绘：系统 overlay 会压住账号芯片）
    绝对定位在顶栏右上角：水平模式与标签条同高（34px），垂直模式与工具行同高（44px）。
@@ -405,20 +404,25 @@ body.rail #vtab-resize,
 body.compact #vtab-resize,
 #tab-flyout #vtab-resize { display: none; }
 #vtab-resize.dragging { background: var(--hairline); }
-/* 头部两种形态同高 44px：列表起点 y 在窄条与展开态一致（悬停加宽不重排）。
-   左：标签页操作 ⌄；右：展开/收起箭头（= 常驻展开开关，原「钉住」）。 */
+/* 头部三种姿态（窄条 / 悬停浮层 / 常驻展开）共用同一份几何：竖排两颗 30×20
+   （上=标签页操作 ⌄，下=钉子/常驻展开开关），都贴侧栏左内边距（x=8），
+   总高 44px（20+4+20）——列表起点 y 三处一致，悬停加宽不重排。
+   R37 为什么必须统一：窄条是竖排、浮层与展开态曾是横排（钉子在右上），
+   鼠标贴上窄条约 80ms 后浮层视图接管点击，按钉子原来那个位置落到的是
+   浮层里的三角/空白——用户报的"钉子按不了"就是这个位移。统一后钉子
+   三处逐像素同点，悬停交接钉子不动，点哪都是它。 */
 #vtab-head {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
   height: 44px;
-  padding-left: 2px;
+  padding-left: 0;
   -webkit-app-region: drag;
   flex: none;
 }
-#vtab-head .icon-btn { -webkit-app-region: no-drag; }
-#vtab-head .icon-btn { width: 26px; height: 26px; }
-#vtab-head #btn-vpin { margin-left: auto; }
+#vtab-head .icon-btn { -webkit-app-region: no-drag; margin: 0; width: 30px; height: 20px; }
 #vtab-head .icon-btn svg { width: var(--ico-md); height: var(--ico-md); }
 
 #vtabs {
@@ -574,16 +578,8 @@ body.rail #vtab { width: var(--vtab-rail); }
 body.rail #vtab .vtxt,
 body.rail #vtab .t-title,
 body.rail #vtab .t-badge { opacity: 0; }
-/* 窄条头部两颗：向下的三角（标签页操作）+ 钉子（常驻展开/收起）。
-   R36 用户反馈"固定功能不可用"：钉子回到窄条上，收起态也能直接钉住。
-   头部总高仍与展开态同为 44px（20+4+20），列表起点 y 才对得上，悬停加宽不重排。 */
-body.rail #vtab-head {
-  flex-direction: column;
-  justify-content: center;
-  padding-left: 0;
-  gap: 4px;
-}
-body.rail #vtab-head .icon-btn { margin: 0; width: 30px; height: 20px; }
+/* 窄条头部：不再单独覆盖——R37 起竖排 30×20 的头部几何写在 #vtab-head 基础
+   规则里，窄条 / 悬停浮层 / 常驻展开三处逐像素同点（钉子不会因悬停加宽而跑）。 */
 /* 窄条里的关闭按钮：悬停时在图标右上角冒出一颗小 ×（原来直接藏掉，
    窄条上根本关不了标签）。定位在按钮盒内部，不会被列表的滚动裁剪。 */
 body.rail .vtab { position: relative; }
