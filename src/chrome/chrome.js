@@ -444,21 +444,33 @@ function collapseTempGroup(d) {
   }
   if (root) for (const el of Array.from(root.querySelectorAll('[data-temp-member="1"]'))) el.remove();
 }
+/* 拖拽小日志（环形 40 条，只在拖拽期间写）：排障"折叠组悬停没展开"这类
+   时序问题用（探针读 window.__lgDragLog）。 */
+window.__lgDragLog = [];
+function dragLog(s) {
+  try {
+    window.__lgDragLog.push(Date.now() % 100000 + " " + s);
+    if (window.__lgDragLog.length > 40) window.__lgDragLog.shift();
+  } catch (e) {}
+}
 function dragHoverExpand(gid) {
   const d = drag;
-  if (!d) return;
+  if (!d) { dragLog("hover gid=" + gid + " no-drag"); return; }
   if (d.autoExpanded != null && d.autoExpanded !== gid) collapseTempGroup(d);
-  if (gid == null || d.autoExpanded === gid) { clearTimeout(hoverExpandTimer); return; }
+  if (gid == null || d.autoExpanded === gid) { clearTimeout(hoverExpandTimer); dragLog("hover gid=" + gid + " auto=" + d.autoExpanded + " -> clear"); return; }
   const root = dragStripRoot(d.vertical);
   const box = root ? root.querySelector('.vgroup[data-gid="' + gid + '"]') : null;
   const chip = root ? root.querySelector('.gchip[data-gid="' + gid + '"]') : null;
   const el = box || chip;
+  dragLog("hover gid=" + gid + " vert=" + d.vertical + " box=" + !!box + " chip=" + !!chip + " collapsed=" + (el ? el.classList.contains("collapsed") : "n/a") + " since=" + (Date.now() - (d.hoverSince || 0)));
   if (!el || !el.classList.contains("collapsed")) { clearTimeout(hoverExpandTimer); return; }
   if (d.hoverGid !== gid) { d.hoverGid = gid; d.hoverSince = Date.now(); }
   const tryExpand = () => {
-    if (!drag || drag.autoExpanded === gid) return;
-    if (!groupById(gid)) return;
-    if (expandTempGroup(gid, drag.vertical)) drag.autoExpanded = gid;
+    if (!drag || drag.autoExpanded === gid) { dragLog("try skip auto=" + (drag && drag.autoExpanded)); return; }
+    if (!groupById(gid)) { dragLog("try no-group " + gid); return; }
+    const r = expandTempGroup(gid, drag.vertical);
+    dragLog("try gid=" + gid + " vert=" + drag.vertical + " ret=" + r);
+    if (r) drag.autoExpanded = gid;
   };
   /* 两条路都留着：指针继续动时由"停留时长"判定（渲染器定时器被节流也不怕），
      指针停住时由定时器兜底。 */
@@ -543,9 +555,19 @@ document.addEventListener("pointermove", (e) => {
   const over = document.elementFromPoint(e.clientX, e.clientY);
   if (!over || !over.closest) return;
   autoScrollStrip(drag.vertical ? "y" : "x", e);
-  /* 折叠组悬停展开：拖到折叠组（组头/组牌）上停 450ms 自动展开 */
-  const collapsedBox = over.closest(".vgroup.collapsed[data-gid], .gchip.collapsed[data-gid]");
-  dragHoverExpand(collapsedBox ? Number(collapsedBox.dataset.gid) : null);
+  /* 折叠组悬停展开：拖到折叠组（组头/组牌/**组内成员行**）上停 450ms 自动展开。
+     成员行也算"停在组上"：临时展开的那一瞬，指针底下的元素会从组牌变成展开出来
+     的成员行——只认组牌的话，展开后第一个 pointermove 就判成"离开"→ 立刻收回 →
+     下一拍又展开 → 抖个不停（R40 探针实测到 expand 后 0.6s 被 collapse）。
+     离开组（指针到别的行/组）时 gid 变化，收回逻辑照旧。 */
+  const overGroupEl = over.closest(".vghead[data-gid], .gchip[data-gid], .vgroup[data-gid]");
+  const overRowEl = overGroupEl ? null : over.closest("[data-id]");
+  const hoverGid = overGroupEl
+    ? Number(overGroupEl.dataset.gid)
+    : overRowEl && overRowEl.dataset.id != null
+      ? tabGidOf(Number(overRowEl.dataset.id))
+      : null;
+  dragHoverExpand(hoverGid);
 
   /* ---- 整组拖动：落点 = 别的标签 / 别的组头（报锚点 + 前/后） ---- */
   if (drag.gid != null) {
@@ -950,7 +972,7 @@ function syncOmni() {
   const t = activeSnapshot();
   inp.value = t ? omniDisplayUrl(t.url, t.kind) : "";
 }
-function omniSubmit() {
+function omniSubmit(newTab) {
   const inp = document.getElementById("omni-input");
   const raw = inp.value.trim();
   if (!raw) return;
@@ -960,7 +982,9 @@ function omniSubmit() {
   inp.value = "";
   inp.blur();
   if (r.type === "luogu") {
-    window.lgChrome.navigate(r.url);
+    // Alt+Enter（Chrome 同款）：按输入内容新标签打开
+    if (newTab && window.lgChrome.openTab) window.lgChrome.openTab(r.url);
+    else window.lgChrome.navigate(r.url);
   } else {
     // 映射词、站外网址与站外搜索引擎 → 应用内新标签（该标签不锁域名）
     window.lgChrome.openExternalTab(r.url);
@@ -1140,7 +1164,7 @@ function renderDock() {
     for (const it of items) {
       const a = document.createElement("a");
       a.innerHTML = svg(DOCK_ICONS.includes(it.icon) ? it.icon : "page");
-      a.title = it.title || it.href;
+      a.title = (it.title || it.href) + "（Ctrl+点击 / 中键：新标签打开）";
       a.setAttribute("data-href", it.href);
       const target = dockTarget(it.href);
       let active = false;
@@ -2833,7 +2857,8 @@ function bind() {
         runSuggest(sugItems[sugSel]);
         return;
       }
-      omniSubmit();
+      /* Alt+Enter = 新标签打开（Chrome/Edge 同款；R40） */
+      omniSubmit(e.altKey);
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       if (!sugOpen || !sugItems.length) return;
       e.preventDefault();

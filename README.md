@@ -39,7 +39,8 @@ luogu-glass/
   垂直模式顶栏两行（标题行：图标 + 网页描述居中，右端窗口三键；工具行：前进后退 + 网址 + 账号）；
   侧坞是悬浮栏（设置里选上/下/左/右，页面内容从它底下穿过、不再让位；方向跟着
   位置走：左/右 = 一竖列、上/下 = 一横条；网页自己进入全屏、题目页进入自带
-  IDE 模式、或打开分屏编辑器时自动收起）；悬停展开与窄条交接零
+  IDE 模式、或打开分屏编辑器时自动收起；坞项是**书签语义**（v3.13.0 起：普通点
+  把当前页换成目标页，Ctrl+点击 / 中键才新标签打开）；悬停展开与窄条交接零
   闪烁（浮层画好才收窄条、收回也先画回侧栏再撤浮层）；缩放比例在窗口右上角实时
   显示（标签上不写比例）；
   下载面板；账号芯片下拉；命令面板（Ctrl+Shift+P）；快捷键总览（F1）
@@ -98,6 +99,10 @@ LuoguLab.exe --lg-selftest=out --lg-pagetest    # 列表页与题目页的功能
 LuoguLab.exe --lg-selftest=out --lg-dump-promo  # 推广卡 DOM dump（调试）
 LuoguLab.exe --lg-hidden --lg-v36test --lg-url=about:blank   # 隔离隐藏实例全量回归
 LuoguLab.exe --lg-hidden --lg-v310test --lg-url=https://www.luogu.com.cn/  # v3.10.0 全量
+LuoguLab.exe --lg-hidden --lg-v313test --lg-url=https://www.luogu.com.cn/  # v3.13.0 全量
+              # 题目页 IDE 真全屏（真站选择器 + 反例不误判）/ 窄条 ⌄ 交接菜单活下来 /
+              # 坞=书签语义（普通点换当前页、newTab 才新开）/ 题单广场搜索条已删 /
+              # 中键点链接 = 后台新标签
 LuoguLab.exe --lg-hidden --lg-v312test --lg-url=https://www.luogu.com.cn/  # v3.12.0 全量
               # 地址栏体验（输入法回车/回车确定性/localhost/联想跟手）/ 坞首页开洛谷首页 /
               # 账号菜单跑位 / 背景自愈 / 分组手感（迟滞·预览·动画·折叠展开）/ 左右两格分屏
@@ -115,7 +120,7 @@ omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色
 ## 部署状态（2026-10-01）
 
 - 桌面交付：`C:\Users\Administrator\Desktop\LuoguLab\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.12.0）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.13.0）
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
 - 设计迭代史见 `design-log.md`（R1~R33，全部有探针/截图证据）

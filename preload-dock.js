@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("lgDock", {
   onRect: (cb) => ipcRenderer.on("dock:rect", (_e, p) => cb(p || {})),
   /* 量到的胶囊尺寸（主进程据此把视图落到胶囊矩形） */
   size: (w, h) => ipcRenderer.send("dock:size", { w, h }),
-  /* 坞项点击：href 原样回传，映射与导航全在主进程 */
-  cmd: (href) => ipcRenderer.send("dock:cmd", String(href || "")),
+  /* 坞项点击：href 原样回传，映射与导航全在主进程。
+     opts.newTab = Ctrl/⌘+点或中键（书签语义：默认换当前页，R40） */
+  cmd: (href, opts) =>
+    ipcRenderer.send("dock:cmd", String(href || ""), { newTab: !!(opts && opts.newTab) }),
 });

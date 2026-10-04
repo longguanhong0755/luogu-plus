@@ -78,6 +78,8 @@ contextBridge.exposeInMainWorld("lgChrome", {
   navigate: (url) => ipcRenderer.invoke("tab:navigate", url),
   /* 底部坞（垂直模式）：坞渲染在弹出层，外壳把项+主题变量推给主进程转发 */
   openExternalTab: (url) => ipcRenderer.invoke("tab:open-external", url),
+  /* 地址栏 Alt+Enter：把输入内容新标签打开（锁定语义跟着目标走，R40） */
+  openTab: (url) => ipcRenderer.invoke("tab:open", url),
   back: () => ipcRenderer.invoke("tab:back"),
   forward: () => ipcRenderer.invoke("tab:fwd"),
   reload: () => ipcRenderer.invoke("tab:reload"),

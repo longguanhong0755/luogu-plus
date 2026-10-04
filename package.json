@@ -1,7 +1,7 @@
 {
   "name": "luogu-glass",
   "productName": "LuoguLab",
-  "version": "3.12.0",
+  "version": "3.13.0",
   "description": "LuoguLab — 洛谷编程工作台，单色线条风的洛谷桌面客户端",
   "main": "main.js",
   "scripts": {

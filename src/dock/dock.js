@@ -58,15 +58,21 @@ function reportSize() {
   if (w > 0 && h > 0 && window.lgDock) window.lgDock.size(w, h);
 }
 
-/* 点击 → 回传 href（@home / @ide / @settings / URL / 站内路径），业务在主进程 */
+/* 点击 → 回传 href（@home / @ide / @settings / URL / 站内路径），业务在主进程。
+   书签语义（R40）：普通点 = 当前页换成目标页；Ctrl/⌘+点、中键 = 新标签打开。 */
 document.addEventListener("click", (e) => {
   const a = e.target && e.target.closest ? e.target.closest("[data-href]") : null;
   if (!a) return;
   e.preventDefault();
-  if (window.lgDock) window.lgDock.cmd(a.getAttribute("data-href"));
+  if (window.lgDock) window.lgDock.cmd(a.getAttribute("data-href"), { newTab: !!(e.ctrlKey || e.metaKey) });
 });
 document.addEventListener("contextmenu", (e) => e.preventDefault());
-document.addEventListener("auxclick", (e) => e.preventDefault());
+document.addEventListener("auxclick", (e) => {
+  const a = e.target && e.target.closest ? e.target.closest("[data-href]") : null;
+  e.preventDefault();
+  if (e.button !== 1 || !a) return; // 中键 = 新标签打开
+  if (window.lgDock) window.lgDock.cmd(a.getAttribute("data-href"), { newTab: true });
+});
 document.addEventListener("dragstart", (e) => e.preventDefault());
 
 window.lgDock.onSync(render);

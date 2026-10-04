@@ -515,7 +515,12 @@
     root.setAttribute("data-lg-clean", cfg.clean === false ? "0" : "1");
     root.setAttribute("data-lg-frameless", cfg.frameless === false ? "0" : "1");
     root.setAttribute("data-lg-declutter", cfg.declutter ? "1" : "0");
-    root.setAttribute("data-lg-quicksearch", cfg.quickSearch === false ? "0" : "1");
+    /* 快速筛选框：题单广场（/training/list）是卡片墙、没有可筛的行列表，R40
+       用户点名删掉该页顶部的筛选条——把开关在这一页直接压成 0，setup 的两条
+       路径（apply 与 2.5s 巡检）都会跟着跳过，SPA 从别的列表页切过来时
+       apply 里的 teardown 负责把已挂的那条摘掉。 */
+    var quickOff = cfg.quickSearch === false || /^\/training\/list\/?$/.test(path);
+    root.setAttribute("data-lg-quicksearch", quickOff ? "0" : "1");
     root.setAttribute("data-lg-listtools", cfg.listTools === false ? "0" : "1");
 
     // 视觉参数（全部内联下发，含主题变量）
@@ -678,7 +683,10 @@
       teardownQuickSearch();
     } else if (/\/(problem|training|contest|record)\/list/.test(path) || /^\/problem\/?$/.test(path)) {
       setupListTools();
-      setupQuickSearch();
+      /* 题单广场不挂快速筛选（R40 用户点名删）：从别的列表页 SPA 切过来时
+         这里负责把已经挂着的那条摘掉，attribute 也已被压成 0。 */
+      if (/^\/training\/list\/?$/.test(path)) teardownQuickSearch();
+      else setupQuickSearch();
     } else {
       teardownListTools();
       teardownQuickSearch();
@@ -2206,26 +2214,37 @@
       sweepPromos();
     }, 300);
   }
-  /* ---------- 题目页自带 IDE 模式（R38）----------
+  /* ---------- 题目页自带 IDE 模式（R38，选择器 R40 实测修正）----------
      洛谷题目页的「进入 IDE 模式」是页面内的分屏（不是 /ide 路由）：URL 仍是
      /problem/xxx，DOM 里冒出编辑器容器 + 「退出 IDE 模式」入口。应用侧据此进
      "真·全屏"（该标签页面视图铺满整窗、外壳与坞让位），编辑器面板也按原生
      不透明渲染（apply 里 data-lg-ide 定夺，与 /ide 页同一套规则）。
-     判定用双条件（编辑器容器可见 + 退出文案）防误判；状态变化才上报主进程。 */
+     R38 的判定用的是三个**猜的**类名（.code-editor-container/.editor-top-bar/
+     .io-editor-container）——真站（2026-10 实测）一个都不存在，判定恒 false，
+     全屏与原生渲染从未生效（用户报"切到 IDE 模式还是不全屏"）。真站的容器是
+     .panel-layout.layout-horizontal.ide-container（内含 .ide-toolbar /
+     .ide-textarea / .cm-editor），退出入口是 .lfe-caption.problem-block-actions
+     里的一个 <a>（文案「退出 IDE 模式」）。判定 = 容器可见 + 退出文案在场。 */
   function ideInPageDetect() {
     if (!isLuoguPage || !/^\/problem\//.test(location.pathname || "")) return false;
     try {
-      var box = document.querySelector(".code-editor-container, .editor-top-bar, .io-editor-container");
+      /* 退出入口在编辑器容器**外**（题目卡的 .problem-block-actions 里），
+         整页找文案——这是两个方向都权威的信号：进入 IDE 后它出现、退出后
+         又变回「进入 IDE 模式」。 */
+      var exitOn = false;
+      var nodes = document.querySelectorAll("a, button, span");
+      for (var i = 0; i < nodes.length && i < 500; i++) {
+        var s = (nodes[i].textContent || "").trim();
+        if (s.length <= 16 && s.indexOf("退出 IDE") >= 0) { exitOn = true; break; }
+      }
+      /* 已经开着：只看退出入口（编辑器重排/首帧零尺寸的瞬间不许把全屏抖掉） */
+      if (inPageIde) return exitOn;
+      if (!exitOn) return false;
+      /* 打开方向再加一道容器可见的门，防别的页面元素撞文案误判 */
+      var box = document.querySelector(".ide-container, .panel-layout.ide-container, .ide-toolbar, .code-editor-container, .editor-top-bar, .io-editor-container");
       if (!box) return false;
       var r = box.getBoundingClientRect();
-      if (!(r.width > 0 && r.height > 0)) return false;
-      var scope = document.querySelector(".editor-top-bar, .io-editor-container, .ide-container") || document;
-      var nodes = scope.querySelectorAll("a, button, span, div");
-      for (var i = 0; i < nodes.length && i < 300; i++) {
-        var s = (nodes[i].textContent || "").trim();
-        if (s.length <= 16 && s.indexOf("退出 IDE") >= 0) return true;
-      }
-      return false;
+      return !!(r.width > 0 && r.height > 0);
     } catch (e) { return false; }
   }
   var inPageIde = false;

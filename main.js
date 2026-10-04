@@ -1594,18 +1594,35 @@ function dockTargetOf(href) {
   if (map[s]) return { type: "url", url: map[s] };
   return { type: "luogu", url: "/" + s.replace(/^\/+/, "") };
 }
-function dockOpen(href) {
+function dockOpen(href, opts) {
   const t = dockTargetOf(href);
   if (!t) return;
+  /* R40（用户口径，改自 R39）：坞项 = **书签语义**——默认把当前页换成目标页
+     （不再新开标签）；Ctrl/⌘+点、中键（坞视图回传 newTab）才新开标签。
+     设置页例外：它是应用自己的工具页（Chrome 的设置也开新标签），维持
+     "激活已有 / 新建"。本地玻璃首页仍由 Ctrl+T / 加号 / 命令面板打开。 */
+  const newTab = !!(opts && opts.newTab);
   if (t.type === "settings") return openSettingsTab();
   if (t.type === "home") {
-    /* R39（用户口径）：坞「首页」= 总是新建标签打开洛谷首页。本地玻璃首页
-       （时钟/壁纸那页）仍由 Ctrl+T / 加号 / 命令面板打开，createHomeTab 不动。 */
-    createTab(HOME_URL, { activate: true });
-    return;
+    if (newTab) return createTab(HOME_URL, { activate: true });
+    return navigateActive(HOME_URL, { unlock: true });
   }
-  if (t.type === "ide") return toggleIde();
-  if (t.type === "url") return createTab(t.url, { unlock: true });
+  if (t.type === "ide") {
+    /* 已有 IDE 标签：切过去（不新开、也不把当前页换掉）；没有：当前页换成
+       /ide（Ctrl+点则新建 special 标签，与旧行为一致）。 */
+    const id = tabOrder.find((tid) => {
+      const x = tabs.get(tid);
+      return x && x.special && !isLocalKind(x.kind);
+    });
+    if (id != null) return setActiveTab(id);
+    if (newTab) return createTab(HOME_URL + "ide", { special: true });
+    return navigateActive(HOME_URL + "ide", { unlock: true });
+  }
+  if (t.type === "url") {
+    if (newTab) return createTab(t.url, { unlock: true });
+    return navigateActive(t.url, { unlock: true });
+  }
+  if (newTab) return createTab(normalizeUrl(t.url), { unlock: true });
   return navigateActive(t.url, { unlock: true });
 }
 
@@ -1641,7 +1658,7 @@ ipcMain.on("dock:size", (_e, s) => {
   dockCapsule = { w, h };
   layoutDock();
 });
-ipcMain.on("dock:cmd", (_e, href) => dockOpen(String(href || "")));
+ipcMain.on("dock:cmd", (_e, href, opts) => dockOpen(String(href || ""), opts && typeof opts === "object" ? opts : null));
 
 /* ============================================================
    标签休眠（Zen 式）：后台闲置标签卸载视图省内存（URL/标题/图标保留，
@@ -2062,6 +2079,12 @@ function showPopup(payload) {
   raisePopup();
   popupShown = true;
   popupFit = null;
+  /* 浮层动作的兜底收回（popup:pick 里那一发 200ms）在这里作废：新弹层要显示
+     （最常见的是窄条浮层里点 ⌄ 交接给「标签页操作」菜单）时，旧的兜底定时器
+     不许再关它——R40 用户报的"窄条上点 ⌄ 有 bug"就是它：菜单刚画出来就被
+     200ms 后的兜底 hidePopup 关掉，看起来像点了没反应/闪一下。 */
+  clearTimeout(popupPickHideTimer);
+  popupPickHideTimer = null;
   /* 弹层的假壁纸要吃"整个窗口"的尺寸（--lg-wall-w/h）：rect 弹层的视图只是
      面板那一块，CSS 的 100vw/100vh 兜底会把壁纸按视图尺寸铺——悬停浮层那种
      整条面板尤其明显（面板底色只有 3% 白，看上去几乎就是那张被压扁的壁纸，
@@ -2108,6 +2131,10 @@ function showPopup(payload) {
 function hidePopup() {
   stopFlyoutWatch();
   flyoutHold = false; // 拖拽中被打断（点空白/Esc）时别把挂起状态留下
+  /* 兜底定时器一起作废：它若留到下一次弹层显示之后再响，会关掉一个跟它
+     毫无关系的新弹层（同一类竞态的第二个入口）。 */
+  clearTimeout(popupPickHideTimer);
+  popupPickHideTimer = null;
   const wasFlyout = !!(popupFit && popupFit.fullH); // 悬停浮层（整条面板）
   popupFit = null;
   if (glanceView) closeGlance(); // 速览壳被点掉/Esc：卡片视图一起收
@@ -2218,8 +2245,9 @@ function ensureDrawerView() {
   view.webContents.on("did-finish-load", () => {
     if (!view.webContents.isDestroyed()) injectInto(view.webContents);
   });
-  view.webContents.setWindowOpenHandler(({ url }) => {
-    if (isAllowed(url)) createTab(url, { activate: true });
+  view.webContents.setWindowOpenHandler(({ url, disposition }) => {
+    const bg = disposition === "background-tab"; // 中键/Ctrl+点 = 后台标签（同页面视图）
+    if (isAllowed(url)) createTab(url, { activate: !bg });
     else shell.openExternal(url);
     return { action: "prevent" };
   });
@@ -2688,16 +2716,20 @@ function wirePageView(id, view) {
       if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     }
   });
-  wc.setWindowOpenHandler(({ url }) => {
+  wc.setWindowOpenHandler(({ url, disposition }) => {
     if (/^luogu-glass:\/\//i.test(url)) {
       handleAppCommand(url);
       return { action: "prevent" };
     }
     const t = tabs.get(id);
+    /* 中键 / Ctrl+点链接在 Chrome、Edge 里都是**后台**新标签（disposition =
+       background-tab）：前台页面不切走。以前一律 activate，中键连点几个链接
+       就被切走几次页面。 */
+    const bg = disposition === "background-tab";
     if (isAllowed(url)) {
-      createTab(url, { activate: true });
+      createTab(url, { activate: !bg });
     } else if (t && t.unlock) {
-      createTab(url, { unlock: true });
+      createTab(url, { unlock: true, activate: !bg });
     } else if (/^https?:\/\//i.test(url)) {
       shell.openExternal(url);
     }
@@ -5013,6 +5045,14 @@ ipcMain.handle("tab:navigate", (_e, url) => {
 ipcMain.handle("tab:open-external", (_e, url) => {
   if (url && /^https?:\/\//i.test(url)) createTab(url, { unlock: true });
   return { ok: true };
+});
+/* 地址栏 Alt+Enter：把输入内容**新标签**打开（Chrome/Edge 同款）。与
+   open-external 的区别是锁定语义跟着目标走（洛谷 URL 不标 unlock）。 */
+ipcMain.handle("tab:open", (_e, url) => {
+  const full = normalizeUrl(String(url || ""));
+  if (!/^https?:/i.test(full)) return { ok: false };
+  createTab(full, { unlock: !isAllowed(full), activate: true });
+  return { ok: true, url: full };
 });
 ipcMain.handle("tab:back", () => {
   const t = tabs.get(activeTabId);
@@ -10396,7 +10436,12 @@ async function selftest() {
           await t2.view.webContents.executeJavaScript(`(function(){
             var host = document.createElement("div");
             host.id = "lg-v311-ide";
-            host.innerHTML = '<div class="editor-top-bar"><span class="code-editor-container" style="display:block;width:420px;height:220px;background:#ffffff"></span><a href="#">退出 IDE 模式</a></div>';
+            /* R40：改成真站形状——.panel-layout.layout-horizontal.ide-container
+               内含 .ide-toolbar/.ide-textarea，退出文案在容器**外**的
+               .lfe-caption.problem-block-actions 里。R38 那版假 DOM 用的是三个
+               猜的类名（.code-editor-container/.editor-top-bar/…），探针全绿而
+               真站判定恒 false（用户报"还是不全屏"的根因）。 */
+            host.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar lg-glass" style="display:block;width:420px;height:220px;background:#ffffff"></div></div><div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
             document.body.appendChild(host);
             return true;
           })()`, true);
@@ -10411,8 +10456,8 @@ async function selftest() {
             bounds: t2.view.getBounds(),
             dock: dockShown,
             attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
-            bg: await t2.view.webContents.executeJavaScript('getComputedStyle(document.querySelector(".code-editor-container")).backgroundColor', true),
-            glassCls: await t2.view.webContents.executeJavaScript('document.querySelector(".code-editor-container").className.indexOf("lg-glass") >= 0', true),
+            bg: await t2.view.webContents.executeJavaScript('getComputedStyle(document.querySelector(".ide-toolbar")).backgroundColor', true),
+            glassCls: await t2.view.webContents.executeJavaScript('document.querySelector(".ide-toolbar").className.indexOf("lg-glass") >= 0', true),
           };
           await t2.view.webContents.executeJavaScript('(function(){var h=document.getElementById("lg-v311-ide");if(h)h.remove();return true})()', true);
           let cleared = null;
@@ -10471,12 +10516,20 @@ async function selftest() {
           var ev = function (type, x, y, el) {
             return el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 1, isPrimary: true }));
           };
+          var efp = function (x, y) { var e = document.elementFromPoint(x, y); return e ? (e.tagName + "." + String(e.className).slice(0, 60)) : "null"; };
+          var diag = { win: [innerWidth, innerHeight], rows: rows.length, a: [ax, ay, Math.round(ra.width), Math.round(ra.height)], b: [bx, by, Math.round(rb.width), Math.round(rb.height)], efpA: efp(ax, ay), efpB: efp(bx, by), scroll: [document.getElementById("tabs").scrollLeft, document.getElementById("tabs").scrollWidth, document.getElementById("tabs").clientWidth] };
           ev("pointerdown", ax, ay, A);
           ev("pointermove", ax + 8, ay, document);
+          diag.efpAfter1 = efp(ax + 8, ay);
+          diag.tip1 = !!document.getElementById("drag-tip");
           ev("pointermove", bx, by, document);
+          diag.efpAfter2 = efp(bx, by);
+          diag.tip2 = !!document.getElementById("drag-tip");
+          diag.tipRect = (function () { var t = document.getElementById("drag-tip"); if (!t) return null; var r = t.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height), getComputedStyle(t).pointerEvents]; })();
+          diag.bodyCls = document.body.className;
           var marked = B.className.indexOf("drop-merge") >= 0;
           ev("pointerup", bx, by, document);
-          return JSON.stringify({ marked: marked, a: Number(A.getAttribute("data-id")), b: Number(B.getAttribute("data-id")) });
+          return JSON.stringify({ marked: marked, a: Number(A.getAttribute("data-id")), b: Number(B.getAttribute("data-id")), diag: diag });
         })()`));
         await sleep(900);
         const ga = tabs.get(gesture.a) ? tabs.get(gesture.a).groupId : null;
@@ -10625,28 +10678,43 @@ async function selftest() {
       } catch (e) { out.omniErr = String((e && e.stack) || e); out.omniPass = false; }
       flush();
 
-      /* ---------- 2) 坞「首页」= 新标签打开 luogu.com.cn ---------- */
+      /* ---------- 2) 坞项 = 书签语义（R40 改自 R39）：普通点换当前页，
+              Ctrl/中键（newTab）才新开；首页目标恒为 luogu.com.cn ---------- */
       try {
         await setCfg({ verticalTabs: false, dockPos: "left" });
-        const beforeIds = new Set(tabs.keys());
         const prevActive = activeTabId;
-        const prevUrl = tabs.has(prevActive) ? tabs.get(prevActive).url : "";
+        const n0 = tabOrder.length;
         dockOpen("@home");
+        /* 当前页换成洛谷首页：上一段（地址栏）可能还有在飞的 P1002 导航，落定要等
+           页面自己的 did-navigate 回来——轮询到 URL 与坞高亮都对上（固定 sleep 会
+           量到"还在旧页"的中间态，R40 批跑实测过这种假红）。 */
+        let plainUrl = "";
+        let dockActive = { n: 0, href: null };
+        for (let i = 0; i < 30; i++) {
+          await sleep(400);
+          const c = tabs.get(prevActive);
+          plainUrl = c ? c.url : "";
+          dockActive = JSON.parse(await js(`JSON.stringify({n: document.querySelectorAll("#dock a.active").length, href: (document.querySelector("#dock a.active")||{}).getAttribute ? document.querySelector("#dock a.active").getAttribute("data-href") : null})`));
+          if (/^https:\/\/www\.luogu\.com\.cn\/?$/.test(plainUrl) && dockActive.n >= 1 && dockActive.href === "@home") break;
+        }
+        const cur = tabs.get(prevActive);
+        const plain = { count: tabOrder.length, sameTab: activeTabId === prevActive, url: plainUrl, kind: cur ? cur.kind : null };
+        const beforeIds = new Set(tabs.keys());
+        dockOpen("@home", { newTab: true });
         await sleep(1400);
         const newIds = tabOrder.filter((id) => !beforeIds.has(id));
         const nt = newIds.length === 1 ? tabs.get(newIds[0]) : null;
-        const dockActive = JSON.parse(await js(`JSON.stringify({n: document.querySelectorAll("#dock a.active").length, href: (document.querySelector("#dock a.active")||{}).getAttribute ? document.querySelector("#dock a.active").getAttribute("data-href") : null})`));
         out.dockHome = {
+          plain,
           newCount: newIds.length,
           url: nt ? nt.url : "",
           activeIsNew: nt ? activeTabId === nt.id : false,
-          prevUntouched: tabs.has(prevActive) && tabs.get(prevActive).url === prevUrl,
           dockActive,
         };
         out.dockHomePass = !!(
+          plain.count === n0 && plain.sameTab === true && /^https:\/\/www\.luogu\.com\.cn\/?$/.test(plain.url) &&
           newIds.length === 1 && nt && /^https:\/\/www\.luogu\.com\.cn\/?$/.test(nt.url) &&
-          activeTabId === nt.id && out.dockHome.prevUntouched &&
-          dockActive.n >= 1 && dockActive.href === "@home"
+          activeTabId === nt.id && dockActive.n >= 1 && dockActive.href === "@home"
         );
         if (nt) { closeTab(nt.id); await sleep(400); }
       } catch (e) { out.dockHomeErr = String((e && e.stack) || e); out.dockHomePass = false; }
@@ -10812,11 +10880,25 @@ async function selftest() {
           ev("pointerdown", Math.round(ra.left + ra.width / 2), Math.round(ra.top + ra.height / 2), A);
           ev("pointermove", Math.round(ra.left + ra.width / 2) + 8, Math.round(ra.top + ra.height / 2), document);
           ev("pointermove", Math.round(rc.left + rc.width / 2), Math.round(rc.top + rc.height / 2), document);
+          var efp = function (x, y) { var e = document.elementFromPoint(x, y); return e ? (e.tagName + "." + String(e.className).slice(0, 60)) : "null"; };
+          var chipNow = document.querySelector("#tabs .gchip[data-gid]");
+          var dbg0 = window.__lgDragDbg ? window.__lgDragDbg() : null;
+          var dbgChip = window.__lgDragDbg ? window.__lgDragDbg() : null;
+          var diag = {
+            win: [innerWidth, innerHeight],
+            chipRect: [Math.round(rc.left), Math.round(rc.top), Math.round(rc.width), Math.round(rc.height)],
+            efpChip: efp(Math.round(rc.left + rc.width / 2), Math.round(rc.top + rc.height / 2)),
+            chipCls: chipNow ? chipNow.className : "gone",
+            strip: (function () { var s = document.getElementById("tabs"); return [s.scrollLeft, s.scrollWidth, s.clientWidth]; })(),
+            drag: dbg0 ? dbg0.drag : null,
+            temp: dbgChip ? dbgChip.temp : null,
+          };
           return JSON.stringify({
             armed: true,
             collapsedBefore: chip.className.indexOf("collapsed") >= 0,
             chipGid: Number(chip.getAttribute("data-gid")),
             tipArmed: !!document.getElementById("drag-tip"),
+            diag: diag,
           });
         })()`));
         await sleep(1100); // > 450ms dwell
@@ -10841,7 +10923,7 @@ async function selftest() {
           });
         })()`));
         /* 排障：拖拽状态现场 + 直接调用 expandTempGroup 看函数本身是否可用 */
-        const dbgDwell = JSON.parse(await js("JSON.stringify(window.__lgDragDbg ? window.__lgDragDbg() : null)"));
+        const dbgDwell = JSON.parse(await js("JSON.stringify({ dbg: window.__lgDragDbg ? window.__lgDragDbg() : null, log: window.__lgDragLog || [] })"));
         const directExpand = JSON.parse(await js(`(function(){
           try { var r = expandTempGroup(${gesture.chipGid}, false); return JSON.stringify({ ret: r, temp: document.querySelectorAll("#tabs .tab[data-temp-member]").length }); }
           catch (e) { return JSON.stringify({ err: String(e) }); }
@@ -10926,6 +11008,325 @@ async function selftest() {
       /* ---------- 复原 ---------- */
       try { await setCfg({ ...saved }); } catch (e) {}
       out.pass = !!(out.omniPass && out.dockHomePass && out.menuPlacePass && out.bgPass && out.groups2Pass && out.split2Pass);
+      flush();
+    } else if (argv.includes("--lg-v313test")) {
+      /* v3.13.0（R40）五项：
+         1) ide2：题目页自带 IDE 模式——判定改用真站选择器（.panel-layout
+            .ide-container / .ide-toolbar + 容器外的「退出 IDE 模式」文案），
+            进入 = 该标签视图铺满整窗（真·全屏）+ data-lg-ide=1 + 面板摘掉玻璃；
+            退出还原。反例：只有容器没文案 / 只有文案没容器都不许触发。
+         2) railMenu：窄条悬停浮层里点 ⌄ 交接给「标签页操作」菜单——菜单必须
+            活过 200ms 兜底窗口（旧 bug：兜底 hidePopup 把刚开的菜单关掉，看起来
+            像点了没反应）；弹层视图同时铺满整窗（菜单不被窄条矩形裁掉）；
+            关掉菜单后窄条恢复可见。
+         3) dockNav：坞项 = 书签语义——普通点换当前页（不新开），Ctrl/中键才新开；
+            @ide 没有 IDE 标签时同样是换当前页。
+         4) trainSearch：/training/list 顶部快速筛选条已删（attr=0、无 #lg-quicksearch），
+            别的列表页（/contest/list）仍有——功能没被删掉，只是这一页不要。
+         5) linkBg：页面里中键点链接 = **后台**新标签（前台标签不切走，Chrome 同款）。 */
+      const out = { at: new Date().toISOString() };
+      const flush = () => fsx.writeFileSync(selftestShot, JSON.stringify(out, null, 2));
+      try { mainWin.setOpacity(0); } catch {}
+      try { mainWin.showInactive(); } catch {}
+      try { mainWin.setContentSize(1280, 800); } catch {}
+      for (let i = 0; i < 40 && tabs.size === 0; i++) await sleep(500);
+      await sleep(1200);
+      const js = (code) => mainWin.webContents.executeJavaScript(code, true);
+      const setCfg = async (patch) => {
+        Object.assign(cfg, patch);
+        saveConfig();
+        pushConfigToChrome();
+        layout();
+        await sleep(500);
+      };
+      const popJs = (code) =>
+        popupView && !popupView.webContents.isDestroyed()
+          ? popupView.webContents.executeJavaScript(code, true).catch(() => null)
+          : Promise.resolve(null);
+      const saved = {
+        verticalTabs: cfg.verticalTabs, vtabCollapsed: cfg.vtabCollapsed, vtabCompact: cfg.vtabCompact,
+        vtabSide: cfg.vtabSide, dockPos: cfg.dockPos, dockItems: cfg.dockItems, ideNative: cfg.ideNative,
+      };
+
+      /* ---------- 1) 题目页自带 IDE 模式 → 真·全屏（真站选择器） ---------- */
+      try {
+        out.stage = "ide2:start";
+        flush();
+        await setCfg({ verticalTabs: false, dockPos: "left", ideNative: true });
+        let t2 = tabs.get(activeTabId);
+        if (!t2 || !/\/problem\//.test(t2.url || "")) {
+          navigateActive("https://www.luogu.com.cn/problem/P1002");
+          for (let i = 0; i < 70; i++) { await sleep(500); const tt = tabs.get(activeTabId); if (tt && /\/problem\//.test(tt.url || "")) break; }
+          t2 = tabs.get(activeTabId);
+        }
+        if (!t2 || !/\/problem\//.test(t2.url || "") || !t2.view || t2.view.webContents.isDestroyed()) {
+          out.ide2 = { skipped: "network", url: t2 ? t2.url : "" };
+          out.ide2Pass = true; // 网络不可用记 skip（与 adblock / v311 段同口径）
+        } else {
+          for (let i = 0; i < 60; i++) {
+            const ok = await t2.view.webContents.executeJavaScript("typeof window.__lgIdeInPage === 'function'", true).catch(() => false);
+            if (ok === true) break;
+            await sleep(500);
+          }
+          await sleep(1000);
+          const [w0, h0] = mainWin.getContentSize();
+          const before = {
+            bounds: t2.view.getBounds(), dock: dockShown, ide: inPageIdeTabId,
+            attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
+          };
+          /* 反例 A：只有容器、没有退出文案 → 不许触发 */
+          await t2.view.webContents.executeJavaScript(`(function(){
+            var h = document.createElement("div"); h.id = "lg-v313-ide";
+            h.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar" style="display:block;width:420px;height:220px;background:#ffffff"></div></div>';
+            document.body.appendChild(h); return true; })()`, true);
+          await sleep(1800);
+          const negA = {
+            ide: inPageIdeTabId,
+            probe: JSON.parse(await t2.view.webContents.executeJavaScript('JSON.stringify(window.__lgIdeInPage())', true)),
+          };
+          /* 反例 B：只有文案、没有容器 → 不许触发 */
+          await t2.view.webContents.executeJavaScript(`(function(){
+            var h = document.getElementById("lg-v313-ide");
+            h.innerHTML = '<div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
+            return true; })()`, true);
+          await sleep(1800);
+          const negB = {
+            ide: inPageIdeTabId,
+            probe: JSON.parse(await t2.view.webContents.executeJavaScript('JSON.stringify(window.__lgIdeInPage())', true)),
+          };
+          /* 正例：真站形状（.ide-container + 容器外的退出文案） */
+          await t2.view.webContents.executeJavaScript(`(function(){
+            var h = document.getElementById("lg-v313-ide");
+            h.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar lg-glass" style="display:block;width:420px;height:220px;background:#ffffff"></div><div class="ide-textarea"></div></div><div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
+            return true; })()`, true);
+          let reported = null;
+          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId === t2.id) { reported = i; break; } }
+          await sleep(900);
+          const during = {
+            ide: inPageIdeTabId, reported, bounds: t2.view.getBounds(), dock: dockShown,
+            attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
+            glassCls: await t2.view.webContents.executeJavaScript('document.querySelector(".ide-toolbar").className.indexOf("lg-glass") >= 0', true),
+            panelBg: await t2.view.webContents.executeJavaScript('getComputedStyle(document.querySelector(".ide-toolbar")).backgroundColor', true),
+            probe: JSON.parse(await t2.view.webContents.executeJavaScript('JSON.stringify(window.__lgIdeInPage())', true)),
+          };
+          /* 退出：拆掉注入 DOM → 标志清、视图回位、属性回 0 */
+          await t2.view.webContents.executeJavaScript('(function(){var h=document.getElementById("lg-v313-ide");if(h)h.remove();return true})()', true);
+          let cleared = null;
+          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId == null) { cleared = i; break; } }
+          await sleep(900);
+          const after = {
+            ide: inPageIdeTabId, bounds: t2.view.getBounds(),
+            attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
+          };
+          const ins = inset();
+          out.ide2 = { before, negA, negB, during, cleared, after, win: [w0, h0], inset: ins };
+          out.ide2Pass = !!(
+            before.ide == null && before.attr === "0" &&
+            negA.ide == null && negA.probe.on === false &&
+            negB.ide == null && negB.probe.on === false &&
+            reported != null && during.ide === t2.id &&
+            during.bounds.x === 0 && during.bounds.y === 0 &&
+            during.bounds.width === w0 && during.bounds.height === h0 &&
+            during.dock === false && during.attr === "1" &&
+            during.glassCls === false && during.probe.on === true &&
+            cleared != null && after.ide == null && after.attr === "0" &&
+            after.bounds.x === ins.x
+          );
+        }
+      } catch (e) { out.ide2Err = String((e && e.stack) || e); out.ide2Pass = false; }
+      flush();
+
+      /* ---------- 2) 窄条悬停浮层里点 ⌄ → 菜单活下来 + 弹层铺满整窗 ---------- */
+      try {
+        out.stage = "railMenu:start";
+        flush();
+        await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabCompact: false, vtabSide: "left", dockPos: "bottom" });
+        await sleep(1200);
+        await js('delete document.body.dataset.flyoutHandoff');
+        await js('document.getElementById("vtab").dispatchEvent(new MouseEvent("mouseenter"))');
+        let flyout = false;
+        for (let i = 0; i < 40; i++) {
+          await sleep(150);
+          const r = await popJs('(function(){return document.getElementById("tab-flyout")?"1":"0"})()');
+          if (r === "1") { flyout = true; break; }
+        }
+        /* 窄条隐去是握手（浮层画好 → flyout-shown → 外壳摘窄条）或 320ms 兜底
+           触发的，采样要轮询等它落定（固定 sleep 会拿到还没交接的中间态） */
+        let shellHidden = null;
+        for (let i = 0; i < 20; i++) {
+          await sleep(150);
+          shellHidden = JSON.parse(await js('JSON.stringify({cls:document.body.className, vis:getComputedStyle(document.getElementById("vtab")).visibility, handoff:document.body.dataset.flyoutHandoff||""})'));
+          if (shellHidden.cls.indexOf("flyout-open") >= 0 && shellHidden.vis === "hidden") break;
+        }
+        const clicked = await popJs(`(function(){
+          var b = document.querySelector("#tab-flyout #btn-vcollapse");
+          if (!b) return "no-btn";
+          ["mousedown","mouseup","click"].forEach(function(t){ b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})); });
+          return "ok";
+        })()`);
+        /* 菜单出现时刻（应远早于 200ms 兜底窗口） */
+        let menuAt = null;
+        for (let i = 0; i < 25; i++) {
+          await sleep(100);
+          const r = await popJs('(function(){return document.querySelectorAll("#tabmore-menu .tm-item").length ? "1" : "0"})()');
+          if (r === "1") { menuAt = (i + 1) * 100; break; }
+        }
+        /* 关键：等过 200ms 兜底窗口 + 更久，菜单必须还在 */
+        await sleep(1100);
+        const menuInfo = JSON.parse((await popJs(`(function(){
+          var m = document.getElementById("tabmore-menu");
+          if (!m) return JSON.stringify({ gone: true });
+          var r = m.getBoundingClientRect();
+          var first = document.getElementById("pop-root").firstElementChild;
+          return JSON.stringify({ items: document.querySelectorAll("#tabmore-menu .tm-item").length,
+            rect: { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+            rootId: first ? first.id : "" });
+        })()`)) || "null");
+        const popBounds = popupView && !popupView.webContents.isDestroyed() ? popupView.getBounds() : null;
+        const [ww, wh] = mainWin.getContentSize();
+        /* 关掉菜单：窄条必须画回来（flyout-open 摘掉、visibility 恢复） */
+        hidePopup();
+        await sleep(1000);
+        const closed = JSON.parse(await js('JSON.stringify({cls:document.body.className, vis:getComputedStyle(document.getElementById("vtab")).visibility})'));
+        out.railMenu = { flyout, shellHidden, clicked, menuAt, menuInfo, popBounds, win: [ww, wh], closed };
+        out.railMenuPass = !!(
+          flyout === true && shellHidden.cls.indexOf("flyout-open") >= 0 && shellHidden.vis === "hidden" &&
+          clicked === "ok" && menuAt != null &&
+          menuInfo && menuInfo.gone !== true && menuInfo.items >= 4 && menuInfo.rootId === "tabmore-menu" &&
+          popBounds && popBounds.width === ww && popBounds.height === wh &&
+          closed.cls.indexOf("flyout-open") < 0 && closed.vis === "visible"
+        );
+      } catch (e) { out.railMenuErr = String((e && e.stack) || e); out.railMenuPass = false; }
+      flush();
+
+      /* ---------- 3) 坞项 = 书签语义（普通点换当前页 / newTab 才新开） ---------- */
+      const stage = (s) => { out.stage = s; flush(); };
+      try {
+        stage("dockNav:setCfg");
+        await setCfg({ verticalTabs: false, dockPos: "left" });
+        stage("dockNav:home");
+        const home = createHomeTab();
+        setActiveTab(home);
+        await sleep(1200);
+        const n0 = tabOrder.length;
+        stage("dockNav:plain");
+        dockOpen("@home"); // 普通点
+        await sleep(1000);
+        const cur = tabs.get(home);
+        const plain = { count: tabOrder.length, sameTab: activeTabId === home, url: cur ? cur.url : "", kind: cur ? cur.kind : null };
+        const n1 = tabOrder.length;
+        stage("dockNav:newTab");
+        dockOpen("@home", { newTab: true }); // Ctrl/中键
+        await sleep(1400);
+        const extras = tabOrder.filter((id) => id !== home).map((id) => tabs.get(id)).filter(Boolean);
+        const ctrl = { count: tabOrder.length, sameTab: activeTabId === home, lastUrl: extras.length ? extras[extras.length - 1].url : "" };
+        for (const id of tabOrder.slice()) { if (id !== home) { try { closeTab(id); } catch (e) {} } }
+        await sleep(500);
+        /* @ide：没有 IDE 标签时普通点也是换当前页 */
+        stage("dockNav:ide");
+        setActiveTab(home);
+        await sleep(600);
+        const n2 = tabOrder.length;
+        dockOpen("@ide");
+        const ideNow = tabs.get(home) ? tabs.get(home).url : ""; // navigateActive 同步落定
+        await sleep(1000);
+        const cur2 = tabs.get(home);
+        const ide = { count: tabOrder.length, sameTab: activeTabId === home, url: cur2 ? cur2.url : "", urlNow: ideNow };
+        /* 这里**不关**最后这个标签：closeTab 的浏览器语义是"关掉最后一个 = 退出应用"，
+           探针关它会把整个 selftest 静默带走（第一版就栽在这）。标签留给后面的段用。 */
+        stage("dockNav:done");
+        out.dockNav = { plain, ctrl, ide, counts: [n0, n1, n2] };
+        out.dockNavPass = !!(
+          plain.count === n0 && plain.sameTab === true && /^https:\/\/www\.luogu\.com\.cn\/?$/.test(plain.url) &&
+          ctrl.count === n1 + 1 && ctrl.sameTab === false && /^https:\/\/www\.luogu\.com\.cn\/?$/.test(ctrl.lastUrl) &&
+          ide.count === n2 && ide.sameTab === true && /\/ide\/?$/.test(ide.urlNow)
+        );
+      } catch (e) { out.dockNavErr = String((e && e.stack) || e); out.dockNavPass = false; }
+      flush();
+
+      /* ---------- 4) /training/list 快速筛选条已删（别的列表页仍在） ---------- */
+      try {
+        stage("train:go");
+        const readQuick = async () => {
+          const tt = tabs.get(activeTabId);
+          if (!tt || !tt.view || tt.view.webContents.isDestroyed()) return null;
+          return JSON.parse(await tt.view.webContents.executeJavaScript(
+            'JSON.stringify({attr: document.documentElement.getAttribute("data-lg-quicksearch"), box: !!document.getElementById("lg-quicksearch"), path: location.pathname})', true));
+        };
+        const goAndWait = async (url, frag) => {
+          navigateActive(url);
+          for (let i = 0; i < 70; i++) {
+            await sleep(500);
+            const tt = tabs.get(activeTabId);
+            if (tt && String(tt.url || "").indexOf(frag) >= 0) {
+              for (let j = 0; j < 40; j++) {
+                const ok = await tt.view.webContents.executeJavaScript("typeof window.__lgIdeInPage === 'function'", true).catch(() => false);
+                if (ok === true) break;
+                await sleep(500);
+              }
+              await sleep(1500);
+              return true;
+            }
+          }
+          return false;
+        };
+        const okContest = await goAndWait("https://www.luogu.com.cn/contest/list", "contest/list");
+        const contest = okContest ? await readQuick() : null;
+        const okTrain = await goAndWait("https://www.luogu.com.cn/training/list", "training/list");
+        const training = okTrain ? await readQuick() : null;
+        if (!okContest || !okTrain) {
+          out.trainSearch = { skipped: "network", contest: okContest, training: okTrain };
+          out.trainSearchPass = true;
+        } else {
+          out.trainSearch = { contest, training };
+          out.trainSearchPass = !!(
+            contest && contest.attr === "1" && contest.box === true &&
+            training && training.attr === "0" && training.box === false
+          );
+        }
+      } catch (e) { out.trainSearchErr = String((e && e.stack) || e); out.trainSearchPass = false; }
+      flush();
+
+      /* ---------- 5) 页面里中键点链接 = 后台新标签 ---------- */
+      try {
+        stage("linkBg:start");
+        const t = tabs.get(activeTabId);
+        if (!t || !t.view || t.view.webContents.isDestroyed()) throw new Error("no active page view");
+        const wc = t.view.webContents;
+        await wc.executeJavaScript(`(function(){
+          var a = document.createElement("a");
+          a.id = "lg-bgtest";
+          a.href = "https://www.luogu.com.cn/problem/P1000";
+          a.textContent = "bgtest";
+          a.style.cssText = "position:fixed;left:16px;top:16px;width:260px;height:64px;z-index:2147483000;background:#fff;color:#000;font-size:20px;display:block";
+          document.body.appendChild(a);
+          return true;
+        })()`, true);
+        await sleep(500);
+        const before = { active: activeTabId, count: tabOrder.length };
+        /* 真实中键（Chromium 语义）：disposition = background-tab */
+        wc.sendInputEvent({ type: "mouseDown", x: 120, y: 48, button: "middle", clickCount: 1 });
+        wc.sendInputEvent({ type: "mouseUp", x: 120, y: 48, button: "middle", clickCount: 1 });
+        await sleep(1800);
+        const after = {
+          active: activeTabId, count: tabOrder.length,
+          urls: tabOrder.map((id) => (tabs.get(id) || {}).url || ""),
+        };
+        await wc.executeJavaScript('(function(){var a=document.getElementById("lg-bgtest");if(a)a.remove();return true})()', true).catch(() => {});
+        for (const id of tabOrder.slice()) { if (id !== before.active) { try { closeTab(id); } catch (e) {} } }
+        await sleep(500);
+        out.linkBg = { before, after };
+        out.linkBgPass = !!(
+          after.count === before.count + 1 && after.active === before.active &&
+          after.urls.some((u) => /problem\/P1000/.test(u))
+        );
+      } catch (e) { out.linkBgErr = String((e && e.stack) || e); out.linkBgPass = false; }
+      flush();
+
+      /* ---------- 复原 ---------- */
+      try { await setCfg({ ...saved }); } catch (e) {}
+      out.stage = "done";
+      out.pass = !!(out.ide2Pass && out.railMenuPass && out.dockNavPass && out.trainSearchPass && out.linkBgPass);
       flush();
     } else if (argv.includes("--lg-mattest")) {
       /* 材质对拍（"内外同一个效果"的机械守卫）：
