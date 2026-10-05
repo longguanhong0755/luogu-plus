@@ -275,12 +275,9 @@ function dragTip(text, x, y, color) {
     document.body.appendChild(tipEl);
   }
   tipEl.textContent = text;
-  tipEl.style.cssText =
-    "position:fixed;z-index:80;pointer-events:none;padding:3px 9px;border-radius:8px;" +
-    "font-size:12px;line-height:1.5;white-space:nowrap;background:var(--surface-2);" +
-    "color:var(--ink);box-shadow:0 3px 12px rgba(0,0,0,.18)";
-  tipEl.style.setProperty("--gc", color || "var(--ink)");
-  tipEl.style.boxShadow = "0 3px 12px rgba(0,0,0,.18), inset 0 0 0 1.5px " + (color || "var(--hairline)");
+  /* 基础样式（面/线/投影/字号）R41 起由 material.css 的 #drag-tip 单源给——
+     弹层与外壳加载同一份；这里只按组色设 --gc（环线与投影随它变色） */
+  tipEl.style.setProperty("--gc", color || "var(--hairline)");
   tipEl.style.left = Math.round(x + 14) + "px";
   tipEl.style.top = Math.round(y + 16) + "px";
 }

@@ -91,21 +91,9 @@
   tick();
   setInterval(tick, 1000);
 
-  /* ---------- 图标（与外壳层 chrome.js 的 ICONS 同一份线稿） ---------- */
-  const ICONS = {
-    home: '<path d="M4 11 12 4l8 7"/><path d="M6 10v10h12V10"/>',
-    list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
-    book: '<path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M5 17a2 2 0 0 1 2-2h11"/>',
-    trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 5H5a3 3 0 0 0 3 4M16 5h3a3 3 0 0 1-3 4"/><path d="M12 13v4M9 20h6"/>',
-    chat: '<path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/>',
-    clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 3"/>',
-    code: '<path d="m8 8-4 4 4 4"/><path d="m16 8 4 4-4 4"/>',
-    sliders: '<path d="M5 20V13M5 9V4M12 20v-9M12 7V4M19 20v-5M19 11V4"/><path d="M3 11h4M10 9h4M17 13h4"/>',
-    star: '<path d="m12 4 2.35 4.9 5.4.72-3.95 3.78.98 5.35L12 16.2l-4.78 2.55.98-5.35L4.25 9.62l5.4-.72z"/>',
-    download: '<path d="M12 3v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/>',
-    page: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/>',
-  };
-  const svg = (n) => '<svg viewBox="0 0 24 24">' + (ICONS[n] || ICONS.page) + "</svg>";
+  /* ---------- 图标：R41 收口到 src/icons.js（与外壳同一份线稿；
+     此前本地这份是另一套路径，快捷入口画的和坞里的不一样） ---------- */
+  const svg = (n) => window.LGIcons.svg(n);
 
   /* ---------- 快捷入口（与左侧坞同一份数据；首页自身不出现） ---------- */
   function renderLinks(items) {
@@ -293,7 +281,7 @@
       a.appendChild(h);
       const x = document.createElement("button");
       x.className = "h-del";
-      x.textContent = "×";
+      x.innerHTML = svg("winClose"); // R41：文本 × → 统一线稿
       x.title = "删除此倒计时";
       x.addEventListener("click", async (e) => {
         e.stopPropagation();

@@ -40,9 +40,10 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 /* 本地绝对路径 → lg-media:// URL（站外 http(s) 与 data: 原样放行）
-   保持 ?p= 查询串形式：静态图（CSS background）一直是靠它工作的。视频不要
-   走这里 —— <video> 对自定义协议恒报 MEDIA_ERR_SRC_NOT_SUPPORTED，改由
-   主进程把字节交给渲染进程做 blob（见 wallpaperVideoPayload）。 */
+   保持 ?p= 查询串形式。R41 起视频壁纸也走这里：协议注册了 stream:true，
+   handler 带 Range 精确读盘。当年"<video> 对自定义协议恒报
+   MEDIA_ERR_SRC_NOT_SUPPORTED"的旧结论留了兜底——注入层 4s 内 readyState
+   没起来就自动回退字节 blob 通道（lg-wall:video-blob），视频壁纸不会白屏。 */
 function mediaUrlFor(p) {
   if (!p) return null;
   if (/^(https?:|data:|blob:)/i.test(p)) return p;
@@ -94,7 +95,24 @@ function wallpaperPayload(kind) {
     return { ok: false, err: String(e) };
   }
 }
-const wallpaperVideoPayload = () => wallpaperPayload("video");
+/* R41：视频壁纸改走 lg-media:// 流式 URL——主进程不再把整个视频文件常驻
+   内存（wallByteCache），每个标签也不再各拷一份整文件 blob。字节 blob 降级
+   为按需兜底（lg-wall:video-blob）：注入层 4s 起不来才回旧通道。 */
+const wallpaperVideoPayload = () => {
+  try {
+    if (!cfg.wallpaper) return { ok: false, err: "no wallpaper" };
+    return {
+      ok: true,
+      url: mediaUrlFor(cfg.wallpaper),
+      type: MEDIA_MIME[path.extname(cfg.wallpaper).toLowerCase()] || "video/mp4",
+      name: path.basename(cfg.wallpaper),
+      streamed: true,
+    };
+  } catch (e) {
+    return { ok: false, err: String(e) };
+  }
+};
+const wallpaperVideoBlobPayload = () => wallpaperPayload("video");
 const wallpaperImagePayload = () => wallpaperPayload("image");
 
 // 单实例锁：二次启动唤起已有窗口（也避免多实例抢缓存）
@@ -117,6 +135,10 @@ const ALLOWED_HOST_RE = /(^|\.)luogu\.com\.cn$/i;
 /* 应用首页（新标签/启动页）：本地单色起始页，不再是洛谷首页 */
 const HOME_PAGE_URL =
   "file:///" + path.join(__dirname, "src", "home", "home.html").replace(/\\/g, "/");
+
+/* R41 性能基线：冷启动分段耗时（模块求值 → whenReady → 窗口创建 → chrome 层
+   加载完 → ready-to-show）。--lg-perftest 读它落盘，优化前后各跑一次对拍。 */
+const perfMarks = { t0: Date.now() };
 
 const DEFAULT_CONFIG = {
   theme: "auto",
@@ -195,6 +217,11 @@ const DEFAULT_CONFIG = {
   /* 启动不再恢复上次会话：默认只开一个空的应用首页（用户要求；想恢复可在
      设置「效率功能 → 恢复上次的标签」里重新打开） */
   restoreTabs: false,
+  /* R41 性能：后台标签恢复 Chromium 定时器节流。活动/分屏可见/出声标签不节流；
+     窗口隐藏的黑首帧由 repaintSiteViews 的强制重绘兜底，与定时器节流无关。 */
+  bgThrottle: true,
+  /* R41 性能：系统内存吃紧时提前休眠最久未用的后台标签（30 分钟空闲规则不变） */
+  memSleep: true,
   listTools: true,
   activeAccountId: "",
   bookmarks: [],           // [{url, title, addedAt}]（收藏功能已删，字段只为兼容旧配置保留）
@@ -562,17 +589,52 @@ function cfgForPages() {
 
 const configPath = () => path.join(app.getPath("userData"), "luogu-glass-config.json");
 
-/* ---------- 自写日志（GUI 程序 stdout 不可靠，崩溃必须留痕） ---------- */
+/* lg-media 的 Range 精确读（R41）：只把请求的分片读进内存。旧实现
+   readFileSync(整文件).subarray(start,end)——视频壁纸每来一个分片就把整个
+   大文件读一遍。仍返回 Buffer body（注释里的 Format error 是"Node 流→
+   Web 流"转换踩过的坑，这里不碰那条路）。 */
+async function readRange(abs, start, end) {
+  const len = end - start + 1;
+  const fh = await fs.promises.open(abs, "r");
+  try {
+    const buf = Buffer.allocUnsafe(len);
+    await fh.read(buf, 0, len, start);
+    return buf;
+  } finally {
+    try { await fh.close(); } catch {}
+  }
+}
+
+/* ---------- 自写日志（GUI 程序 stdout 不可靠，崩溃必须留痕） ----------
+   R41：改缓冲 + 1s 批量落盘。此前每条日志一次同步 appendFileSync，广告拦截
+   每个被拦请求都写一次盘——主进程热路径上的同步 IO。崩溃/退出路径走
+   dbgFlushSync 保序。 */
+const dbgPath = () => path.join(app.getPath("userData"), "luogu-glass-debug.log");
+let dbgBuf = [];
+let dbgTimer = null;
+function dbgFlushSync() {
+  if (!dbgBuf.length) return;
+  const lines = dbgBuf;
+  dbgBuf = [];
+  try { fs.appendFileSync(dbgPath(), lines.join("")); } catch {}
+}
 function dbg(msg) {
   try {
-    fs.appendFileSync(
-      path.join(app.getPath("userData"), "luogu-glass-debug.log"),
-      `[${new Date().toISOString()}] ${msg}\n`
-    );
+    dbgBuf.push(`[${new Date().toISOString()}] ${msg}\n`);
+    if (!dbgTimer) {
+      dbgTimer = setTimeout(() => {
+        dbgTimer = null;
+        if (!dbgBuf.length) return;
+        const lines = dbgBuf;
+        dbgBuf = [];
+        try { fs.appendFile(dbgPath(), lines.join(""), () => {}); } catch { dbgBuf = lines; }
+      }, 1000);
+    }
   } catch {}
 }
 process.on("uncaughtException", (e) => {
   try { dbg("uncaughtException: " + (e && e.stack ? e.stack : String(e))); } catch {}
+  try { dbgFlushSync(); } catch {}
   app.exit(1);
 });
 process.on("unhandledRejection", (e) => {
@@ -615,6 +677,8 @@ function loadConfig() {
   // v3.5.6 新键默认值：标签休眠 30 分钟（0=关）；紧凑模式默认关
   if (cfg.tabSleepMinutes == null || !isFinite(Number(cfg.tabSleepMinutes)) || Number(cfg.tabSleepMinutes) < 0) cfg.tabSleepMinutes = 30;
   if (cfg.vtabCompact == null) cfg.vtabCompact = false;
+  if (cfg.bgThrottle == null) cfg.bgThrottle = true;
+  if (cfg.memSleep == null) cfg.memSleep = true;
   if (!["auto", "left", "right", "top", "bottom"].includes(String(cfg.dockPos))) cfg.dockPos = "auto";
   /* R36：题目页工具条整块删除（用户要求）——旧配置里的 problemEditor 丢掉，
      不 delete 的话会被 saveConfig 一直写回去，成为一段看不见的死数据。 */
@@ -633,7 +697,17 @@ function loadConfig() {
   cfg.configVersion = CONFIG_VERSION;
   if (raw === null || raw.configVersion !== CONFIG_VERSION) saveConfig();
 }
+/* R41：落盘改异步（串行链防乱序）。此前每次 saveConfig 同步写整个配置——
+   拖滑杆/换壁纸的热路径上是一次同步盘 IO。启动判定与退出补写仍走同步。 */
+let saveConfigChain = Promise.resolve();
 function saveConfig() {
+  try { fs.mkdirSync(path.dirname(configPath()), { recursive: true }); } catch {}
+  const data = JSON.stringify(cfg, null, 2);
+  saveConfigChain = saveConfigChain
+    .then(() => new Promise((res) => { fs.writeFile(configPath(), data, "utf8", res); }))
+    .catch(() => {});
+}
+function saveConfigSync() {
   try {
     fs.mkdirSync(path.dirname(configPath()), { recursive: true });
     fs.writeFileSync(configPath(), JSON.stringify(cfg, null, 2), "utf8");
@@ -1208,6 +1282,7 @@ function layout() {
   }
   layoutDock();
   pushSplit();
+  applyThrottlePolicy();
 }
 
 /* ============================================================
@@ -1666,13 +1741,12 @@ ipcMain.on("dock:cmd", (_e, href, opts) => dockOpen(String(href || ""), opts && 
    cfg.tabSleepMinutes（默认 30，0=关）。活动标签、拼合可见成员、
    钉住的、本地页、正在放声音的不睡。
    ============================================================ */
-function sleepTab(id) {
+/* 置睡的公共体（R41）：自动休眠与启动惰性恢复共用。导航态缓存一并清零——
+   视图没了，快照里的 back/forward 必须回到不可用。 */
+function makeSleeping(id) {
   const t = tabs.get(id);
   if (!t || t.sleeping || !t.view) return false;
   if (id === activeTabId) return false;
-  if (splitGroupOf(id)) return false;
-  if (t.pinned || isLocalKind(t.kind)) return false;
-  try { if (t.view.webContents.isCurrentlyAudible()) return false; } catch {}
   try {
     t.url = t.view.webContents.getURL() || t.url;
     mainWin.contentView.removeChildView(t.view);
@@ -1681,6 +1755,17 @@ function sleepTab(id) {
   t.view = null;
   t.sleeping = true;
   t.loading = false;
+  t.canBack = false;
+  t.canFwd = false;
+  return true;
+}
+function sleepTab(id) {
+  const t = tabs.get(id);
+  if (!t || t.sleeping || !t.view) return false;
+  if (splitGroupOf(id)) return false;
+  if (t.pinned || isLocalKind(t.kind)) return false;
+  try { if (t.view.webContents.isCurrentlyAudible()) return false; } catch {}
+  if (!makeSleeping(id)) return false;
   pushTabs();
   scheduleSaveTabs();
   return true;
@@ -1703,7 +1788,9 @@ function wakeTab(id) {
       spellcheck: false,
       backgroundThrottling: false,
       session: isLocal ? session.defaultSession : isAllowed(full) ? acctSession(cfg.activeAccountId) : sharedSession(),
-      preload: path.join(__dirname, "preload-page.js"),
+      /* 本地 kind（home/history/settings）必须带回 preload-config.js：
+         preload-page 没有 lgConfig 桥，页面会变死页（与 openClosedEntry 同规） */
+      preload: path.join(__dirname, isLocalKind(t.kind) ? "preload-config.js" : "preload-page.js"),
     },
   });
   try { view.setBackgroundColor("#f7f7f8"); } catch {}
@@ -1720,17 +1807,62 @@ function wakeTab(id) {
   layout();
   return true;
 }
-setInterval(() => {
-  const mins = Number(cfg.tabSleepMinutes);
-  if (!mins || mins <= 0 || !mainWin || mainWin.isDestroyed()) return;
-  const limit = mins * 60000;
-  const now = Date.now();
-  for (const id of tabOrder.slice()) {
-    const t = tabs.get(id);
-    if (!t || t.sleeping) continue;
-    if (now - (t.lastActive || 0) < limit) continue;
-    sleepTab(id);
+/* ---------- 后台节流策略（R41） ----------
+   活动 / 分屏可见成员 / 正在出声的标签不节流；其余后台标签恢复 Chromium 默认
+   定时器节流。旧代码全部 backgroundThrottling:false，后台页定时器永远全速跑。
+   窗口隐藏的黑首帧是"出帧"问题，由 repaintSiteViews 强制重绘兜底，与这里的
+   定时器节流无关。挂进 layout()：几何/激活/分屏任何变化都会路过这里。 */
+function applyThrottlePolicy() {
+  for (const [id, t] of tabs) {
+    if (!t.view || t.view.webContents.isDestroyed()) continue;
+    let want = cfg.bgThrottle !== false && id !== activeTabId;
+    if (want) {
+      const g = splitGroupOf(id);
+      if (g && g.ids.includes(activeTabId)) want = false; // 分屏可见成员
+    }
+    if (want) {
+      try { if (t.view.webContents.isCurrentlyAudible()) want = false; } catch {}
+    }
+    try {
+      if (t.view.webContents.backgroundThrottling !== want) t.view.webContents.setBackgroundThrottling(want);
+    } catch {}
   }
+}
+
+setInterval(() => {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  /* 常规：闲置 tabSleepMinutes 分钟休眠（0=关） */
+  const mins = Number(cfg.tabSleepMinutes);
+  if (mins && mins > 0) {
+    const limit = mins * 60000;
+    const now = Date.now();
+    for (const id of tabOrder.slice()) {
+      const t = tabs.get(id);
+      if (!t || t.sleeping) continue;
+      if (now - (t.lastActive || 0) < limit) continue;
+      sleepTab(id);
+    }
+  }
+  /* 内存压力兜底（R41）：系统可用内存吃紧时把最久未用的后台标签提前睡掉，
+     排除条件与 sleepTab 一致（活动/分屏/钉住/本地/出声），睡到压力缓解。 */
+  if (cfg.memSleep === false) return;
+  try {
+    const si = process.getSystemMemoryInfo();
+    const totalKB = si.total || si.totalMem || 0;
+    const freeKB = si.free || si.freeMem || 0;
+    if (!totalKB) return;
+    const low = freeKB < 1572864 || freeKB * 20 < totalKB * 3; // <1.5GB 或 <15%
+    if (!low) return;
+    const cands = tabOrder
+      .slice()
+      .sort((a, b) => ((tabs.get(a) || {}).lastActive || 0) - ((tabs.get(b) || {}).lastActive || 0));
+    let n = 0;
+    for (const id of cands) {
+      if (!tabs.get(id) || tabs.get(id).sleeping) continue;
+      if (sleepTab(id)) n++;
+    }
+    if (n) dbg("memPressure: slept " + n + " tab(s), free=" + Math.round(freeKB / 1024) + "MB");
+  } catch {}
 }, 60000);
 
 /* 站点视图在窗口还不可见（隐藏 / 最小化）的时候建好并加载完，Chromium 会
@@ -2249,7 +2381,7 @@ function ensureDrawerView() {
     const bg = disposition === "background-tab"; // 中键/Ctrl+点 = 后台标签（同页面视图）
     if (isAllowed(url)) createTab(url, { activate: !bg });
     else shell.openExternal(url);
-    return { action: "prevent" };
+    return { action: "deny" }; // Electron 只认 allow/deny（旧值 "prevent" 每次都刷警告）
   });
   return view;
 }
@@ -2289,6 +2421,18 @@ function handleAppCommand(raw) {
   return { ok: false, cmd };
 }
 
+/* 导航态缓存（R41）：did-navigate / did-navigate-in-page / did-finish-load 时
+   刷新，tabsSnapshot 直接读缓存（makeSleeping 清零），快照不再逐标签做
+   canGoBack/canGoForward 两次同步跨进程读。 */
+function refreshNavMeta(id) {
+  const t = tabs.get(id);
+  if (!t || !t.view) return;
+  try {
+    t.canBack = t.view.webContents.canGoBack();
+    t.canFwd = t.view.webContents.canGoForward();
+  } catch {}
+}
+
 function tabsSnapshot() {
   return {
     activeId: activeTabId,
@@ -2297,14 +2441,10 @@ function tabsSnapshot() {
     nextGroupColor: GROUP_PALETTE[groupColorCursor % GROUP_PALETTE.length],
     tabs: tabOrder.map((id) => {
       const t = tabs.get(id);
-      let canBack = false;
-      let canFwd = false;
-      let muted = false;
-      try {
-        canBack = t.view.webContents.canGoBack();
-        canFwd = t.view.webContents.canGoForward();
-        muted = t.view.webContents.isAudioMuted();
-      } catch {}
+      /* R41：back/fwd/静音读事件缓存，不再每标签每推送做 3 次同步跨进程读 */
+      const canBack = !!t.canBack;
+      const canFwd = !!t.canFwd;
+      const muted = !!t.muted;
       const sg = splitGroupOf(id);
       return {
         id, title: t.title, url: t.url, special: t.special, kind: t.kind || null,
@@ -2338,6 +2478,14 @@ function pushTabs() {
   if (mainWin && !mainWin.isDestroyed()) {
     try { mainWin.webContents.send("chrome:tabs", tabsSnapshot()); } catch {}
   }
+}
+/* meta 类推送的 80ms 尾随合并（R41）：页面加载期 loading/标题/图标一拍一个，
+   旧代码每拍都全量推快照 + 外壳整条重建标签条。结构变化（开/关/激活/分屏/
+   分组）仍走立即的 pushTabs。 */
+let pushTabsTimer = null;
+function pushTabsSoon() {
+  if (pushTabsTimer) return;
+  pushTabsTimer = setTimeout(() => { pushTabsTimer = null; pushTabs(); }, 80);
 }
 
 // 右上角账号芯片只在"洛谷页面"上才探测得到用户区，设置/历史/站外页面
@@ -2518,7 +2666,7 @@ function updateTabMeta(id, patch) {
   const t = tabs.get(id);
   if (!t) return;
   Object.assign(t, patch);
-  pushTabs();
+  pushTabsSoon(); // meta 变化高频：80ms 合并（R41）
   if (patch.url) scheduleSaveTabs();
 }
 
@@ -2569,6 +2717,7 @@ function wirePageView(id, view) {
 
   wc.on("did-finish-load", () => {
     if (wc.isDestroyed()) return;
+    refreshNavMeta(id);
     const meta = tabs.get(id);
     const isLocal = meta && (isLocalKind(meta.kind) || wc.getURL().startsWith("file:"));
     // 本地页（设置/首页/历史）也要注入：壁纸玻璃层对它们一样成立，只是
@@ -2625,8 +2774,13 @@ function wirePageView(id, view) {
       })
       .catch(() => {});
   });
+  wc.on("did-navigate", () => {
+    if (wc.isDestroyed()) return;
+    refreshNavMeta(id);
+  });
   wc.on("did-navigate-in-page", () => {
     if (wc.isDestroyed()) return;
+    refreshNavMeta(id);
     updateTabMeta(id, { url: wc.getURL() });
     recordHistory(wc.getURL(), wc.getTitle());
     wc.executeJavaScript(
@@ -2658,9 +2812,17 @@ function wirePageView(id, view) {
     if (dir === "in" || dir === "out") zoomStepTab(tabs.get(id), dir === "in" ? 1 : -1);
   });
   // 全局静音：新开的标签继承当前状态
+  const mt0 = tabs.get(id);
+  if (mt0) mt0.muted = !!cfg.muteAll; // 快照的 muted 改吃缓存（R41）
   if (cfg.muteAll) {
     try { wc.setAudioMuted(true); } catch {}
   }
+  /* 出声状态变化：节流策略即时跟手（出声的后台标签不节流）+ 静音缓存同步 */
+  wc.on("audio-state-changed", () => {
+    const mt = tabs.get(id);
+    if (mt) { try { mt.muted = wc.isAudioMuted(); } catch {} }
+    applyThrottlePolicy();
+  });
   // 页内查找结果计数 → 外壳查找条显示"第 x / n 个"
   wc.on("found-in-page", (_e, result) => {
     if (!mainWin || mainWin.isDestroyed()) return;
@@ -2719,7 +2881,7 @@ function wirePageView(id, view) {
   wc.setWindowOpenHandler(({ url, disposition }) => {
     if (/^luogu-glass:\/\//i.test(url)) {
       handleAppCommand(url);
-      return { action: "prevent" };
+      return { action: "deny" }; // Electron 只认 allow/deny；应用命令走 handleAppCommand
     }
     const t = tabs.get(id);
     /* 中键 / Ctrl+点链接在 Chrome、Edge 里都是**后台**新标签（disposition =
@@ -2733,7 +2895,7 @@ function wirePageView(id, view) {
     } else if (/^https?:\/\//i.test(url)) {
       shell.openExternal(url);
     }
-    return { action: "prevent" };
+    return { action: "deny" }; // Electron 只认 allow/deny（旧值 "prevent" 每次都刷警告）
   });
   /* 网页右键菜单（原生 Menu）：浏览器语义的一组动作，按 params 分支。
      自测/探针里不弹真菜单（会挂在那儿），只把模板标签记下来供断言。 */
@@ -3131,7 +3293,12 @@ function ensureSiteTabs() {
         continue;
       } else {
         const nid = createTab(s.url, { special: !!s.special, activate: false });
-        if (s.pinned) tabs.get(nid).pinned = true;
+        const ntab = tabs.get(nid);
+        if (ntab) {
+          if (s.pinned) ntab.pinned = true;
+          // 惰性恢复后标签不再立刻加载：标题先从存档带回，标签条不显示一排"新标签页"
+          if (s.title) ntab.title = String(s.title).slice(0, 80);
+        }
         idBySavedIdx.set(si, nid);
         ids.push(nid);
       }
@@ -3187,6 +3354,21 @@ function ensureSiteTabs() {
   }
   if (ids.length) {
     setActiveTab(ids[Math.min(Math.max(0, saved.activeIndex | 0), ids.length - 1)]);
+    /* 惰性恢复（R41）：非活动/非分屏/非钉住/非本地的恢复标签直接睡——标签位、
+       标题、分组都保留，点回去 wakeTab 重建。省掉启动时 N 路并发加载（网络
+       风暴）与十几个渲染进程的冷启动内存。 */
+    let lazySlept = 0;
+    for (const id of ids.slice()) {
+      if (id === activeTabId) continue;
+      const t = tabs.get(id);
+      if (!t || t.pinned || isLocalKind(t.kind) || splitGroupOf(id)) continue;
+      if (makeSleeping(id)) lazySlept++;
+    }
+    if (lazySlept) {
+      pushTabs();
+      scheduleSaveTabs();
+      dbg("lazyRestore: slept " + lazySlept + "/" + ids.length + " restored tab(s)");
+    }
   } else {
     // 常规启动开应用首页（本地起始页）。早先固定开洛谷首页/塞 IDE 标签，
     // IDE 用 Ctrl+I 或快捷入口随用随开。--lg-url 是探针/调试的覆盖入口。
@@ -3348,9 +3530,11 @@ function createMainWindow() {
   });
 
   mainWin = win;
+  perfMarks.winCreated = Date.now();
   win.loadFile(path.join(__dirname, "src", "chrome", "chrome.html"));
 
   win.webContents.on("did-finish-load", () => {
+    perfMarks.chromeLoaded = Date.now();
     // chrome 层就绪 → 开第一个标签页
     pushConfigToChrome();
     pushAccountState();
@@ -3359,7 +3543,26 @@ function createMainWindow() {
     ensureSiteTabs();
   });
 
-  win.on("resize", () => { layout(); scheduleSaveWindowState(); });
+  /* R41：resize 逐事件同步 layout() 在拖窗时每秒触发几十次（每次全标签
+     setBounds + pushViewRect + dock:rect IPC）。改 200ms 首拍直通 + 32ms
+     尾随合并——拖动中间不再逐帧全量重排，松手后最终几何必落一次。 */
+  let resizeLayoutTimer = null;
+  let lastResizeLayoutAt = 0;
+  win.on("resize", () => {
+    scheduleSaveWindowState();
+    const now = Date.now();
+    if (now - lastResizeLayoutAt > 200) {
+      lastResizeLayoutAt = now;
+      layout();
+      return;
+    }
+    if (resizeLayoutTimer) return;
+    resizeLayoutTimer = setTimeout(() => {
+      resizeLayoutTimer = null;
+      lastResizeLayoutAt = Date.now();
+      layout();
+    }, 32);
+  });
   win.on("move", scheduleSaveWindowState);
   win.on("maximize", () => { layout(); pushWinState(); scheduleSaveWindowState(); });
   win.on("unmaximize", () => { layout(); pushWinState(); scheduleSaveWindowState(); });
@@ -3385,6 +3588,7 @@ function createMainWindow() {
 
   installAccelerators();
   win.once("ready-to-show", () => {
+    perfMarks.readyShown = Date.now();
     ensureOnScreen(win);
     // 这两个探针要自己控制窗口可见性（前台可能在玩游戏），别替它们亮出来；
     // --lg-hidden / LG_HIDDEN=1：后台测试模式，全程不亮窗不抢前台
@@ -3661,6 +3865,7 @@ ipcMain.handle("lg-config:set", (_e, patch) => {
 
 /* 壁纸字节：外壳层和每个站点页各取一次，自己转 blob URL（见上面注释） */
 ipcMain.handle("lg-wall:video", () => wallpaperVideoPayload());
+ipcMain.handle("lg-wall:video-blob", () => wallpaperVideoBlobPayload());
 ipcMain.handle("lg-wall:image", () => wallpaperImagePayload());
 
 /* ---------- 壁纸集合（多张 + 随机/顺序轮换 + md5 去重） ----------
@@ -4586,6 +4791,7 @@ ipcMain.handle("win:toggle-fullscreen", () => {
 ipcMain.handle("lg-app:mute-all", (_e, v) => {
   cfg.muteAll = !!v;
   for (const [, t] of tabs) {
+    t.muted = !!v;
     try { t.view.webContents.setAudioMuted(!!v); } catch {}
   }
   saveConfig();
@@ -5021,7 +5227,7 @@ ipcMain.on("lg-wall:parallax", (_e, p) => {
   if (cfg.wallpaperParallax === false) return;
   parTX = Number(p && p.x) || 0;
   parTY = Number(p && p.y) || 0;
-  if (!parTimer) parTimer = setInterval(parTick, 16);
+  if (!parTimer) parTimer = setInterval(parTick, 33); // 16ms→33ms（R41）：30fps 缓动足够顺滑，双视图 executeJavaScript 减半
 });
 
 ipcMain.handle("tab:new", () => {
@@ -5475,7 +5681,7 @@ function tabMenuTemplate(id) {
     {
       label: muted ? "取消静音" : "静音此标签页",
       enabled: !isLocalPage,
-      click: () => { try { wc.setAudioMuted(!muted); } catch {} pushTabs(); },
+      click: () => { t.muted = !muted; try { wc.setAudioMuted(!muted); } catch {} pushTabs(); },
     },
     {
       label: t.pinned ? "取消钉住" : "钉住标签页",
@@ -8997,13 +9203,19 @@ async function selftest() {
         ));
         const trPage = await pageCall("window.__lgGlass.translatePage()");
         let barInfo = null;
-        for (let i = 0; i < 30 && !barInfo; i++) {
+        const trHist = [];
+        /* 轮询到「完成」为止（R41 修复本段 R39 起的竞态：旧循环带 && !barInfo，
+           第一次读到 bar 就退出 → 抢在批次还在飞时把端点切成 /trfail →
+           最后一包恰好吃到 500，单次读数停在"翻译中 xx/63"） */
+        for (let i = 0; i < 30; i++) {
           await sleep(300);
           barInfo = JSON.parse(await pageCall(
             "(function(){var b=document.getElementById(\"lg-tr-bar\");if(!b)return JSON.stringify(null);var info=b.querySelector(\".lg-tr-info\");var art=document.getElementById(\"fx-article\");var txt=art?art.textContent:\"\";return JSON.stringify({info:(info||{}).textContent||\"\",translated:txt.indexOf(\"《\")>=0})})()"
           ));
+          if (barInfo) trHist.push(barInfo.info);
           if (barInfo && /完成/.test(barInfo.info || "")) break;
         }
+        out.trHist = trHist;
         cfg.translateProvider = "custom";
         cfg.translateCustom = "http://127.0.0.1:" + dlPort + "/trfail?q=%s";
         await sleep(100);
@@ -9201,7 +9413,11 @@ async function selftest() {
             cur += c;
           }
           parts.push(cur);
-          const ins = parts.map((x) => x.trim()).filter((x) => x.indexOf("inset") >= 0);
+          /* 全透 inset（rgba(...,0)）视觉上与 none 完全等价：flat 皮肤
+             --lg-glass-hi 恒透明，两层一个算成透明阴影一个算成 none（R41） */
+          const ins = parts
+            .map((x) => x.trim())
+            .filter((x) => x.indexOf("inset") >= 0 && !/^rgba?\([^)]*,\s*0\.?0*\)/.test(x));
           return ins.length ? ins.join(" | ") : "none";
         };
         let faceDiff = null;
@@ -11328,6 +11544,101 @@ async function selftest() {
       out.stage = "done";
       out.pass = !!(out.ide2Pass && out.railMenuPass && out.dockNavPass && out.trainSearchPass && out.linkBgPass);
       flush();
+    } else if (argv.includes("--lg-perftest")) {
+      /* R41 性能基线/验收：冷启动分段耗时（perfMarks）、按进程内存
+         （app.getAppMetrics 汇总）、开 6 个标签的内存曲线、休眠/唤醒差值、
+         后台节流策略落位（cfg.bgThrottle 存在才断言——基线跑旧代码时自动只记录）。
+         测试标签用 https://127.0.0.1:9/（秒失败、不依赖网络、kind=null 可休眠）。 */
+      const out = { at: new Date().toISOString() };
+      const flush = () => fsx.writeFileSync(selftestShot, JSON.stringify(out, null, 2));
+      try { mainWin.setOpacity(0); } catch {}
+      try { mainWin.showInactive(); } catch {}
+      try { mainWin.setContentSize(1280, 800); } catch {}
+      for (let i = 0; i < 40 && tabs.size === 0; i++) await sleep(500);
+      await sleep(1500);
+
+      const metrics = () => {
+        let sum = 0;
+        const byKB = {};
+        try {
+          for (const m of app.getAppMetrics()) {
+            const kb = (m.memory && m.memory.workingSetSize) || 0;
+            sum += kb;
+            const k = m.type || "unknown";
+            byKB[k] = (byKB[k] || 0) + kb;
+          }
+        } catch {}
+        const byMB = {};
+        for (const k of Object.keys(byKB)) byMB[k] = Math.round(byKB[k] / 1024);
+        return { totalMB: Math.round(sum / 1024), byMB, views: tabOrder.length };
+      };
+
+      /* ---------- 1) 冷启动分段耗时 ---------- */
+      out.boot = { ...perfMarks, bootTabs: tabOrder.length };
+      if (out.boot.t0 && out.boot.readyShown) out.boot.totalMs = out.boot.readyShown - out.boot.t0;
+
+      /* ---------- 2) 基线内存 ---------- */
+      out.memBase = metrics();
+      flush();
+
+      /* ---------- 3) 开 6 个标签的内存曲线 ---------- */
+      try {
+        const keep = activeTabId;
+        const opened = [];
+        const curve = [];
+        for (let i = 0; i < 6; i++) {
+          opened.push(createTab("https://127.0.0.1:9/", { activate: false }));
+          await sleep(900);
+          curve.push(metrics());
+        }
+        setActiveTab(keep);
+        await sleep(600);
+        out.curve = curve;
+        flush();
+
+        /* ---------- 4) 休眠差值 ---------- */
+        const beforeMB = metrics().totalMB;
+        let slept = 0;
+        for (const id of opened) { try { if (sleepTab(id)) slept++; } catch {} }
+        await sleep(2500);
+        const afterMB = metrics().totalMB;
+        out.sleep = { slept, beforeMB, afterMB, deltaMB: beforeMB - afterMB };
+        flush();
+
+        /* ---------- 5) 唤醒 ---------- */
+        const w0 = opened[0];
+        if (w0 != null && tabs.has(w0)) {
+          const tw = Date.now();
+          setActiveTab(w0);
+          const wt = tabs.get(w0) || {};
+          out.wake = { ms: Date.now() - tw, awake: !wt.sleeping, hasView: !!wt.view };
+          setActiveTab(keep);
+        }
+        for (const id of opened) { if (id !== w0) { try { closeTab(id); } catch {} } }
+        await sleep(400);
+      } catch (e) { out.curveErr = String((e && e.stack) || e); }
+      flush();
+
+      /* ---------- 6) 后台节流落位 ---------- */
+      try {
+        const views = [];
+        for (const [id, t] of tabs) {
+          if (!t.view || t.view.webContents.isDestroyed()) continue;
+          let bt = null;
+          try { bt = t.view.webContents.backgroundThrottling; } catch {}
+          views.push({ id, active: id === activeTabId, sleeping: !!t.sleeping, bt });
+        }
+        out.throttle = views;
+        if (typeof cfg.bgThrottle === "boolean") {
+          out.throttlePass = views.every((v) => v.bt === (v.active ? false : !!cfg.bgThrottle));
+        } else {
+          out.throttlePass = true; // 基线（旧代码无该配置键）：只记录不断言
+        }
+      } catch (e) { out.throttleErr = String((e && e.stack) || e); out.throttlePass = false; }
+      out.stage = "done";
+      out.pass = !!(out.boot && out.memBase && Array.isArray(out.curve) && out.curve.length === 6 &&
+        out.sleep && out.sleep.slept >= 5 && out.wake && out.wake.awake && out.throttlePass);
+      flush();
     } else if (argv.includes("--lg-mattest")) {
       /* 材质对拍（"内外同一个效果"的机械守卫）：
          三层（外壳 / 页面 / 弹层）在**同一个窗口坐标**放同一个测试补丁
@@ -12928,6 +13239,7 @@ async function autoLoginFlow() {
    生命周期
    ============================================================ */
 app.whenReady().then(() => {
+  perfMarks.whenReady = Date.now();
   loadConfig();
   loadAccounts();
   loadHistory();
@@ -12992,7 +13304,7 @@ app.whenReady().then(() => {
           }
           const body = useStream
             ? Readable.toWeb(fs.createReadStream(abs, { start, end }))
-            : fs.readFileSync(abs).subarray(start, end + 1);
+            : await readRange(abs, start, end);
           return new Response(body, {
             status: 206,
             headers: {
@@ -13020,8 +13332,11 @@ app.whenReady().then(() => {
     dbg("protocol.handle failed: " + e);
   }
   createMainWindow();
-  // chrome 层加载后每隔 2s 同步一次用户状态（登录/登出主动感知）
-  setInterval(pushUser, 2000);
+  /* 用户态改为事件驱动（R41）：did-finish-load / did-navigate-in-page /
+     setActiveTab / 账号菜单打开（user:nudge）时即时抓。旧的每 2s 盲扫是
+     常驻热路径——每两秒往活动页注入一次脚本。这里只留 30s 兜底轮询。 */
+  setInterval(pushUser, 30000);
+  ipcMain.on("user:nudge", () => { pushUser(); refreshUserNet(false); });
   // 启动即取一次用户态：restoreTabs 关着、首页是本地页时，页面刮取永远没
   // 机会跑，头像就靠这一发（以及之后每次刮空时的节流兜底）点亮。
   refreshUserNet(true);
@@ -13046,6 +13361,9 @@ function flushAppState() {
   clearTimeout(winSaveTimer);
   winSaveTimer = null;
   try { saveWindowState(); } catch {}
+  /* R41：配置改了异步落盘、日志改了缓冲——退出这里无条件补写一次 */
+  try { saveConfigSync(); } catch {}
+  try { dbgFlushSync(); } catch {}
 }
 app.on("will-quit", () => {
   try { globalShortcut.unregisterAll(); } catch {}

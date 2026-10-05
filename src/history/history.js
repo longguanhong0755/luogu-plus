@@ -29,7 +29,8 @@ function row(children, extra) {
 function button(cls, text, title, onClick) {
   const b = document.createElement("button");
   b.className = cls;
-  b.textContent = text;
+  /* R41：改 innerHTML——图标钮传 icons.js 的 svg() 字符串，文字钮不受影响 */
+  b.innerHTML = text;
   if (title) b.title = title;
   b.addEventListener("click", onClick);
   return b;
@@ -93,7 +94,7 @@ async function renderHistory() {
     const time = document.createElement("span");
     time.className = "h-time";
     time.textContent = fmtTime(e.ts);
-    const del = button("h-del", "×", "删除这条记录", async () => {
+    const del = button("h-del", window.LGIcons.svg("winClose"), "删除这条记录", async () => {
       await window.lgConfig.historyRemove({ url: e.url, ts: e.ts });
       renderHistory();
     });
@@ -186,7 +187,7 @@ function showPane(p) {
 (async function init() {
   if (!window.lgConfig) {
     document.body.innerHTML =
-      '<div style="padding:30px;color:#c0392b;font:14px sans-serif">历史页桥接失败</div>';
+      '<div class="lg-err">历史页桥接失败：preload-config.js 未加载</div>';
     return;
   }
   // 与设置页同一套基色。外壳明暗切换已按需求移除，固定浅色。

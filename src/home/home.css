@@ -4,20 +4,16 @@
    下发，这里只管布局与数据。
    ============================================================ */
 :root {
-  --h-ink: #18181b;
-  --h-ink-dim: rgba(24, 24, 27, 0.62);
-  --h-ink-faint: rgba(24, 24, 27, 0.4);
-  /* 线与面引用全应用同一份材质变量（inject.js 贴到根；flat=素面值、
-     liquid=玻璃值）。首页不再自带一杯"0.92 白 + 0.12 黑线"的私料。 */
+  /* R41：私有 --h-* 词汇并入全应用共享令牌——取值全部指向 inject.js 下发的
+     --lg-ink / --lg-glass-*（消费点众多，别名保留）。附带修掉一个潜伏问题：
+     旧 dark 块靠 html[data-theme] 翻转，而本地页上没人设这个属性（注入层设的
+     是 data-lg-theme），深色解析下首页墨色其实从没跟上过；现在直接吃
+     --lg-ink 的按主题解析值，别名块一处即可。 */
+  --h-ink: var(--lg-ink, #18181b);
+  --h-ink-dim: color-mix(in srgb, var(--lg-ink, #18181b) 62%, transparent);
+  --h-ink-faint: color-mix(in srgb, var(--lg-ink, #18181b) 40%, transparent);
   --h-line: var(--lg-glass-line, rgba(0, 0, 0, 0.12));
   --h-face: var(--lg-glass-card, rgba(255, 255, 255, 0.92));
-}
-html[data-theme="dark"] {
-  --h-ink: #e7e7ea;
-  --h-ink-dim: rgba(231, 231, 234, 0.62);
-  --h-ink-faint: rgba(231, 231, 234, 0.4);
-  --h-line: var(--lg-glass-line, rgba(255, 255, 255, 0.14));
-  --h-face: var(--lg-glass-card, rgba(28, 28, 32, 0.92));
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -64,12 +60,9 @@ body {
   letter-spacing: 0.12em;
 }
 
-/* ---------- 通用玻璃卡（ext.css 给 .card 上玻璃面） ---------- */
-.card {
-  background: var(--h-face);
-  border: 1px solid var(--h-line);
-  border-radius: 12px;
-}
+/* ---------- 通用玻璃卡 ---------- */
+/* .card 的面（底/线/圆角）由 material.css 本地页登记表统一给（!important），
+   这里的声明从来盖不过它——R41 整块删除，不再留一份看不见的假来源。 */
 
 /* ---------- 搜索框 ---------- */
 .h-search {
@@ -110,7 +103,7 @@ body {
   color: var(--h-ink);
   background: transparent;
   border: 1px solid var(--h-line);
-  border-radius: 8px;
+  border-radius: var(--lg-radius);
   cursor: pointer;
   transition: border-color 0.12s;
 }
@@ -209,20 +202,20 @@ body {
 }
 .h-recent-list .h {
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-sub);
   color: var(--h-ink-faint);
   font-variant-numeric: tabular-nums;
 }
 .h-empty {
   grid-column: 1 / -1;
   padding: 10px 2px;
-  font-size: 12.5px;
+  font-size: var(--fs-base, 12.5px);
   color: var(--h-ink-faint);
 }
 
 /* ---------- 底部提示 ---------- */
 .h-foot {
-  font-size: 11.5px;
+  font-size: var(--fs-sub, 11px);
   color: var(--h-ink-faint);
   letter-spacing: 0.06em;
 }
@@ -271,7 +264,7 @@ body {
 .h-list .h {
   flex: none;
   margin-left: auto;
-  font-size: 11.5px;
+  font-size: var(--fs-sub, 11px);
   color: var(--h-ink-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -288,8 +281,10 @@ body {
   cursor: pointer;
   display: none;
 }
-.h-list a:hover .h-del { display: block; }
+.h-list a:hover .h-del { display: grid; place-items: center; }
 .h-list .h-del:hover { color: var(--h-ink); }
+/* R41：删除钮文本 × → 统一线稿（icons.js winClose） */
+.h-list .h-del svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .h-cd-form {
   display: flex;
   gap: 6px;

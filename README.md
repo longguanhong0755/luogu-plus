@@ -103,6 +103,9 @@ LuoguLab.exe --lg-hidden --lg-v313test --lg-url=https://www.luogu.com.cn/  # v3.
               # 题目页 IDE 真全屏（真站选择器 + 反例不误判）/ 窄条 ⌄ 交接菜单活下来 /
               # 坞=书签语义（普通点换当前页、newTab 才新开）/ 题单广场搜索条已删 /
               # 中键点链接 = 后台新标签
+LuoguLab.exe --lg-hidden --lg-perftest   # R41 性能基线/验收：冷启动分段耗时 /
+              # 按进程内存 / 6 标签内存曲线 / 休眠差值与唤醒耗时 / 后台节流落位
+              # （cfg.bgThrottle 存在才断言：活动关/后台开）
 LuoguLab.exe --lg-hidden --lg-v312test --lg-url=https://www.luogu.com.cn/  # v3.12.0 全量
               # 地址栏体验（输入法回车/回车确定性/localhost/联想跟手）/ 坞首页开洛谷首页 /
               # 账号菜单跑位 / 背景自愈 / 分组手感（迟滞·预览·动画·折叠展开）/ 左右两格分屏
@@ -120,7 +123,7 @@ omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色
 ## 部署状态（2026-10-01）
 
 - 桌面交付：`C:\Users\Administrator\Desktop\LuoguLab\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.13.0）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.14.0）
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
 - 设计迭代史见 `design-log.md`（R1~R33，全部有探针/截图证据）

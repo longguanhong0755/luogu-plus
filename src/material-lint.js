@@ -36,9 +36,17 @@ function stripComments(text, isCss) {
   if (!isCss) s = s.replace(/^[ 	]*\/\/.*$/gm, "");
   return s;
 }
-function walk(dir, out) {
-  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, ent.name);
+/* R41：root 也可以直接是单个文件（main.js 在仓库根、不在 src/ 下，
+   但它内联的探针 HTML/CSS 同样不许写配方——守卫口径收齐） */
+function walk(dirOrFile, out) {
+  let st = null;
+  try { st = fs.statSync(dirOrFile); } catch { return out; }
+  if (st.isFile()) {
+    if (/\.(css|js)$/i.test(dirOrFile)) out.push(dirOrFile);
+    return out;
+  }
+  for (const ent of fs.readdirSync(dirOrFile, { withFileTypes: true })) {
+    const p = path.join(dirOrFile, ent.name);
     if (ent.isDirectory()) {
       if (ent.name === "node_modules" || ent.name.startsWith(".")) continue;
       walk(p, out);

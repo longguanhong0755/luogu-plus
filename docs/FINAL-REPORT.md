@@ -28,6 +28,10 @@
 > + 「退出 IDE 模式」文案判定）+ 窄条悬停浮层里点 ⌄ 不再被 200ms 兜底定时器关掉 + 坞项改成书签语义
 > （普通点换当前页、Ctrl/中键才新开）+ 题单广场顶部那条自加的快速筛选条删除 + 交互优化（中键点链接 =
 > 后台标签、地址栏 Alt+Enter = 新标签、折叠组临时展开不再抖动）。
+> v3.14.0 = 性能极致优化（后台标签节流 + 标签惰性恢复 + 内存压力自动休眠 + 视频壁纸 lg-media:// 流式
+> + 用户态探测事件化 + 标签推送合并 + 日志/视差/resize/配置落盘降压，全部有 --lg-perftest 前后基线对拍）
+> + UI 风格统一（修 :593 多括号真 bug；图标三套假"同源"收口 src/icons.js；字体/字号/圆角/滚动条/选区
+> 单一来源；首页私有色板并入共享词汇；拖拽小签/错误卡统一；死样式清扫；material-lint 扫到 main.js）。
 
 ---
 
@@ -655,6 +659,7 @@ window.open("luogu-glass://ide")             // 打开 IDE 标签页
 | `--lg-mattest` | 材质三层对拍（外壳/页面/弹层 同坐标补丁像素比对，flat/liquid 各一遍） |
 | `--lg-v311test` | v3.11.0 全量：坞方向四位置轮测（左/右 = column 且两颗胶囊同列上下叠、上/下 = row 且并排；`dockBounds()` 与方向同源）/ 悬停卡片已删（外壳函数·桥·视图三处 undefined；悬停标签 1.4s 不冒出任何新视图）/ 题目页自带 IDE 模式（真实 `/problem/P1002` 页合成编辑器容器 + 「退出 IDE 模式」→ 2 拍内上报 → 视图落整窗 0,0,w,h、坞隐藏、`data-lg-ide=1`、面板背景 alpha≥0.99 且无 `.lg-glass`；移除 → 全部还原）/ 分组拖动（外壳合成 pointer 手势拖到标签中段 → `drop-merge` → 建组且默认名「N 组」；折叠组当落点、组内锚点排序、拖出组块、整组排序、组块连续）（4 段） |
 | `--lg-v313test` | v3.13.0 全量：题目页 IDE 真全屏（注入**真站形状**的 DOM：只有容器 / 只有「退出 IDE 模式」文案两个反例都不许触发；正例 → 视图落整窗 0,0,w,h、坞隐藏、`data-lg-ide=1`、面板摘 `.lg-glass` 且底色不透明；拆掉 DOM → 标志清、视图回 inset）/ 窄条 ⌄（合成 mouseenter 开悬停浮层 → 点浮层里的 ⌄ → 菜单 100ms 出现且活过 200ms 兜底窗口、8 项、弹层视图 = 整窗（不被窄条矩形裁掉）、关掉后窄条 `visibility:visible`）/ 坞书签语义（`dockOpen("@home")` 不新开、当前标签变 luogu.com.cn；`{newTab:true}` 才 +1 标签；`@ide` 无 IDE 标签时就地导航不新开）/ 题单广场（/contest/list 筛选条在、/training/list attr=0 且无 `#lg-quicksearch`）/ 中键链接（真实中键 → 标签 +1 且 `activeTabId` 不变 = 后台标签）（5 段） |
+| `--lg-perftest` | R41 性能基线/验收：冷启动分段耗时（perfMarks：模块求值→whenReady→winCreated→chromeLoaded→readyShown）/ 按进程内存（`app.getAppMetrics()` 汇总 + 分型）/ 开 6 个测试标签（`https://127.0.0.1:9/` 秒失败不依赖网络）的内存曲线 / 休眠差值（sleepTab 6 个 + 2.5s 回收）与唤醒耗时（setActiveTab→wakeTab）/ 逐视图 `backgroundThrottling` 落位（cfg.bgThrottle 存在才断言「活动关/后台开」，基线跑旧代码自动只记录）。全程 opacity 0 亮窗，不 setAlwaysOnTop/moveTop |
 | `--lg-v312test` | v3.12.0 全量：地址栏（合成 isComposing 回车不导航、真回车按输入内容跳 P1002；`resolveOmnibox` 的 localhost/host:port/裸词/裸域名/题号；联想默认 `on=-1`、首行「打开 xxx」、悬停回传选中）/ 坞首页（书签语义：`dockOpen("@home")` 换当前页、`{newTab:true}` 才新开；URL=luogu.com.cn、坞项高亮）/ 菜单跑位（弹层 `place()` 吃 `payload.win`：win.w=640 时 x+w=632（视口只有 344 也不受影响）、真窗口下贴右缘、`popup:win` 后重摆、账号芯片真实链路右缘对齐）/ 背景（图片层健康 + 被删后 observer 重建；`bgready=0` 时视频不关图片兜底；缩放 1.5 重载后 `--lg-zoom=1.5`；已关标签的 fullscreen/IDE 标志被清理；`reconcileWallpaper` 可读性顺延）/ 分组（FLIP 计数增长、折叠组牌悬停 0.45s 临时展开且**成员行上停留不再被误判为离开**、合并带迟滞 0.5/0.75 保持·0.95 清除）/ 分屏（旧布局/聚焦 API 与 IPC 全删、新 IPC 在；两格相邻 + 中间插入被吸附；反转宽度保持；关右格解散）（6 段） |
 | `--lg-v310test` | v3.10.0 全量：坞渲染（胶囊定位上下文 / 每个坞项有 svg / `--pop-x/y` 与视图原点+offset+边框对齐 / 投影余量）/ IDE 模式（抽屉开着）自动收坞与恢复 / 钉子三姿态 `#btn-vpin` 矩形全等 + 浮层里对钉子坐标发真实鼠标序列真的钉住（46→212）/ 主题嗅探（透明容器不判 dark、真深色判 dark、全透明 unknown、当前页保持 light）/ 跨标签玻璃变量全等 + 首帧兜底值 / 广告（三会话拦截器在位、`/qiafan/` 被拦而对照片放行、右栏推广卡静态 `:has` 与清扫器双层命中）/ IDE 原生（`data-lg-ide="1"` 时 Monaco 规则不生效、清扫器不贴 `.lg-glass`） |
 | `--lg-hidden` | 后台测试模式：全程不亮窗、不抢前台（配合上面任意探针） |

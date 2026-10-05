@@ -16,9 +16,10 @@ contextBridge.exposeInMainWorld("lgChrome", {
     }),
   onFocusOmni: (cb) => ipcRenderer.on("chrome:focus-omni", () => cb()),
   onPalette: (cb) => ipcRenderer.on("chrome:palette", () => cb()),
-  /* 壁纸数据：外壳层的 <video> 也吃不了 lg-media://，静态图同样走 blob 更稳，
-     拿到字节自己 createObjectURL */
+  /* 壁纸数据：R41 起视频走 lg-wall:video（流式 URL，lg-media:// 直放，零拷贝）；
+     wallVideoBlob 是直放失败时的字节兜底通道。静态图仍走字节自建 blob。 */
   wallVideo: () => ipcRenderer.invoke("lg-wall:video"),
+  wallVideoBlob: () => ipcRenderer.invoke("lg-wall:video-blob"),
   wallImage: () => ipcRenderer.invoke("lg-wall:image"),
   /* 手动换一张壁纸（双击外壳空白区的交互） */
   wallNext: () => ipcRenderer.invoke("lg-wall:next"),

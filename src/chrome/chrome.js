@@ -2,51 +2,15 @@
    Luogu++ — chrome 层逻辑（标签条 / 浏览器式工具行 / 侧坞 / 账号）
    数据流：main → onTabs/onUser/onConfig/onAccounts 推送；chrome → invoke 动作。
    ============================================================ */
-const ICONS = {
-  code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4"/>',
-  page: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/>',
-  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',
-  list: '<path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="0.6"/><circle cx="4" cy="12" r="0.6"/><circle cx="4" cy="18" r="0.6"/>',
-  book: '<path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/>',
-  trophy: '<path d="M8 21h8M12 17v4M7 4h10v6a5 5 0 0 1-10 0z"/><path d="M7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>',
-  chat: '<path d="M21 12a8 8 0 0 1-8 8H4l2.4-2.4A8 8 0 1 1 21 12z"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
-  /* 设置：三档滑杆（旧齿轮画成了太阳，废弃） */
-  sliders: '<path d="M3 7h9M19 7h2M3 12h3M13 12h8M3 17h11M19.3 17H21"/><circle cx="15.5" cy="7" r="2.5"/><circle cx="9.5" cy="12" r="2.5"/><circle cx="16.5" cy="17" r="2.5"/>',
-  moon: '<path d="M20 13.5A8 8 0 0 1 10.5 4 6.8 6.8 0 1 0 20 13.5z"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.5 4.5l1.5 1.5M18 18l1.5 1.5M4.5 19.5 6 18M18 6l1.5-1.5"/>',
-  mute: '<path d="M4 9v6h3l4 3.5V5.5L7 9z"/><path d="m15.5 9.5 5 5M20.5 9.5l-5 5"/>',
-  winMin: '<path d="M4 12h16"/>',
-  winMax: '<rect x="5" y="5" width="14" height="14" rx="1.5"/>',
-  winRestore: '<rect x="4" y="8" width="11" height="11" rx="1.5"/><path d="M8 8V5.5A1.5 1.5 0 0 1 9.5 4h9A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H16"/>',
-  winClose: '<path d="m6 6 12 12M18 6 6 18"/>',
-  star: '<path d="m12 4 2.35 4.9 5.4.72-3.95 3.78.98 5.35L12 16.2l-4.78 2.55.98-5.35L4.25 9.62l5.4-.72z"/>',
-  starOn: '<path d="m12 4 2.35 4.9 5.4.72-3.95 3.78.98 5.35L12 16.2l-4.78 2.55.98-5.35L4.25 9.62l5.4-.72z" fill="currentColor"/>',
-  download: '<path d="M12 3v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4 20h16"/>',
-  camera: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="m8 7 1.5-3h5L16 7"/><circle cx="12" cy="13" r="3.5"/>',
-  /* 钉子（侧栏"钉住"开关）：钉住 = 竖直 + 实心钉帽；未钉住 = 斜 40°（松着）。
-     用户要求：显示状态的那颗图标画成钉子，折叠窄条上不出现（只留向下三角）。 */
-  nailOn: '<path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z" fill="currentColor"/><path d="M12 15v6"/>',
-  nailOff: '<g transform="rotate(40 12 11.5)"><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 15v6"/></g>',
-  sleep: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
-  tabMore: '<path d="m6 9 6 6 6-6"/>',
-  pin: '<path d="M9 4h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 15v6"/>',
-  chevronR: '<path d="m9 6 6 6-6 6"/>',
-  organize: '<path d="M4 6h16M4 12h10M4 18h7"/>',
-  searchTab: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/>',
-  historyClock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
-  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2.2 2.2 0 0 0 4 0"/>',
-  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
-  article: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 16h6"/>',
-  split: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/>',
-  splitOff: '<path d="M4 5h16v14H4z"/><path d="m8 8 8 8M16 8l-8 8"/>',
-};
+/* 图标唯一来源：R41 起收口到 src/icons.js（外壳/首页/设置/历史四页共享
+   同一份线稿——此前三页各养一份"同一份线稿"实为三套不同路径，坞里画一套、
+   设置页预览另一套）。这里只留别名，DOCK_ICONS 名称表保留。 */
+const ICONS = window.LGIcons.PATHS;
 /* 工具行不再放站点快捷钮（题库/题单等入口移到侧坞，可自定义） */
 const DOCK_ICONS = ["home", "list", "book", "trophy", "chat", "clock", "code", "sliders", "star", "download", "page"];
 
-function svg(name) {
-  return '<svg viewBox="0 0 24 24">' + (ICONS[name] || ICONS.page) + "</svg>";
+function svg(name, attrs) {
+  return window.LGIcons.svg(name, attrs);
 }
 
 let tabsState = { tabs: [], activeId: null };
@@ -183,7 +147,7 @@ function buildTabEl(t, cls) {
     el.classList.add("sleeping");
     const sl = document.createElement("span");
     sl.className = "t-badge t-sleep";
-    sl.textContent = "💤";
+    sl.innerHTML = svg("sleep"); // R41：💤 emoji → 统一线稿的月牙
     sl.title = "已休眠（点击唤醒）";
     el.appendChild(sl);
   }
@@ -211,7 +175,7 @@ function buildTabEl(t, cls) {
   el.appendChild(title);
   const close = document.createElement("button");
   close.className = "t-close";
-  close.textContent = "×";
+  close.innerHTML = svg("winClose"); // R41：文本 × → 统一线稿
   close.title = "关闭标签页 (Ctrl+W)";
   close.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1234,6 +1198,7 @@ function renderUser() {
   chip.appendChild(nm);
   const caret = document.createElement("span");
   caret.className = "caret";
+  caret.innerHTML = svg("tabMore"); // R41：CSS border 三角 → 统一线稿 chevron
   chip.appendChild(caret);
   chip.title = label + " · 点击切换账号";
 }
@@ -2453,8 +2418,12 @@ function applyConfig(cfg) {
           if (settled) return;
           settled = true;
           cleanup();
-          window.lgChrome
-            .wallVideo()
+          /* 字节兜底走 wallVideoBlob 专用通道：lg-wall:video 本体 R41 起只回
+             流式 URL，不再随载荷附整份字节 */
+          const api = window.lgChrome.wallVideoBlob
+            ? window.lgChrome.wallVideoBlob()
+            : window.lgChrome.wallVideo();
+          api
             .then((r) => {
               if (!r || !r.ok || !r.data) return;
               const u8 = r.data instanceof Uint8Array ? r.data : new Uint8Array(r.data);
@@ -2474,6 +2443,25 @@ function applyConfig(cfg) {
           const pr = vid.play();
           if (pr && pr.catch) pr.catch(() => {});
         };
+        /* 既不 error 也不 loadedmetadata（媒体加载器卡住）的兜底：4s 转 blob，
+           与页面注入层 feedBgVideo 同口径 */
+        const killer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          window.lgChrome
+            .wallVideoBlob()
+            .then((r) => {
+              if (!r || !r.ok || !r.data) return;
+              const u8 = r.data instanceof Uint8Array ? r.data : new Uint8Array(r.data);
+              vid._lgBlob = URL.createObjectURL(new Blob([u8], { type: r.type || "video/webm" }));
+              vid.src = vid._lgBlob;
+              vid.load();
+              const pr = vid.play();
+              if (pr && pr.catch) pr.catch(() => {});
+            })
+            .catch(() => {});
+        }, 4000);
         vid.addEventListener("error", onErr);
         vid.addEventListener("loadedmetadata", onMeta);
         vid.src = cfg.wallpaperUrl;
@@ -2928,7 +2916,7 @@ function bind() {
 
 if (!window.lgChrome) {
   document.body.innerHTML =
-    '<div style="padding:24px;color:#c0392b;font:14px sans-serif">chrome 桥接失败：preload-chrome.js 未加载</div>';
+    '<div class="lg-err">chrome 桥接失败：preload-chrome.js 未加载</div>';
 } else {
   window.lgChrome.onTabs((s) => {
     tabsState = s;

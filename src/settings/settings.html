@@ -308,7 +308,19 @@
           <input type="range" id="s-tabsleep" min="0" max="120" step="5" />
           <output id="o-tabsleep"></output>
         </label>
-        <p class="hint">后台闲置超过这时长的标签自动卸载（标签位保留、标题带 💤，点回去才重新加载），省内存。0 = 不自动休眠。活动标签、拼合组、钉住的、正在放声音的不会睡；右键标签也可手动「休眠此标签页」。</p>
+        <p class="hint">后台闲置超过这时长的标签自动卸载（标签位保留、标题带月牙标，点回去才重新加载），省内存。0 = 不自动休眠。活动标签、拼合组、钉住的、正在放声音的不会睡；右键标签也可手动「休眠此标签页」。</p>
+        <label class="switch-row">
+          <span>后台标签节流</span>
+          <input type="checkbox" id="ck-bgthrottle" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">非活动标签恢复 Chromium 定时器节流（活动、分屏、正在出声的标签不受影响），后台网页不再全速跑定时器，多标签时更省 CPU。</p>
+        <label class="switch-row">
+          <span>内存紧张时自动休眠</span>
+          <input type="checkbox" id="ck-memsleep" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">系统可用内存不足（约 1.5GB 或 15% 以下）时，把最久未用的后台标签提前休眠。</p>
       </section>
 
       <!-- ==================== 首页与题号 ==================== -->
@@ -545,6 +557,7 @@
   </div>
 
   <div id="toast"></div>
+  <script src="../icons.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>

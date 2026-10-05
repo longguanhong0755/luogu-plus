@@ -214,12 +214,12 @@
     try { vEl.load(); } catch (e) {}
   }
 
-  /* blob 兜底：主进程读字节（有缓存）→ 页面 createObjectURL。 */
+  /* blob 兜底（直放 lg-media 失败才走）：字节走 lg-wall:video-blob 专用通道——
+     lg-wall:video 本体 R41 起只回流式 URL，不再随载荷附整份视频字节。 */
   function blobFeedBgVideo(vEl) {
-    if (!window.lgApp || !window.lgApp.wallVideo) { bgVideoFail(); return; }
-    window.lgApp
-      .wallVideo()
-      .then(function (r) {
+    if (!window.lgApp || !(window.lgApp.wallVideoBlob || window.lgApp.wallVideo)) { bgVideoFail(); return; }
+    var p = window.lgApp.wallVideoBlob ? window.lgApp.wallVideoBlob() : window.lgApp.wallVideo();
+    p.then(function (r) {
         if (!r || !r.ok || !r.data) { bgVideoFail(); return; }
         var u8 = r.data instanceof Uint8Array ? r.data : new Uint8Array(r.data);
         if (vEl._lgBlob) { try { URL.revokeObjectURL(vEl._lgBlob); } catch (e) {} }
@@ -536,8 +536,6 @@
     s.setProperty("--lg-text-boost", tv.textBoost);
     s.setProperty("--lg-border", scaleAlpha(tv.border, clampNum(cfg.borderStrength, 0.4, 3, 1)));
     s.setProperty("--lg-accent", cfg.accentResolved || cfg.accent || tv.ink);
-    s.setProperty("--lg-sheen", "rgba(0, 0, 0, 0)");
-    s.setProperty("--lg-shadow", "none");
     root.setAttribute("data-lg-anim", cfg.animations === false ? "0" : "1");
     root.setAttribute("data-lg-diff", cfg.diffMono ? "mono" : "native");
     root.setAttribute("data-lg-codecopy", cfg.codeCopy === false ? "0" : "1");
@@ -884,8 +882,6 @@
     applyListFilter();
   }
   function teardownListTools() {
-    var el = document.getElementById("lg-listtools");
-    if (el) el.remove();
     var c = document.getElementById("lg-listtools-count");
     if (c) c.remove();
     listUI = null;
@@ -1066,8 +1062,10 @@
     bubble.className = "lg-face";
     var head = trEl("div", "lg-tr-head");
     head.appendChild(trEl("span", "lg-tr-src", t.length > 60 ? t.slice(0, 60) + "…" : t));
-    var close = trEl("button", "lg-tr-x", "×");
+    var close = trEl("button", "lg-tr-x", "");
     close.type = "button";
+    /* 与 icons.js winClose 同线稿（注入层加载不到 icons.js，这里内联） */
+    close.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>';
     close.title = "关闭";
     close.addEventListener("click", function () { bubble.remove(); });
     head.appendChild(close);
@@ -2037,6 +2035,7 @@
   var lastHref = location.href;
   var glassTick = 0;
   setInterval(function () {
+    glassTick++;
     // 壁纸层体检（所有页面都做：本地页也有壁纸）
     if (wallpaperUnhealthy()) healWallpaper();
     else healTries = 0;
@@ -2049,8 +2048,9 @@
       sweepLucky();
       sweepBetterSearch();
       /* 面材质巡检：Vue 异步渲染常整块换 DOM 而没触发可见的属性变化，
-         observer 会漏；每第 5 拍（约 12s）全量补扫一次，纯增量检查很便宜 */
-      if (++glassTick % 5 === 0) sweepGlassSurfaces();
+         observer 会漏；每第 12 拍（约 30s，R41 从 5 拍放宽）全量补扫一次，
+         新增节点的即时补扫由 MutationObserver（250ms 去抖）负责 */
+      if (glassTick % 12 === 0) sweepGlassSurfaces();
       /* 列表工具也要巡检：apply 只在注入/换路由时跑一遍，洛谷的列表是
          Vue 异步渲染，那一遍常常早于筛选行与表格——功能块就此错过整页。
          两个 setup 都是幂等的（已挂载立即返回），巡检拿来兜底重挂载与难度自学习。 */
@@ -2069,7 +2069,9 @@
     if (glassSite) {
       var nt = dsThemeSniff();
       if (nt && nt !== document.documentElement.getAttribute("data-lg-dstheme")) apply(state.cfg);
-      roundGlassSiteSidebar();
+      /* 圆角巡检是 body * 全量矩形扫描（R41 从每拍 2.5s 放宽到每 5 拍 12.5s）：
+         首次挂载仍由下方 1.2s 定时器兜底，SPA 换节点靠 __lgRounded 重扫 */
+      if (glassTick % 5 === 0) roundGlassSiteSidebar();
     }
   }, 2500);
 

@@ -12,10 +12,11 @@ contextBridge.exposeInMainWorld("lgApp", {
   openPath: (p) => ipcRenderer.invoke("lg-app:open-path", String(p || "")),
   /* 应用动作：drawer/toggle、ide、problem/P1001 …（与 luogu-glass:// 同一分发器） */
   command: (c) => ipcRenderer.invoke("lg-app:command", String(c || "")),
-  /* 壁纸数据：视频吃不了 lg-media://（媒体加载器只认标准协议），静态图会被
-     洛谷的 CSP 拦（白名单里没有 lg-media:）。两者都改由页面拿到字节自己
-     createObjectURL —— blob: 在白名单里。 */
+  /* 壁纸数据：R41 起视频走 lg-wall:video（流式 URL，lg-media:// 直放，零拷贝）；
+     wallVideoBlob 是直放失败时的字节兜底通道（主进程按需读整份字节）。
+     静态图仍走字节（洛谷 CSP 白名单里 blob: 可用、lg-media: 不在）。 */
   wallVideo: () => ipcRenderer.invoke("lg-wall:video"),
+  wallVideoBlob: () => ipcRenderer.invoke("lg-wall:video-blob"),
   wallImage: () => ipcRenderer.invoke("lg-wall:image"),
   /* 壁纸视差：页面层鼠标位置（已节流）经主进程转发给外壳层，两层同步动 */
   parallax: (x, y) => ipcRenderer.send("lg-wall:parallax", { x, y }),

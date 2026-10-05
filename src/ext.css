@@ -69,23 +69,12 @@ html[data-lg-ext="1"][data-lg-local="1"] body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 滚动条：方形细杆（与洛谷页一致）。同样只管本地页。 */
-html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar { width: 10px; height: 10px; }
-html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar-track { background: transparent; }
-html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 132, 0.4);
-  border-radius: 2px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-html[data-lg-ext="1"][data-lg-local="1"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 132, 0.65);
-  background-clip: padding-box;
-}
+/* 滚动条：R41 起由 material.css 单源定义（html[data-lg-theme] 作用域同时
+   覆盖本地页与洛谷页），这里与 inject.css 的两份重复定义都已删除。 */
 
 /* 本地页面板（卡片 / 设置侧栏 / 内块控件）的选择器登记在 material.css
-   （第 5 节），与外壳、洛谷页共用同一份配方与变量；本文件只留透明化、
-   字体、滚动条这些站点适配。 */
+   （第 5 节），与外壳、洛谷页共用同一份配方与变量；本文件只留透明化与
+   字体这些站点适配。 */
 
 /* 动效开关 */
 html[data-lg-anim="0"] *,

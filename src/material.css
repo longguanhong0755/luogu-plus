@@ -42,6 +42,69 @@
   --surface: var(--lg-glass-card, rgba(255, 255, 255, 0.92));
   --surface-2: color-mix(in srgb, var(--lg-glass-soft, rgba(255, 255, 255, 0.92)) 92%, var(--ink, #18181b));
   --hairline: var(--lg-glass-line, rgba(24, 24, 27, 0.14));
+  /* ---------- R41 共享令牌（静态值，引擎不参与） ----------
+     字体/字号/圆角此前散在 chrome.css / settings.css / home.css / inject.js
+     四处各写一份（三种 mono 栈、8/12px 圆角兜底漂移）。这里定唯一来源。
+     页面侧 inject.js 仍会把 --lg-sans/--lg-mono/--lg-radius 内联下发到
+     <html>（--lg-radius 是用户可调项），内联值与本表同值且优先级更高。 */
+  --lg-sans: "MiSans", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif;
+  --lg-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "Sarasa Mono SC",
+    Consolas, monospace;
+  --fs-base: 12.5px;
+  --fs-sub: 11px;
+  --lg-radius-sm: 4px;
+  --lg-radius: 8px;
+  --lg-radius-lg: 12px;
+  --lg-radius-xl: 16px;
+}
+
+/* ---------- 0b. 共享细节（R41 收口）：滚动条 / 选区 ----------
+   同一套滚动条此前在 inject.css 与 ext.css 各写一份，这里收成单源。
+   作用域挂 html[data-lg-theme]（注入层在页面/本地页上恒设）：外壳/弹层/坞
+   不受影响——它们的滚动区要么自己隐藏、要么本就无滚动。选区给一份中性
+   墨色（此前只有暗色重绘下有一条 ::selection，其余全走 UA 默认）。 */
+html[data-lg-theme] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-lg-theme] ::-webkit-scrollbar-track { background: transparent; }
+html[data-lg-theme] ::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 132, 0.4);
+  border-radius: 2px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+html[data-lg-theme] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 132, 0.65);
+  background-clip: padding-box;
+}
+html[data-lg-theme] ::selection {
+  background: color-mix(in srgb, var(--lg-ink, #18181b) 20%, transparent);
+}
+
+/* ---------- 0c. 跨层共用小件（R41 收口） ----------
+   拖拽小签此前 chrome.css 与 popup.js 内联各写一份；错误卡此前是三处
+   裸内联样式。material.css 外壳/弹层/页面同链加载，这里写一份三层共享。 */
+#drag-tip {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  padding: 3px 9px;
+  border-radius: 8px;
+  font-size: var(--fs-base, 12px);
+  line-height: 1.5;
+  color: var(--ink, #18181b);
+  background: var(--surface-2, rgba(255, 255, 255, 0.92));
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.18), inset 0 0 0 1.5px var(--gc, var(--hairline, rgba(24, 24, 27, 0.14)));
+  white-space: nowrap;
+}
+.lg-err {
+  margin: 48px auto;
+  max-width: 560px;
+  padding: 18px 20px;
+  border: 1px solid var(--lg-glass-line, rgba(24, 24, 27, 0.14));
+  border-radius: var(--lg-radius, 8px);
+  background: var(--lg-glass-card, rgba(255, 255, 255, 0.92));
+  color: #c0392b;
+  font: 13px/1.7 var(--lg-sans, sans-serif);
 }
 
 /* ---------- 1. 面：唯一配方（.lg-face = 面本身，.lg-face-b = 边框/高光/投影） ----------

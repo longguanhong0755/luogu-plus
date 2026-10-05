@@ -106,23 +106,16 @@ body {
   border-radius: calc(var(--lg-radius) - 4px);
   font-size: 14.5px;
 }
+/* 表格条纹/悬停：墨色低浓度 wash（R41 令牌化——同一公式明暗自适应，
+   --lg-ink 随主题翻转，不再各写一组 rgba 明暗对） */
 .lfe-marked table th {
-  background: rgba(0, 0, 0, 0.035) !important;
-}
-html[data-lg-theme="dark"] .lfe-marked table th {
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: color-mix(in srgb, var(--lg-ink, #18181b) 4%, transparent) !important;
 }
 .lfe-marked table tr:nth-child(even) td {
-  background: rgba(0, 0, 0, 0.02) !important;
-}
-html[data-lg-theme="dark"] .lfe-marked table tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: color-mix(in srgb, var(--lg-ink, #18181b) 2.5%, transparent) !important;
 }
 .lfe-marked table tr:hover td {
-  background: rgba(0, 0, 0, 0.05) !important;
-}
-html[data-lg-theme="dark"] .lfe-marked table tr:hover td {
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: color-mix(in srgb, var(--lg-ink, #18181b) 5%, transparent) !important;
 }
 
 /* 代码块：面 + 细线，等宽字体 */
@@ -173,19 +166,9 @@ html:not([data-lg-ide="1"]) .CodeMirror {
   border-radius: calc(var(--lg-radius) - 2px);
 }
 
-/* ---------- 滚动条：方形细杆 ---------- */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 132, 0.4);
-  border-radius: 2px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 132, 0.65);
-  background-clip: padding-box;
-}
+/* ---------- 滚动条：方形细杆 ----------
+   R41 移入 material.css（html[data-lg-theme] 作用域）单源定义，
+   本文件与 ext.css 的两份重复定义删除。 */
 
 /* ---------- 内容去色（默认 0=原色；仅当滑杆>0 时才挂灰度滤镜） ---------- */
 html[data-lg-desat="1"] .main-container,
@@ -342,7 +325,7 @@ html[data-lg-declutter="1"] .theme-frosted::before {
    ============================================================ */
 #lg-listtools-count {
   align-self: center;
-  color: #71717a;
+  color: color-mix(in srgb, var(--lg-ink, #18181b) 58%, transparent);
   font-family: var(--lg-sans);
   font-size: 12px;
   white-space: nowrap;
@@ -367,7 +350,7 @@ html[data-lg-declutter="1"] .theme-frosted::before {
   width: 15px; height: 15px;
   flex: none;
   fill: none;
-  stroke: #a1a1aa;
+  stroke: color-mix(in srgb, var(--lg-ink, #18181b) 42%, transparent);
   stroke-width: 2;
   stroke-linecap: round;
 }
@@ -380,7 +363,7 @@ html[data-lg-declutter="1"] .theme-frosted::before {
   font-family: var(--lg-sans);
   font-size: 13.5px;
 }
-#lg-quicksearch input::placeholder { color: #a1a1aa; }
+#lg-quicksearch input::placeholder { color: color-mix(in srgb, var(--lg-ink, #18181b) 42%, transparent); }
 
 /* ---------- IDE 页面适配（/ide，Monaco 外围单色化） ----------
    R37：整块挂 html:not([data-lg-ide="1"])——"IDE 页保持原生"打开时这些
@@ -590,7 +573,7 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
 .lg-search-rand {
   font-family: var(--lg-sans) !important;
   border-radius: calc(var(--lg-radius, 8px) - 2px) !important;
-  border: 1px solid var(--lg-glass-line)) !important;
+  border: 1px solid var(--lg-glass-line) !important;
   background: transparent !important;
   color: var(--lg-ink, #18181b) !important;
   box-shadow: none !important;
@@ -742,7 +725,10 @@ html[data-lg-page="dark"] #lg-reader { background: #17171a; color: #e9e9ec; }
   border: none; border-radius: 5px;
   background: transparent; color: inherit; opacity: 0.6;
   cursor: pointer; font-size: 12px; line-height: 1;
+  display: grid; place-items: center;
 }
+/* R41：关闭钮文本 × → 统一线稿（与 icons.js winClose 同 path） */
+#lg-tr-bubble .lg-tr-x svg { width: 10px; height: 10px; }
 #lg-tr-bubble .lg-tr-x:hover { opacity: 1; background: rgba(128, 128, 140, 0.18); }
 #lg-tr-bubble .lg-tr-err { color: #c0392b; }
 #lg-tr-bar {

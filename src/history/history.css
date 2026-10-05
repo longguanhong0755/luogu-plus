@@ -64,7 +64,7 @@
 }
 .h-time {
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-sub, 11px);
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -78,15 +78,19 @@
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
+  display: grid;
+  place-items: center;
 }
 .h-del:hover { border-color: var(--ink); color: var(--ink); }
+/* R41：删除钮文本 × → 统一线稿（icons.js winClose） */
+.h-del svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 /* 下载动作是文字按钮（暂停/继续/取消/重试/另存为/移除）：宽度自适应 */
 .h-del.h-act { width: auto; height: 24px; padding: 0 8px; font-size: 12px; }
 
 /* 历史按日期分组的小标题（今天 / 昨天 / 日期） */
 .h-day {
   padding: 10px 4px 4px;
-  font-size: 11.5px;
+  font-size: var(--fs-sub, 11px);
   letter-spacing: 0.4px;
   color: var(--ink-faint);
 }
