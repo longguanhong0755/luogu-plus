@@ -3,8 +3,8 @@
 产品定位：**面向编程的洛谷工作台**（OJ + IDE + 多标签浏览器壳）。
 视觉方向：**黑白单色 / 线条风 / 极简**。禁止：Emoji、彩色渐变、AI 味配色。
 
-每轮 = 设计改动 → 运行 → 截图/断言验证 → 结论。验证证据由 `scripts/run-probe.sh` 产出
-（隔离 profile 在 `D:\workspace\luogu++\dev\probe\`；历史截图在 `C:\Users\Administrator\LuoguDevShot\`）。
+每轮 = 设计改动 → 运行 → 截图/断言验证 → 结论。验证证据与截图由 `scripts/run-probe.sh` 产出
+（隔离 profile 在 `D:\workspace\luogu++\dev\probe\`，输出目录随轮次指定）。
 
 | 轮次 | 改动 | 验证 | 结论 |
 |------|------|------|------|
