@@ -8,7 +8,7 @@
 ## 目录结构
 
 ```
-luogu-glass/
+D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json name 仍为 luogu-glass）
 ├── main.js               # 主进程：标签/布局/注入调度/账号隔离会话/历史-下载-清理/
 │                         #   菜单快捷键/自测钩子/自动登录(验证码辅助)
 ├── preload-chrome.js     # 外壳层 contextBridge（onTabs/onUser/onConfig/onDownloads + 动作）
@@ -83,8 +83,8 @@ npm run dist                # 打包免安装绿色版
 npm run gen:icon            # 重新生成图标
 ```
 
-注意：打包产物请放到 `~/.zcode/workspace/default/` 目录树之外运行
-（该工作区树内任何 exe 都会段错误）。开发调试用 `C:\Users\Administrator\LuoguGlassDev`。
+开发调试用 `D:\workspace\luogu++\dev`（`edist\electron.exe` + `scripts/dev-hot.sh` 热应用）。
+注意：不要把 exe 放进 ZCode 工作区（`~/.zcode/workspace/`）目录树内运行——该树内任何 exe 都会段错误。
 
 ## 自测钩子（打包产物同样支持）
 
@@ -120,13 +120,15 @@ LuoguLab.exe --lg-autologin --lg-user=… --lg-pass=…   # 自动登录（验�
 omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色预设往返 +
 浏览器能力（缩放/重排/右键菜单）+ 历史下载 + 命令面板。
 
-## 部署状态（2026-10-01）
+## 部署状态（2026-10-05）
 
-- 桌面交付：`C:\Users\Administrator\Desktop\LuoguLab\LuoguLab.exe`
+- 部署产物：`D:\workspace\luogu++\app\LuoguLab.exe`
   （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.14.0）
+- 源码仓库：`D:\workspace\luogu++\repo`（git 远端 `longguanhong0755/luogu-plus`）；
+  开发运行目录 `D:\workspace\luogu++\dev`
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
-- 设计迭代史见 `design-log.md`（R1~R33，全部有探针/截图证据）
+- 设计迭代史见 `design-log.md`（R1~R41，全部有探针/截图证据）
 
 ## 已知环境注意事项
 

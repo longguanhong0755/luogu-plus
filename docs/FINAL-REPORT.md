@@ -1,11 +1,11 @@
 # LuoguLab 最终成果说明
 
-> 版本 **3.8.0** · 便携免安装 Windows 桌面应用（Electron 39.8.10）
+> 版本 **3.14.0** · 便携免安装 Windows 桌面应用（Electron 39.8.10）
 > 定位：**面向编程的洛谷工作台**（OJ + IDE + 多标签浏览器壳）
 > 视觉：**黑白单色 / 线条风 / 极简**（无 Emoji、无彩色渐变、无 AI 味配色）
 >
 > 说明：本文的迭代章节写到这里收录的最后一轮为止；**v3.5.2 之后的迭代记录见
-> `design-log.md`（R25–R35）与 `使用说明.txt` 的版本小节**（v3.6.0 = 浏览器功能补齐 +
+> `design-log.md`（R25–R41）与 `使用说明.txt` 的版本小节**（v3.6.0 = 浏览器功能补齐 +
 > 垂直栏重做 + 整理标签页 + 删除工作区；v3.7.0 = 垂直侧边栏全量对齐 Edge +
 > Edge 式标签分组；v3.7.1 = 悬停展开重做为"与常驻展开逐像素同一条"（整高贴边、
 > 盖住窄条、隐藏窄条、材质对齐），并修掉 rect 弹层假壁纸按视图尺寸铺的底层 bug；
@@ -60,10 +60,10 @@ LuoguLab 把 luogu.com.cn 装进一个自带的浏览器外壳里，并且是**�
 
 | 位置 | 说明 |
 |------|------|
-| `C:\Users\Administrator\Desktop\LuoguLab\` | **桌面成品（便携版）**，双击 `LuoguLab.exe` 直接运行 |
-| `C:\Users\Administrator\Desktop\LuoguLab\使用说明.txt` | 给最终用户的简短说明 |
-| `C:\Users\Administrator\.zcode\workspace\default\luogu-glass\` | 源码工程（开发主目录） |
-| `C:\Users\Administrator\LuoguGlassDev\` | 开发运行目录（含 `edist\electron.exe`），测试在此进行 |
+| `D:\workspace\luogu++\app\` | **部署产物（便携版）**，双击 `LuoguLab.exe` 直接运行 |
+| `D:\workspace\luogu++\app\使用说明.txt` | 给最终用户的简短说明 |
+| `D:\workspace\luogu++\repo\` | 源码工程（含 git 仓库，开发主目录） |
+| `D:\workspace\luogu++\dev\` | 开发运行目录（含 `edist\electron.exe`），探针测试在此进行 |
 
 ### 用户数据
 
@@ -585,7 +585,7 @@ v3.4.3 把站外页改原生后，用户反馈"deepseek 页面没有做到透明
 ## 六、架构与代码地图
 
 ```
-luogu-glass/
+D:\workspace\luogu++\repo\   # 源码根（GitHub 私有仓 luogu-plus）
 ├─ main.js              主进程：窗口 / 标签页 / 会话分区 / 注入调度 / 账号 /
 │                       书签-历史-下载 / 右键菜单 / 缩放 / 自测钩子
 ├─ preload-chrome.js    外壳层桥（onTabs/onUser/onAccounts/onConfig/onBookmarks/onDownloads/onPalette）
@@ -745,7 +745,7 @@ listToolbar / quickBox / problemBar                    ← 三个功能块是否
 7. **界面缩放只作用于外壳**。放大外壳不会同步通知主进程改页面视图边距，缩放比例较大时页面区与工具栏之间可能有轻微错位。默认 100% 无此问题。
 8. **难度徽章灰阶用的是宽松选择器**（`[class*="difficulty"]` 等）。若洛谷改了类名，该项会静默失效（不影响其它功能）。
 9. **硬杀进程会弄脏 cookie 库**（`taskkill /F`、超时强杀），导致下次启动洛谷会话被重置。正常关闭窗口不受影响。
-10. **下载不做"另存为"弹窗**，统一收进 `<下载>\LuoguLab\`，靠面板里的「打开」定位。这是刻意选择（避免每个小文件都弹一次窗）。
+10. **下载不做"另存为"弹窗**，统一收进 `<下载>\Luogu++\`，靠面板里的「打开」定位。这是刻意选择（避免每个小文件都弹一次窗）。
 11. 早先用户消息里有一句被截断的「同时我希望 c b」，一直没确认具体指什么，未做处理。
 
 ---
@@ -797,7 +797,7 @@ listToolbar / quickBox / problemBar                    ← 三个功能块是否
 
 ## 十、快速上手
 
-1. 双击 `C:\Users\Administrator\Desktop\LuoguLab\LuoguLab.exe`
+1. 双击 `D:\workspace\luogu++\app\LuoguLab.exe`
 2. 首次启动是「原色」模式 —— 洛谷长什么样就什么样，只是顶栏换成了应用的
 3. 按 `F2` 打开设置，按分组过一遍：
    - **页面美化**：想让它变成黑白线条风 → 页面配色切「亮色」；挑一套配色预设（推荐先试「宣纸」）；
