@@ -9,8 +9,8 @@
 # 显式传 --electron-version。
 set -e
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD=/c/Users/Administrator/LuoguLabBuild
-OUT=/c/Users/Administrator/LuoguLabPkg
+BUILD=/d/workspace/luogu++/build
+OUT=/d/workspace/luogu++/pkg
 PACKAGER="$SRC/node_modules/@electron/packager/bin/electron-packager.mjs"
 VERSION="$(grep -m1 '"version"' "$SRC/package.json" | sed 's/.*: *"\([^"]*\)".*/\1/')"
 [ -n "$VERSION" ] || { echo "cannot read version from package.json"; exit 1; }

@@ -7,8 +7,8 @@
 set -e
 NAME="$1"; shift
 OUTDIR="$1"; shift || true
-EXE="${LG_EXE:-C:/Users/Administrator/Desktop/LuoguLab/LuoguLab.exe}"
-ROOT=/c/Users/Administrator/LuoguGlassDev/probe
+EXE="${LG_EXE:-D:/workspace/luogu++/app/LuoguLab.exe}"
+ROOT=/d/workspace/luogu++/dev/probe
 PROF="$ROOT/pr-$NAME"
 REAL="$APPDATA/LuoguLab"
 mkdir -p "$PROF" "$OUTDIR"

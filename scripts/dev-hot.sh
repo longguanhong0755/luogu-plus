@@ -9,7 +9,7 @@
 # 只读拷贝过来（壁纸/主题色和日常实例一致），绝不写回真实 profile。
 set -e
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
-DEV=/c/Users/Administrator/LuoguGlassDev
+DEV=/d/workspace/luogu++/dev
 PROF="$DEV/dev-profile"
 bash "$SRC/scripts/sync-dev.sh"
 mkdir -p "$PROF"

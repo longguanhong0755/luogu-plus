@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# 把源码树同步到开发运行目录（C:\Users\Administrator\LuoguGlassDev）。
+# 把源码树同步到开发运行目录（D:\workspace\luogu++\dev）。
 # 运行目录必须在 workspace 之外——workspace 树内执行任何 exe 都会段错误。
 set -e
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
-DST=/c/Users/Administrator/LuoguGlassDev
+DST=/d/workspace/luogu++/dev
 mkdir -p "$DST/src/chrome" "$DST/src/settings" "$DST/src/history" "$DST/src/popup" "$DST/src/home" "$DST/src/dock"
 cp "$SRC/src/inject.js" "$SRC/src/inject.css" "$SRC/src/ext.css" "$SRC/src/material.css" "$SRC/src/material-lint.js" "$SRC/src/icons.js" "$DST/src/"
 cp "$SRC/src/chrome/"* "$DST/src/chrome/"
@@ -24,7 +24,7 @@ cp "$SRC/assets/"* "$DST/assets/"
 # 常驻热部署目标：桌面部署版的散文件目录（resources/app）。
 # 部署版由 resources/hot-apply.txt 进入热应用模式，这里同步后它的 watcher
 # 直接热生效（main.js/preload 由它自己拷回并自动重启，这里只是兜底对齐）。
-DEPLOY=/c/Users/Administrator/Desktop/LuoguLab/resources/app
+DEPLOY=/d/workspace/luogu++/app/resources/app
 if [ -d "$DEPLOY" ]; then
   mkdir -p "$DEPLOY/src/chrome" "$DEPLOY/src/settings" "$DEPLOY/src/history" "$DEPLOY/src/popup" "$DEPLOY/src/home" "$DEPLOY/src/dock" "$DEPLOY/assets"
   cp "$SRC/src/inject.js" "$SRC/src/inject.css" "$SRC/src/ext.css" "$SRC/src/material.css" "$SRC/src/material-lint.js" "$SRC/src/icons.js" "$DEPLOY/src/"
