@@ -407,6 +407,42 @@
      透明等于拆人家 UI（v3.4.2 的教训），没进名单的站外页一律原生渲染。 */
   var glassSite = extHttpPage && /^chat\.deepseek\.com$/i.test(location.hostname || "");
 
+  /* 站外"内容型页面"自动探测 —— 让站外页也有本应用统一的观感，而不是
+     "贴张壁纸就把人家页面染色"。判据只取可解释的结构信号，宁可不判不误判：
+       · 表单密集（登录/后台/交易/在线编辑器）→ 不碰
+       · 正文文本量不足（落地页/列表页/空壳）→ 不碰
+       · 应用型站点（github/notion/vercel/mail…）→ 不碰，它们的布局
+         天然依赖自己的底色
+     判中之后只做两件事：铺**静态**壁纸 + 给我们自己的增强层用同一套玻璃
+     语言。绝不清空人家底色、绝不给人家容器挂 backdrop-filter —— 那是
+     v3.4.2 的教训，会劫持 position:fixed 的包含块。 */
+  function detectAutoGlass() {
+    if (!extHttpPage) return false;
+    try {
+      var body = document.body;
+      if (!body) return false;
+      var forms = body.querySelectorAll(
+        "input, select, textarea, [contenteditable=''], [contenteditable='true']"
+      ).length;
+      if (forms > 6) return false; // 表单密集 = 后台/表单/编辑器
+      var ps = body.querySelectorAll("p, article, main, [role='article'], pre, blockquote, li");
+      var chars = 0;
+      for (var i = 0; i < ps.length && i < 80; i++) {
+        chars += (ps[i].textContent || "").replace(/\s+/g, " ").trim().length;
+      }
+      if (chars < 600) return false; // 内容量不足 = 落地页/列表页
+      if (/(^|\.)(github|gitlab|notion|figma|vercel|admin|console|mail|calendar|drive|docs)\./i
+          .test(location.hostname || "")) return false; // 应用型站点不透明化
+      var hasArticle = !!body.querySelector("article, [role='article'], main");
+      /* 有语义容器（article/main）直接算内容型；没有的话看正文体量。
+         门槛 1200 字而不是 1500：不少老站点没有 <article>/<main>（那是
+         HTML5 之后的习惯），但正文长度足够——按 1500 卡会把这类站全判成
+         "非内容型"，等于自动玻璃化对它们永远不生效。 */
+      return hasArticle || chars > 1200;
+    } catch (e) { return false; }
+  }
+  var autoGlass = false;   /* 真值在 apply() 里重算（外部站内容异步到达） */
+
   /* Ctrl+滚轮缩放：Chromium 在 Electron 里默认不做 ctrl+wheel 页面缩放、
      也不发 zoom-changed，所以在页面里拦 wheel（capture + preventDefault），
      转给主进程按当前标签步进。每次完整导航后本脚本重跑，监听跟着重建。 */
@@ -453,6 +489,11 @@
     state.cfg = cfg;
     var root = document.documentElement;
     var path = location.pathname;
+    /* 站外页是不是"内容型站点"**每次 apply 都重算**：外部站多是异步渲染
+       （骨架屏 → 内容），注入那一刻正文可能还没到，判成"内容量不足"就
+       再也不会玻璃化了。apply 在换路由、配置变更、巡检发现 URL 变了时
+       都会重跑，重算即可跟上。 */
+    if (extHttpPage) autoGlass = detectAutoGlass();
 
     // IDE 页特殊处理：Monaco 自带完整配色，强行套主题/滤镜会导致色彩错乱。
     // R38：题目页自带的「进入 IDE 模式」（页面内分屏，URL 还是 /problem/xxx）也算
@@ -474,6 +515,9 @@
     root.setAttribute("data-lg-ext", isLuoguPage ? "0" : "1");
     root.setAttribute("data-lg-local", extHttpPage ? "0" : "1");
     root.setAttribute("data-lg-glasssite", glassSite ? "1" : "0");
+    /* 自动探测命中的内容型站外页：铺静态壁纸 + 淡玻璃底（ext.css 消费）。
+       白名单站（glassSite）另走令牌重定义那套更彻底的路。 */
+    root.setAttribute("data-lg-glassauto", autoGlass ? "1" : "0");
     /* 玻璃站的明暗：读人家**正文色**判断（我们只动背景，正文色永远是人家自己的，
        不受透明化影响）——浅色站配浅色玻璃、深色站配深色玻璃，跟人家主题走。
        这个判定同时决定下面 resolved 的取值（玻璃变量与洛谷页同源同算法）。 */
@@ -550,13 +594,17 @@
     s.setProperty("--lg-radius", clampNum(cfg.radius, 0, 24, 8) + "px");
     // 壁纸：只要用户显式选过就铺（否则"设了壁纸却看不到"会被当成 bug）。
     // 原色模式只是不去动颜色，但用户自己挑的壁纸必须兑现。IDE 页除外。
-    // 站外 http(s) 页默认什么都不铺（视频、静态都不铺，连壁纸层元素都不建）：
-    // 人家的层色是自己画的半透明色（DeepSeek 浅色主题整叠 rgba 白），本该坐在
-    // 人家不透明的底色上；而我们 z-index:-1 的壁纸层恰好垫在"画布"之上——
-    // body 背景会上传播到画布、画在负 z 层之下——乱垫壁纸整页就透成筛子。
-    // 白名单玻璃站（glassSite）除外：配好可读的令牌透明度再垫壁纸（ext.css）。
+    // 站外 http(s) 页默认不铺：人家的层色是自己画的半透明色（DeepSeek 浅色
+    // 主题整叠 rgba 白），本该坐在人家不透明的底色上；而我们 z-index:-1 的
+    // 壁纸层恰好垫在"画布"之上——body 背景会上传播到画布、画在负 z 层之下——
+    // 乱垫壁纸整页就透成筛子。
+    // 两个例外：
+    //   ① 白名单玻璃站（glassSite）：配好可读的令牌透明度再垫壁纸（ext.css）。
+    //   ② 自动探测命中的内容型站外页（autoGlass）：铺**静态**壁纸 + 淡玻璃底，
+    //      让站外页也有统一的观感；视频壁纸仍然不铺（动态底 + 人家页面更乱）。
     var bgVideo = !!cfg.wallpaperIsVideo && !!cfg.wallpaperUrl && !ideNative && !extHttpPage;
-    var wall = ideNative || bgVideo || (extHttpPage && !glassSite) ? "none" : wallpaperUrl(cfg);
+    var wall = ideNative || bgVideo || (extHttpPage && !glassSite && !autoGlass)
+      ? "none" : wallpaperUrl(cfg);
     s.setProperty("--lg-wall-image", wall);
     applyWallpaperImage(wall);
     /* 壁纸参数（模糊/压暗）由主进程 wallpaperPayload() 一次算好（与外壳同一
@@ -602,12 +650,10 @@
     /* 玻璃皮肤：页面卡片折射背后的壁纸，和外壳层用同一套语言 */
     var glass = cfg.glass === "liquid" ? "liquid" : "flat";
     root.setAttribute("data-lg-glass", glass);
-    /* 面材质扫描跟随皮肤切换：开玻璃→重扫贴上，关玻璃→把贴过的类摘干净 */
-    if (isLuoguPage) {
-      setTimeout(function () { sweepGlassSurfaces(); }, 60);
-    } else {
-      try { unglassAll(); } catch (e) {}
-    }
+    /* 面材质扫描跟随皮肤切换：开玻璃→重扫贴上，关玻璃→把贴过的类摘干净。
+       两种策略（洛谷页 / 站外页）都收敛到能力注册表，enable/mount/unmount
+       只在状态翻转时触发——下面那句巡检可以随便重复调。 */
+    setTimeout(syncAdapters, 60);
     /* 材质变量恒下发：玻璃皮肤吃 glassLight/Dark（主进程 glassVars 推导），
        素面皮肤吃 glassFlatLight/Dark（同一张映射的"无模糊、无高光"版）。
        与外壳 --glass-* 是同一份值——页面不再本地推导、更不手写
@@ -2050,7 +2096,7 @@
       /* 面材质巡检：Vue 异步渲染常整块换 DOM 而没触发可见的属性变化，
          observer 会漏；每第 12 拍（约 30s，R41 从 5 拍放宽）全量补扫一次，
          新增节点的即时补扫由 MutationObserver（250ms 去抖）负责 */
-      if (glassTick % 12 === 0) sweepGlassSurfaces();
+      if (glassTick % 12 === 0) sweepLuoguFaces();
       /* 列表工具也要巡检：apply 只在注入/换路由时跑一遍，洛谷的列表是
          Vue 异步渲染，那一遍常常早于筛选行与表格——功能块就此错过整页。
          两个 setup 都是幂等的（已挂载立即返回），巡检拿来兜底重挂载与难度自学习。 */
@@ -2058,6 +2104,16 @@
       if (/\/(problem|training|contest|record)\/list/.test(lp) || /^\/problem\/?$/.test(lp)) {
         if (document.documentElement.getAttribute("data-lg-listtools") === "1") setupListTools();
         if (document.documentElement.getAttribute("data-lg-quicksearch") === "1") setupQuickSearch();
+      }
+    } else if (extHttpPage) {
+      /* 站外页巡检：外部站多为异步渲染，注入时正文还没到齐，"是不是内容型
+         站点"的判定也会随后翻转（先判否、正文到了改判是）。所以这里重算
+         判定 + 重设作用域属性，再让注册表自己 diff（状态没翻转它就不动手，
+         多跑几遍无副作用）。 */
+      if (glassTick % 6 === 0) {
+        autoGlass = detectAutoGlass();
+        document.documentElement.setAttribute("data-lg-glassauto", autoGlass ? "1" : "0");
+        syncAdapters();
       }
     }
     // SPA 前进后退后重新挂载功能块（壁纸层被移除由 MutationObserver 补回）
@@ -2167,18 +2223,15 @@
     if (pseudoVeil(el, "::before") || pseudoVeil(el, "::after")) el.classList.add("lg-noveil");
     el.__lgGlassTag = soft ? "lg-glass-soft" : "lg-glass";
   }
-  function sweepGlassSurfaces(rootEl) {
+  function sweepLuoguFaces(rootEl) {
     /* 两种皮肤都扫：扫出来的面消费的是同一组变量——flat 拿到的就是素面
        （纯色 + 细线），liquid 拿到玻璃。以前只在 liquid 下扫，flat 用户的
-       站点面板就只能保持站点自己的实心色，"里面实心、外面素面"两回事。 */
-    if (!isLuoguPage) return;
-    /* IDE 页"保持原生"（R37）：Monaco 那类不透明深色面以前会被扫成 .lg-glass
-       （挂上 backdrop-filter + 半透明卡片）——用户截图里"壁纸透过深色模糊"的
-       编辑器就是它。原生模式下一个面都不许动；已经贴上的类顺手摘干净。 */
-    if (document.documentElement.getAttribute("data-lg-ide") === "1") {
-      if (document.querySelector(".lg-glass,.lg-glass-soft,.lg-noveil")) unglassAll();
-      return;
-    }
+       站点面板就只能保持站点自己的实心色，"里面实心、外面素面"两回事。
+
+       「是不是洛谷页」「IDE 页要不要动」两件事都已上移到能力注册表的
+       enable() 里（见 GLASS_ADAPTERS）——这里只管扫不扫，不再自己判断
+       自己该不该跑。这正是注册表要解决的分心：判定散落在各处，越加能力
+       越难推理谁在什么条件下动页面。 */
     var root = rootEl && rootEl.nodeType === 1 ? rootEl : document.body;
     if (!root) return;
     glassifyOne(root);
@@ -2193,6 +2246,161 @@
       els[i].__lgGlassTag = null;
     }
   }
+
+  /* ---------- 站外页自动玻璃（.lg-gx）----------
+     「自动把网页转换成网页玻璃质感」：站外页的卡片 / 面板 / 容器被换成
+     我们的玻璃面，与外壳、洛谷页同一套配方同一份变量。
+     站点不是自己的，所以挑面比洛谷页保守得多：
+       · 必须有**自己的实心底色**（alpha ≥ 0.5）且是中性色
+         ——彩色面不碰（玻璃化会把人家的配色语义洗掉）
+       · 尺寸像个卡片（宽 ≥160、高 ≥60），且不超过视口一半
+         ——太大的容器不玻璃化（整页发虚，反而看不清）
+       · 不是 fixed/sticky（自己会飘的面不给它加模糊）
+       · 不是表单控件 / 表格单元 / 代码块 / 导航条 / 页脚
+     ⚠️ 关键：**内部含 position:fixed 后代的容器不给挂 backdrop-filter**
+     ——backdrop-filter 会成为 fixed 后代的包含块，人家页面里到处是吸顶
+     导航、悬浮按钮、弹层，挂上去就整体错位（v3.4.2 教训）。这类容器改
+     走 .lg-gx-noblur：半透明底 + 发丝线，观感仍是玻璃面，但不劫持包含块。 */
+  var EXT_GLASS_TAGS = { DIV: 1, SECTION: 1, ARTICLE: 1, ASIDE: 1, MAIN: 1, FIGURE: 1, DETAILS: 1, BLOCKQUOTE: 1, DL: 1 };
+  /* 页面里的 fixed 元素清单：backdrop-filter 劫持包含块的影响面就靠它判断。
+     每 2 秒最多重算一次（站外页多为静态页，不需要更勤）。 */
+  var extFixedCache = { list: [], at: 0 };
+  function extFixedList() {
+    var now = Date.now();
+    if (now - extFixedCache.at < 2000 && extFixedCache.list.length) return extFixedCache.list;
+    var list = [];
+    var all = document.querySelectorAll("body *");
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.__lgFx === 1) continue;
+      if (getComputedStyle(el).position === "fixed") { list.push(el); el.__lgFx = 1; }
+    }
+    extFixedCache = { list: list, at: now };
+    return list;
+  }
+  function hasFixedInside(el, list) {
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] !== el && el.contains(list[i])) return true;
+    }
+    return false;
+  }
+  function glassifyExtOne(el) {
+    if (!el || el.__lgGx) return;
+    if (!EXT_GLASS_TAGS[el.tagName]) return;
+    /* 交互控件与正文承载面不碰：玻璃化它们会既难看又难点 */
+    if (el.matches("input,textarea,select,button,code,pre,table,tr,td,th,li,summary,nav,header,footer")) return;
+    /* 表单区不玻璃化：里面有 input/textarea/select 的容器，玻璃化会让输入
+       区发虚、也让人家的下拉与校验浮层更难看清（按**内容**判，不按标签名
+       ——人家常用 div 包表单，标签名靠不住）。 */
+    if (el.querySelector("input,textarea,select")) return;
+    var r = el.getBoundingClientRect();
+    if (r.width < 160 || r.height < 60) return;
+    var vw = window.innerWidth || 1200, vh = window.innerHeight || 800;
+    if (r.width * r.height > vw * vh * 0.55) return;
+    var st = getComputedStyle(el);
+    if (st.display === "none" || st.visibility === "hidden" || +st.opacity < 0.08) return;
+    if (st.position === "fixed" || st.position === "sticky") return;
+    var img = String(st.backgroundImage || "");
+    if (img.indexOf("url(") === 0) return;  /* 图片面不当玻璃（会盖掉人家的图） */
+    var bg = firstRgba(st.backgroundColor);
+    if (!bg || bg.a < 0.5) return;         /* 必须有自己的实心底色 */
+    if (!neutralish(bg)) return;             /* 彩色面不碰 */
+    /* 正文承载面不玻璃化：长文容器（文章正文、评论区）保持站点自己的底色，
+       可读性最好——玻璃是给"卡片/面板"用的，不是给整篇文章用的。
+       两条信号：内部有多段正文（≥3 个 <p>），或自身文字量过大。
+       textContent 不触发布局（比 innerText 便宜），且放在最后一步：前面的
+       条件已经把绝大多数没有实心底色的容器筛掉了。 */
+    if (el.querySelectorAll("p").length >= 3) return;
+    if ((el.textContent || "").length > 500) return;
+    var blur = !hasFixedInside(el, extFixedList());
+    el.classList.add(blur ? "lg-gx" : "lg-gx-noblur");
+    el.__lgGx = blur ? "blur" : "noblur";
+  }
+  function sweepExtGlass(rootEl) {
+    if (!extHttpPage || !autoGlass) return;
+    /* 页面里若有 background-attachment: fixed 的元素，就整页不做玻璃。
+       fixed 背景与 backdrop-filter 叠在一起会让 Chromium 陷入长任务——
+       实测：给测试页加一条 fixed 渐变底后，页面的 captureScreenshot 直接
+       超时、渲染被卡死（纯色底时一切正常）。这种页面宁可保持原样：
+       「页面能动」比「页面好看」重要。 */
+    if (hasFixedBackground()) return;
+    var root = rootEl && rootEl.nodeType === 1 ? rootEl : document.body;
+    if (!root) return;
+    var all = root.querySelectorAll("div,section,article,aside,main,figure,details,blockquote,dl");
+    /* 数量上限：backdrop-filter 每贴一个面就多一份合成开销，页面很"碎"
+       （一堆小卡片）时可能贴出几十个，滚动会明显变卡。超过上限就停——
+       前面的通常是页面上方最重要的卡片。 */
+    var budget = 40;
+    for (var i = 0; i < all.length && i < 400 && budget > 0; i++) {
+      if (all[i].__lgGx) continue;
+      glassifyExtOne(all[i]);
+      if (all[i].__lgGx) budget--;
+    }
+  }
+  /* fixed 背景探测（结果缓存 5 秒：整页 getComputedStyle 不便宜） */
+  var extFixedBgCache = { hit: false, at: 0 };
+  function hasFixedBackground() {
+    var now = Date.now();
+    if (now - extFixedBgCache.at < 5000) return extFixedBgCache.hit;
+    var hit = false;
+    var all = document.querySelectorAll("body, body *");
+    for (var i = 0; i < all.length && i < 300; i++) {
+      if (getComputedStyle(all[i]).backgroundAttachment === "fixed") { hit = true; break; }
+    }
+    extFixedBgCache = { hit: hit, at: now };
+    return hit;
+  }
+  /* 撤销：摘类即可，页面自己的样式一行没改过（可逆是这套方案的前提） */
+  function unglassExt() {
+    var els = document.querySelectorAll(".lg-gx,.lg-gx-noblur");
+    for (var i = 0; i < els.length; i++) {
+      els[i].classList.remove("lg-gx", "lg-gx-noblur");
+      els[i].__lgGx = null;
+    }
+  }
+
+  /* ---------- 能力注册表（adapter registry）----------
+     "把页面换成玻璃"现在有两种策略：洛谷页宽松扫（自己的站）、站外页
+     严格扫（别人的站）。之前是两套平行函数，启停条件散落在 apply() 与
+     2.5s 巡检里各写一遍，加第三种能力就得再抄一遍这套 if/else——
+     分心且难推理。现在统一成注册表：
+       enable()   现在该不该对这个页面做这件事（纯判定，可反复调用）
+       mount()    挂上（贴类）
+       unmount()  撤销（摘类）
+     syncAdapters() 只在"状态翻转"的那一次动手（diff 后再调），所以巡检
+     可以随便多跑，不会重复贴类，也不会漏掉撤场。 */
+  var GLASS_ADAPTERS = [
+    {
+      id: "lg-face",
+      enable: function () {
+        if (!isLuoguPage) return false;
+        /* IDE 页"保持原生"（R37）：Monaco 那类不透明深色面以前会被扫成
+           .lg-glass（挂上 backdrop-filter + 半透明卡片）——用户截图里
+           "壁纸透过深色模糊"的编辑器就是它。原生模式下一个面都不许动。 */
+        return document.documentElement.getAttribute("data-lg-ide") !== "1";
+      },
+      mount: function () { sweepLuoguFaces(); },
+      unmount: function () { unglassAll(); }
+    },
+    {
+      id: "ext-face",
+      enable: function () {
+        return extHttpPage && autoGlass && state.cfg.autoGlass !== false;
+      },
+      mount: function () { sweepExtGlass(); },
+      unmount: function () { unglassExt(); }
+    }
+  ];
+  var adaptersOn = {};
+  function syncAdapters() {
+    for (var i = 0; i < GLASS_ADAPTERS.length; i++) {
+      var a = GLASS_ADAPTERS[i];
+      var want = false;
+      try { want = !!a.enable(); } catch (e) { want = false; }
+      if (want && !adaptersOn[a.id]) { adaptersOn[a.id] = 1; try { a.mount(); } catch (e) {} }
+      else if (!want && adaptersOn[a.id]) { delete adaptersOn[a.id]; try { a.unmount(); } catch (e) {} }
+    }
+  }
   var glassSweepTimer = null;
   var glassDirty = [];
   function queueGlass(node) {
@@ -2203,7 +2411,7 @@
       glassSweepTimer = null;
       var batch = glassDirty;
       glassDirty = [];
-      for (var i = 0; i < batch.length; i++) sweepGlassSurfaces(batch[i]);
+      for (var i = 0; i < batch.length; i++) sweepLuoguFaces(batch[i]);
     }, 250);
   }
   /* 推广卡也吃同一批 DOM 变化（R37）：右栏那张卡是 Vue 异步渲染出来的，
@@ -2285,7 +2493,10 @@
     ideInPageQueue(); // 编辑器容器是 Vue 异步插进来的：DOM 一变就复核 IDE 模式
   });
   // 调试出口：探针/实测可以直接触发一次全量扫面看结果
-  window.__lgGlassSweep = sweepGlassSurfaces;
+  /* 探针接口：暴露**注册表同步**而不是某一个扫描函数——探针看到的是
+     "当前该启用的能力都启用了吗"，而不是"洛谷那套扫没扫"。新增能力
+     不必再改探针。 */
+  window.__lgGlassSweep = syncAdapters;
 
   // SPA/动态渲染兜底：背景层若被页面脚本移除则自动补回。只补一个空 div 不够
   // （R39）——视频子元素、图片样式、几何都得跟着回来，所以补完立刻重跑一次
@@ -2301,8 +2512,8 @@
       mo.observe(document.body, { childList: true });
       glassObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
       // 首屏与异步渲染各扫一遍；液态玻璃皮肤下才动手
-      setTimeout(function () { sweepGlassSurfaces(); }, 400);
-      setTimeout(function () { sweepGlassSurfaces(); }, 1800);
+      setTimeout(function () { sweepLuoguFaces(); }, 400);
+      setTimeout(function () { sweepLuoguFaces(); }, 1800);
     } else setTimeout(startObserve, 200);
   }
   startObserve();

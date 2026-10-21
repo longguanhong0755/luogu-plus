@@ -147,16 +147,27 @@ const DEFAULT_CONFIG = {
   wallpaperDim: 0,
   /* 面不透明度：flat 皮肤唯一一颗滑杆，栏、卡片、面板、内块全用这一个值
      （v6 起合并了旧的 barAlpha/cardAlpha 两颗——同一屏里栏与卡片两种浓度
-     就是"内外质感不一样"的直接来源）。旧键只作迁移输入，不再参与材质。 */
+     就是"内外质感不一样"的直接来源）。
+     旧键 barAlpha/cardAlpha **只作迁移输入**，绝不能留在 DEFAULT_CONFIG：
+     留着就会被 {…DEFAULT_CONFIG, …raw} 合并进 cfg，于是
+     `cfg.faceAlpha == null` 永远为假 → v5→v6 迁移分支成了死代码，
+     老用户自己调过的面浓度被静默重置为默认值，且这段代码还留在那儿
+     给后人错觉。迁移完会在同一段里 delete 掉这两个键。 */
   faceAlpha: 0.92,
-  barAlpha: 1,
-  cardAlpha: 0.92,
   blur: 26,
   radius: 8,
   clean: true,
   frameless: true,
   contentDesat: 0,
   uiScale: 1,
+  /* 每站独立缩放（Edge 语义：某个站放大过，下次去这个站还是那个倍数）。
+     键是域名，值是倍率；倍率回到 1 时删掉该条（不留"曾经 1.0"的垃圾）。 */
+  zoomByOrigin: {},
+  /* 站外页自动玻璃：把别的网站上的卡片/面板自动换成我们的玻璃面。
+     只对**自动探测判定为内容型**的页面生效（表单密集/应用型站点不碰），
+     且内部含 position:fixed 后代的容器不给挂 backdrop-filter（会劫持
+     fixed 包含块，v3.4.2 教训）——那种容器只给半透明底 + 发丝线。 */
+  autoGlass: true,
   ideNative: true,
   mappings: {},
   /* 页面配色：auto=跟随全应用统一明暗（唯一支持的语义）。v3.5.1 起"原色/亮/暗"
@@ -212,6 +223,9 @@ const DEFAULT_CONFIG = {
   searchCustom: "",
   /* 下载：true=每次弹原生"另存为"；false（默认）=统一存到「下载/Luogu++」 */
   dlAsk: false,
+  /* 下完弹系统通知（Edge 行为：通知中心有一条，点一下定位到下载项）。
+     关掉后只更新下载面板，不打扰。 */
+  downloadNotify: true,
   /* 翻译服务：bing=Edge 同款免费接口（默认，国内可用）/ custom=自定义 GET 模板 */
   translateProvider: "bing",
   translateCustom: "",
@@ -445,17 +459,22 @@ function materialVars(mode) {
   const t = faceTint;
   const line = "rgba(" + inkRgb.join(", ") + ", " + (light ? 0.14 : 0.22) + ")";
   /* 素面（flat / 线条素面）：面 = 纯色（同源 faceTint）+ 一颗"面不透明度"，
-     无模糊、无高光、无投影。四个层级全部同值（栏、卡片、面板、内块），
-     只有正文承载面（glassSolid）加厚一小档保可读。 */
+     无模糊、无高光、无投影。
+     四个层级曾**全部同值**（栏、卡片、面板、内块都是 face）——层级差为 0，
+     界面上所有面颜色一模一样，只剩 1px 发丝线区分，看上去就是"一堆纸片"。
+     现在给四档**各自可辨但依然接近**的浓度：底最淡 → 次级底 → 卡片 →
+     内块比卡片更淡（内块是卡片里的次级块），正文承载面最实。
+     幅度刻意压得很小（±0.04），守住"素面"的通透感，不做成液态玻璃那种
+     明显的层差。下限用 Math.max 兜住，face 被用户调到 0.3 时不会算出负值。 */
   if (cfg.glass !== "liquid") {
     const face = clampNum(cfg.faceAlpha, 0.3, 1, 0.92);
-    const faceC = "rgba(" + t + ", " + A(face) + ")";
+    const faceC = (a) => "rgba(" + t + ", " + A(a) + ")";
     return {
-      glassBg: faceC,
-      glassBg2: faceC,
-      glassCard: faceC,
-      glassSoft: faceC,
-      glassSolid: "rgba(" + t + ", " + A(Math.min(1, face + 0.06)) + ")",
+      glassBg: faceC(Math.max(0.18, face - 0.04)),
+      glassBg2: faceC(Math.max(0.2, face - 0.02)),
+      glassCard: faceC(face),
+      glassSoft: faceC(Math.max(0.16, face - 0.06)),
+      glassSolid: faceC(Math.min(1, face + 0.06)),
       glassLine: line,
       glassHi: "rgba(255, 255, 255, 0)",
       glassSheen: "rgba(255, 255, 255, 0)",
@@ -532,7 +551,13 @@ function wallParams() {
    custom 用用户模板（必须含 %s）；洛谷引擎保持站内导航（锁域），其余引擎
    一律开站外共享会话的新标签。 */
 const SEARCH_ENGINES = {
-  luogu: { name: "洛谷", url: "https://www.luogu.com.cn/search?keyword=%s" },
+  /* 洛谷的站内搜索路径 /search?keyword= 已下线：请求返回的是洛谷自己的
+     "出错了 / 该页面未找到"页（HTTP 仍是 200，肉眼像正常页面）。而
+     searchEngine 的默认值就是 luogu —— 任何非题号/非 URL 的搜索（中文词、
+     算法名、题面关键词）全部走进死路，失败信息还伪装成洛谷自己的错。
+     /problem/list?keyword= 才是现在能返回真实题目列表的路径（实测：
+     同关键词前者返回"该页面未找到"，后者返回 48 个题目链接）。 */
+  luogu: { name: "洛谷", url: "https://www.luogu.com.cn/problem/list?keyword=%s" },
   bing: { name: "必应", url: "https://www.bing.com/search?q=%s" },
   baidu: { name: "百度", url: "https://www.baidu.com/s?wd=%s" },
   google: { name: "Google", url: "https://www.google.com/search?q=%s" },
@@ -713,8 +738,20 @@ function readJsonSafe(file, fallback, label) {
   }
 }
 
+/* 原子写的临时文件名必须**每次调用都唯一**。
+   曾经两条链共用 `file.tmp-<pid>`：异步链正在往 tmp 里写时，退出路径的
+   saveConfigSync() 用同一个名字同步写并 rename —— 同步的先把这个 tmp 移走，
+   异步的 fd 于是对着"已经改名成了正式文件"的句柄继续写，内容交错 → 下次
+   启动读到损坏的配置（.corrupt 备份 → 回退全默认），异步的 rename 还会
+   ENOENT 凭空弹一条"配置 写入失败"。窗口小但真实。
+   现在 tmp 名带自增序号，两条链永远撞不上。 */
+let writeSeq = 0;
+function tmpPathFor(file) {
+  return file + ".tmp-" + process.pid + "-" + (++writeSeq);
+}
+
 function writeTextAtomicSync(file, text) {
-  const tmp = file + ".tmp-" + process.pid;
+  const tmp = tmpPathFor(file);
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(tmp, text, "utf8");
@@ -728,7 +765,7 @@ function writeTextAtomicSync(file, text) {
 }
 
 function writeTextAtomic(file, text) {
-  const tmp = file + ".tmp-" + process.pid;
+  const tmp = tmpPathFor(file);
   return fs.promises
     .mkdir(path.dirname(file), { recursive: true })
     .then(() => fs.promises.writeFile(tmp, text, "utf8"))
@@ -796,10 +833,23 @@ function loadConfig() {
   // v5 → v6 迁移：两颗不透明度合并成一颗"面不透明度"。老配置里用户调过的
   // 卡片值优先（那是页面卡片的浓度），没调过就退栏值；此后栏、卡片、面板、
   // 内块全吃这一个值，内外不再有两种浓度。
-  if (cfg.faceAlpha == null || !isFinite(Number(cfg.faceAlpha))) {
-    cfg.faceAlpha = cfg.cardAlpha != null ? cfg.cardAlpha : cfg.barAlpha != null ? cfg.barAlpha : 0.92;
+  /* 判定必须看 **raw**（磁盘上的原始配置）而不是合并后的 cfg：
+     DEFAULT_CONFIG 里若留着 cardAlpha/barAlpha，合并后 cfg.faceAlpha 永远
+     非 null → 这段迁移成了死代码，老用户调过的浓度被静默重置。
+     现在默认配置里已删掉那两把键，raw 有 faceAlpha 就用它，没有才回退。 */
+  const rawFace = raw && typeof raw === "object" ? raw.faceAlpha : undefined;
+  if (rawFace == null || !isFinite(Number(rawFace))) {
+    const rawCard = raw && typeof raw === "object" ? raw.cardAlpha : undefined;
+    const rawBar = raw && typeof raw === "object" ? raw.barAlpha : undefined;
+    cfg.faceAlpha = rawCard != null && isFinite(Number(rawCard)) ? Number(rawCard)
+      : rawBar != null && isFinite(Number(rawBar)) ? Number(rawBar)
+      : 0.92;
   }
   cfg.faceAlpha = clampNum(cfg.faceAlpha, 0.3, 1, 0.92);
+  /* 两把旧键到此为止：留在 cfg 里会被 saveConfig 一直写回去，成为永远清不掉的
+     死数据（每个新装的用户都会带着它们）。 */
+  if ("cardAlpha" in cfg) delete cfg.cardAlpha;
+  if ("barAlpha" in cfg) delete cfg.barAlpha;
   /* v6 → v7 迁移：「工作区」功能整体删除（用户要求，配置里本来也是空的）。
      旧配置的 workspaces 字段在这里丢掉，配合下面的版本判定会落盘抹掉——
      不 delete 的话它会一直被 saveConfig 写回去，成为一段看不见的死数据。 */
@@ -970,12 +1020,14 @@ function readAsset(name) {
 let INJECT_CSS = readAsset("inject.css");
 let EXT_CSS = readAsset("ext.css");
 let MATERIAL_CSS = readAsset("material.css");
+let COMMON_CSS = readAsset("common.css");
 let INJECT_JS = readAsset("inject.js");
 function reloadInjectAssets() {
   try {
     INJECT_CSS = fs.readFileSync(path.join(__dirname, "src", "inject.css"), "utf8");
     EXT_CSS = fs.readFileSync(path.join(__dirname, "src", "ext.css"), "utf8");
     MATERIAL_CSS = fs.readFileSync(path.join(__dirname, "src", "material.css"), "utf8");
+    COMMON_CSS = fs.readFileSync(path.join(__dirname, "src", "common.css"), "utf8");
     INJECT_JS = fs.readFileSync(path.join(__dirname, "src", "inject.js"), "utf8");
     return true;
   } catch (e) {
@@ -983,11 +1035,14 @@ function reloadInjectAssets() {
     return false;
   }
 }
-/* 页面侧样式 = 材质文件 + 站点样式，字节级同一份文本。
+/* 页面侧样式 = 材质文件 + 通用增强 + 站点样式，字节级同一份文本。
    材质（面配方 / 壁纸层 / 别名）只存在 material.css 这一个文件里，
-   页面与外壳、弹层加载的是同一份内容——没有构建步骤，也就没有第二份拷贝。 */
+   页面与外壳、弹层加载的是同一份内容——没有构建步骤，也就没有第二份拷贝。
+   COMMON_CSS 是**站点无关**的那部分（阅读模式 / 整页翻译 / 代码复制 / 视口
+   裁剪壳）：以前它们住在 inject.css 里，而 inject.css 只注入洛谷站，于是
+   站外页触发这些能力时建出的是一堆没样式的裸元素。现在无条件拼上。 */
 function stylesFor(ext) {
-  return MATERIAL_CSS + "\n" + (ext ? EXT_CSS : INJECT_CSS);
+  return MATERIAL_CSS + "\n" + COMMON_CSS + "\n" + (ext ? EXT_CSS : INJECT_CSS);
 }
 
 /* ============================================================
@@ -1187,6 +1242,13 @@ async function injectInto(wc) {
     // tabActive 按标签给：视频壁纸只让前台那份解码，页面自己判断不了前后台
     let isActive = true;
     for (const [tid, t] of tabs) {
+      /* t.view 可能是 null：标签被休眠时（makeSleeping 置空）会走到这里。
+         不判空 → TypeError 冒泡到本函数最外层的 catch，抛错点恰好在下面
+         apply() 之前 —— 于是这一页这次拿不到主题/壁纸/材质，__lgInjected
+         也不置位（每次加载都重跑全量注入，首屏闪一下）。
+         memSleep 默认开、tabSleep 默认 30 分钟，用户自己就能踩到。
+         正确的判空范式在同文件 1704 行（!t || !t.view || ...isDestroyed()）。 */
+      if (!t.view) continue;
       if (t.view.webContents === wc) { isActive = tid === activeTabId; break; }
     }
     await wc.executeJavaScript(
@@ -1202,6 +1264,7 @@ async function injectInto(wc) {
     /* 换文档后页面丢掉了上次的视图矩形：这里补推一次（否则壁纸层要等下一次
        layout 才和外壳对齐——首屏在分屏/抽屉下会错位） */
     for (const [, tt] of tabs) {
+      if (!tt.view) continue; // 同上：休眠标签的 view 是 null
       if (tt.view.webContents === wc) { pushViewRect(tt, true); break; }
     }
     // 本文档已完整注入：did-finish-load 只补轻量 apply，不再拔插 CSS
@@ -2811,6 +2874,12 @@ function wirePageView(id, view) {
     if (wc.isDestroyed()) return;
     refreshNavMeta(id);
     const meta = tabs.get(id);
+    /* 每站独立缩放：到了这个站就恢复它自己的倍率（用户没为这个站设过就
+       保持 1，不动）。恢复时不写回记忆（否则会覆盖用户设的值）。 */
+    const zMem = zoomForOrigin(wc.getURL());
+    if (zMem && meta && Math.abs((meta.zoom || 1) - zMem) > 0.001) {
+      setZoom(meta, zMem, false);
+    }
     const isLocal = meta && (isLocalKind(meta.kind) || wc.getURL().startsWith("file:"));
     // 本地页（设置/首页/历史）也要注入：壁纸玻璃层对它们一样成立，只是
     // inject.js 会按页面类型跳过洛谷专属的清扫逻辑（见 apply() 开头的分流）。
@@ -3840,13 +3909,41 @@ function installAccelerators() {
 
 /* ---------- 页面缩放（浏览器语义：每标签各自一份） ---------- */
 const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
-function setZoom(t, z) {
+/* 每站独立缩放：按域名记住倍率（Edge 的行为——在某个站放大过，下次回到
+   那个站还是那个倍数，不必每个标签重按一遍）。存 cfg.zoomByOrigin，跨会话
+   有效。倍率回到 1 就删掉这一条，不留"曾经是 1.0"的垃圾数据。 */
+function originKeyOf(url) {
+  try { return new URL(String(url || "")).hostname || ""; } catch (e) { return ""; }
+}
+function zoomMap() {
+  return cfg.zoomByOrigin && typeof cfg.zoomByOrigin === "object" ? cfg.zoomByOrigin : {};
+}
+function rememberZoomFor(t) {
+  if (!t) return;
+  const k = originKeyOf(t.url);
+  if (!k) return;
+  const m = zoomMap();
+  const cur = t.zoom || 1;
+  if (Math.abs(cur - 1) < 0.001) delete m[k];
+  else m[k] = cur;
+  cfg.zoomByOrigin = m;
+  scheduleSaveConfig();
+}
+function zoomForOrigin(url) {
+  const k = originKeyOf(url);
+  if (!k) return null;
+  const v = zoomMap()[k];
+  return typeof v === "number" && v > 0.25 && v <= 3 ? v : null;
+}
+function setZoom(t, z, remember) {
   t.zoom = z;
-  try { t.view.webContents.setZoomFactor(z); } catch {}
+  try { if (t.view && !t.view.webContents.isDestroyed()) t.view.webContents.setZoomFactor(z); } catch {}
   /* 缩放变了 → 壁纸的反向补偿系数（--lg-zoom）要跟着更新：立刻推一次，
      渲染器真正应用缩放后再补一次（setZoomFactor 是异步生效的）。 */
   try { pushViewRect(t, true); } catch {}
   setTimeout(() => { try { pushViewRect(t, true); } catch {} }, 180);
+  /* 只有**用户主动**缩放才写进每站记忆；导航时按记忆恢复不能反过来覆盖记忆 */
+  if (remember) rememberZoomFor(t);
   pushTabs();
 }
 /* dir: +1 放大 / -1 缩小。菜单加速器作用于活动标签；Ctrl+滚轮的
@@ -3857,7 +3954,7 @@ function zoomStepTab(t, dir) {
   const cur = t.zoom || 1;
   let i = ZOOM_STEPS.indexOf(cur);
   if (i < 0) i = ZOOM_STEPS.indexOf(1);
-  setZoom(t, ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))]);
+  setZoom(t, ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, i + dir))], true);
 }
 function zoomStep(dir) {
   zoomStepTab(tabs.get(activeTabId), dir);
@@ -4806,10 +4903,14 @@ ipcMain.on("lg-app:ide-mode", (e, on) => {
 ipcMain.handle("lg-app:zoom", (_e, dir) => {
   let t = null;
   for (const [, tab] of tabs) {
+    /* tab.view 可能是 null（标签被休眠，makeSleeping 置空）——不判空就是
+       TypeError，页面侧收到 reject，缩放毫无反应。 */
+    if (!tab.view) continue;
     if (tab.view.webContents === _e.sender) { t = tab; break; }
   }
+  if (!t) return { ok: false, reason: "no-tab" };
   zoomStepTab(t, dir > 0 ? 1 : -1);
-  return { ok: true, zoom: t ? t.zoom || 1 : null };
+  return { ok: true, zoom: t.zoom || 1 };
 });
 
 /* ============================================================
@@ -4822,14 +4923,68 @@ ipcMain.handle("lg-app:zoom", (_e, dir) => {
    页面内 window.find() 没有焦点要求，选中高亮走浏览器默认选区样式。 */
 ipcMain.handle("lg-app:find", (_e, payload) => {
   const t = tabs.get(activeTabId);
-  if (!t) return Promise.resolve({ ok: false });
+  if (!t || !t.view) return Promise.resolve({ ok: false });
   const text = String((payload && payload.text) || "");
   const wc = t.view.webContents;
+  /* 高亮全部匹配（Edge 的招牌观感）：CSS Custom Highlight API 把所有命中
+     做成 Range 交给浏览器统一绘制——不改页面 DOM、不插 <mark>、不干扰页面
+     自己的选择区与脚本。Chromium 105+ 原生支持。
+     样式在 common.css（::highlight(lg-find)），站外页同样生效。 */
+  const HIGHLIGHT_JS = `(function(){
+     var q = ${JSON.stringify(text)};
+     try { CSS.highlights && CSS.highlights.delete('lg-find'); } catch (e) {}
+     if (!q) return 0;
+     var ranges = [];
+     try {
+       var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+         acceptNode: function (n) {
+           if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+           var p = n.parentElement;
+           if (!p) return NodeFilter.FILTER_REJECT;
+           var tag = p.tagName;
+           if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA') return NodeFilter.FILTER_REJECT;
+           /* 我们自己的浮层与可编辑区不参与高亮（阅读模式、翻译气泡、代码
+              复制按钮、输入框）——高亮它们没有意义，还会让"找到了"的数量
+              与用户实际看到的不一致。 */
+           if (p.closest('#lg-reader, #lg-tr-bubble, #lg-tr-bar, .lg-code-copy, [contenteditable=""], [contenteditable="true"]')) return NodeFilter.FILTER_REJECT;
+           return NodeFilter.FILTER_ACCEPT;
+         }
+       });
+       var lower = q.toLowerCase();
+       var node, guard = 0;
+       while ((node = walker.nextNode()) && guard < 20000) {
+         guard++;
+         var ltext = node.nodeValue.toLowerCase();
+         var i = 0, idx;
+         while ((idx = ltext.indexOf(lower, i)) >= 0) {
+           try {
+             var r = document.createRange();
+             r.setStart(node, idx);
+             r.setEnd(node, idx + q.length);
+             ranges.push(r);
+           } catch (e) {}
+           i = idx + q.length;
+           if (ranges.length >= 800) break;
+         }
+         if (ranges.length >= 800) break;
+       }
+       if (ranges.length) {
+         var hl = new Highlight();
+         for (var i = 0; i < ranges.length; i++) hl.add(ranges[i]);
+         CSS.highlights.set('lg-find', hl);
+       }
+     } catch (e) {}
+     return ranges.length;
+   })()`;
   if (!text) {
     try { wc.executeJavaScript("window.getSelection().removeAllRanges()", true); } catch {}
+    wc.executeJavaScript(HIGHLIGHT_JS, true).catch(() => {});
     return Promise.resolve({ ok: true, stopped: true });
   }
   const backward = !!(payload && payload.forward === false);
+  /* 高亮与选中并行：window.find 负责"滚到并选中当前那个"，Highlight 负责
+     "其余所有命中都亮着"。两者互不干扰（选区是 UA 样式，高亮是独立图层）。 */
+  wc.executeJavaScript(HIGHLIGHT_JS, true).catch(() => {});
   return wc
     .executeJavaScript(
       `(function(){
@@ -4847,7 +5002,11 @@ ipcMain.handle("lg-app:find", (_e, payload) => {
 });
 ipcMain.handle("lg-app:find-stop", () => {
   const t = tabs.get(activeTabId);
-  if (t) { try { t.view.webContents.executeJavaScript("window.getSelection().removeAllRanges()", true); } catch {} }
+  if (t && t.view) {
+    try { t.view.webContents.executeJavaScript("window.getSelection().removeAllRanges()", true); } catch {}
+    /* 高亮也要清：不清的话"全部高亮"会一直留在页面上，关闭查找条后满屏黄块 */
+    try { t.view.webContents.executeJavaScript("try{CSS.highlights&&CSS.highlights.delete('lg-find')}catch(e){}", true); } catch {}
+  }
   return Promise.resolve({ ok: true });
 });
 /* Ctrl+Shift+T 恢复最近关闭的标签 */
@@ -5358,6 +5517,34 @@ ipcMain.handle("tab:back", () => {
   const t = tabs.get(activeTabId);
   try { t && t.view.webContents.goBack(); } catch {}
   return { ok: true };
+});
+/* 长按后退/前进要弹出的历史栈（Edge 的行为：按住不放即列出这一串访问过的
+   页面，点哪一条直接跳过去）。按需取——不在每次 tabsSnapshot 里带上：
+   getAllEntries 在长栈上每次推送都调一遍纯属浪费，长按一次才调一次。
+   luogu-glass:// 内部页面（设置/历史页的内部分发路由）不算用户的历史，跳过。 */
+ipcMain.handle("tab:nav-history", (_e, id) => {
+  const t = tabs.get(Number(id));
+  if (!t || !t.view) return { ok: false, reason: "no-tab" };
+  try {
+    const wc = t.view.webContents;
+    if (wc.isDestroyed()) return { ok: false, reason: "destroyed" };
+    const nav = wc.navigationHistory;
+    if (!nav || typeof nav.getAllEntries !== "function") return { ok: false, reason: "no-history-api" };
+    const entries = nav.getAllEntries();
+    const idx = typeof nav.getActiveIndex === "function" ? nav.getActiveIndex() : -1;
+    const list = [];
+    /* 倒序取（最近的在最前），只留最近 12 条：更早的几乎不会被长按点到，
+       而每条都要带 title，长栈会让 IPC 载荷明显变大。 */
+    for (let i = entries.length - 1; i >= 0 && list.length < 12; i--) {
+      const e = entries[i];
+      if (!e || !e.url) continue;
+      if (/^luogu-glass:/i.test(e.url)) continue;
+      list.push({ i, url: e.url, title: e.title || "", active: i === idx, forward: i > idx });
+    }
+    return { ok: true, index: idx, list };
+  } catch (e) {
+    return { ok: false, reason: String((e && e.message) || e) };
+  }
 });
 ipcMain.handle("tab:fwd", () => {
   const t = tabs.get(activeTabId);
@@ -5972,6 +6159,61 @@ ipcMain.handle("tab:zoom", (_e, dir) => {
 });
 
 /* ============================================================
+   标签悬停预览缩略图（Edge 标签预览卡片）
+   ============================================================ */
+/* 缩略图缓存：tabId -> { dataUrl, url, at, w, h }
+   命中条件：缓存的 url === 当前 t.url（标签导航后 t.url 变 → 缓存自然失效，
+   不需要额外挂导航钩子）且缓存年龄 < 20 秒。
+   悬停是高频动作（指针扫过标签条就会触发），不缓存的话每扫一次就抓一帧，
+   capturePage 本身不便宜，缓存是必须的。 */
+const THUMB_TTL = 20000;   // 缓存有效期 20 秒
+const THUMB_MAX = 24;      // 最多缓存 24 张，超出按 at 从旧到新淘汰
+const thumbCache = new Map();
+
+ipcMain.handle("lg-tab:thumb", async (_e, id) => {
+  try {
+    const tid = Number(id);
+    const t = tabs.get(tid);
+    if (!t) return { ok: false, reason: "no-tab" };
+    /* 休眠标签的 t.view 是 null（makeSleeping 置空）——必须先判空，
+       否则下面 t.view.webContents 直接空指针。 */
+    if (!t.view) return { ok: false, reason: "sleeping" };
+    const wc = t.view.webContents;
+    if (!wc || wc.isDestroyed()) return { ok: false, reason: "destroyed" };
+
+    const url = t.url || "";
+    const hit = thumbCache.get(tid);
+    if (hit && hit.url === url && Date.now() - hit.at < THUMB_TTL) {
+      return { ok: true, dataUrl: hit.dataUrl, w: hit.w, h: hit.h, url: hit.url };
+    }
+
+    /* capturePage 在部分视图上可能长时间不决（渲染进程卡住），
+       统一走 withTimeout 竞速：不加超时的话一个卡死的视图会把整个 IPC 挂死，
+       外壳那边 await 永远不落地，卡片就再也出不来了。 */
+    const img = await withTimeout(wc.capturePage(), 1500, null);
+    if (!img) return { ok: false, reason: "timeout" };
+    if (img.isEmpty()) return { ok: false, reason: "empty" };
+    /* 先缩到宽 320 再编码：整屏 PNG 的 base64 有几百 KB，
+       走 IPC 传过去再塞进 <img> 会明显卡顿，320 宽足够看清页面版式。 */
+    const small = img.resize({ width: 320, quality: "good" });
+    const size = small.getSize();
+    const dataUrl = small.toDataURL();
+    const entry = { dataUrl, url, at: Date.now(), w: size.width, h: size.height };
+    thumbCache.set(tid, entry);
+    /* 容量上限：超出时按 at 从旧到新淘汰（Map 本身按插入序，
+       但同一标签会覆盖旧值，用 at 排才准）。 */
+    if (thumbCache.size > THUMB_MAX) {
+      const stale = [...thumbCache.entries()].sort((a, b) => a[1].at - b[1].at);
+      for (let i = 0; i < stale.length - THUMB_MAX; i++) thumbCache.delete(stale[i][0]);
+    }
+    return { ok: true, dataUrl, w: size.width, h: size.height, url };
+  } catch (e) {
+    /* 绝不让 IPC reject：外壳那边是 await，一个 reject 会变成未处理异常 */
+    return { ok: false, reason: String((e && e.message) || e) };
+  }
+});
+
+/* ============================================================
    书签 / 历史 / 下载
    ============================================================ */
 const historyPath = () => path.join(app.getPath("userData"), "history.json");
@@ -6090,6 +6332,47 @@ function wireAdBlock(sess) {
     });
   } catch (e) { dbg("wireAdBlock failed: " + e); }
 }
+/* 字节数 → 人类可读体积（通知正文用）。未知大小（0/NaN）回退成"大小未知"，
+   免得正文里冒出裸字节数。 */
+function formatBytes(n) {
+  const b = Number(n);
+  if (!Number.isFinite(b) || b <= 0) return "大小未知";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let v = b;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? String(Math.round(v)) : v.toFixed(1)) + " " + u[i];
+}
+
+/* 下载完成通知：点了聚焦窗口 + 在资源管理器里定位到文件（同 Edge）。
+   全程 try/catch 且先问 isSupported()——通知是"锦上添花"，绝不能因为它
+   抛异常把下载流程带崩；批量下载会并发调到这里多次。 */
+function notifyDownloadDone(rec) {
+  try {
+    if (cfg.downloadNotify === false) return;
+    if (!Notification.isSupported()) return;
+    const name = path.basename(rec.savePath || rec.filename || "下载");
+    const n = new Notification({
+      title: "下载完成",
+      body: name + " · " + formatBytes(rec.total || rec.received),
+      silent: false,
+    });
+    n.on("click", () => {
+      /* 定位到文件优先；窗口没了/路径不可用就只退化为聚焦，不抛 */
+      try {
+        if (mainWin && !mainWin.isDestroyed()) {
+          if (mainWin.isMinimized()) mainWin.restore();
+          mainWin.focus();
+        }
+      } catch {}
+      try {
+        if (rec.savePath && fs.existsSync(rec.savePath)) shell.showItemInFolder(rec.savePath);
+      } catch {}
+    });
+    n.show();
+  } catch (e) { dbg("notifyDownloadDone: " + e); }
+}
+
 function wireDownloads(sess) {
   if (!sess || sess.__lgDownWired) return;
   sess.__lgDownWired = true;
@@ -6131,9 +6414,17 @@ function wireDownloads(sess) {
     item.once("done", (_e2, state) => {
       sync(state);
       const e = dlItems.get(rec.id);
-      if (e) e.item = null; // 句柄留给"重试"用（wecontents 还在）
+      /* item 下完即废；但 wc 还得留着给"重试"（要用它原来的会话重发）。
+         wc 已经销毁就没留着的意义了——不删会让 dlItems 一直攥着已销毁的
+         webContents 引用（重试本来就靠 isDestroyed() 退化到活动标签）。 */
+      if (e) {
+        e.item = null;
+        if (!e.wc || e.wc.isDestroyed()) dlItems.delete(rec.id);
+      }
       saveDownloads();
       dbg("download " + state + ": " + rec.savePath);
+      /* 只在真正 completed 时通知：interrupted / cancelled 都不是"下好了" */
+      if (state === "completed") notifyDownloadDone(rec);
     });
     sync(null);
     saveDownloads();
@@ -6278,12 +6569,16 @@ ipcMain.handle("lg-download:save-as", async (_e, id) => {
 });
 ipcMain.handle("lg-download:remove", (_e, id) => {
   downloads = downloads.filter((x) => x.id !== Number(id));
+  dlItems.delete(Number(id)); // 记录没了，句柄（含 webContents）也一起放
   saveDownloads();
   pushDownloads();
   return { ok: true, downloads: publicDownloads() };
 });
 ipcMain.handle("lg-download:clear", () => {
   downloads = downloads.filter((d) => d.state === "progressing" || d.state === "paused");
+  /* 同样清句柄：只留还在飞的那些，其余的 webContents 引用别攥着不放 */
+  const alive = new Set(downloads.map((d) => d.id));
+  for (const k of Array.from(dlItems.keys())) if (!alive.has(k)) dlItems.delete(k);
   saveDownloads();
   pushDownloads();
   return { ok: true, downloads: publicDownloads() };

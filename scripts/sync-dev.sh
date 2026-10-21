@@ -5,7 +5,7 @@ set -e
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 DST=/d/workspace/luogu++/dev
 mkdir -p "$DST/src/chrome" "$DST/src/settings" "$DST/src/history" "$DST/src/popup" "$DST/src/home" "$DST/src/dock"
-cp "$SRC/src/inject.js" "$SRC/src/inject.css" "$SRC/src/ext.css" "$SRC/src/material.css" "$SRC/src/material-lint.js" "$SRC/src/icons.js" "$DST/src/"
+cp "$SRC/src/inject.js" "$SRC/src/inject.css" "$SRC/src/ext.css" "$SRC/src/common.css" "$SRC/src/material.css" "$SRC/src/material-lint.js" "$SRC/src/icons.js" "$DST/src/"
 cp "$SRC/src/chrome/"* "$DST/src/chrome/"
 cp "$SRC/src/settings/"* "$DST/src/settings/"
 cp "$SRC/src/history/"* "$DST/src/history/"
@@ -27,7 +27,7 @@ cp "$SRC/assets/"* "$DST/assets/"
 DEPLOY=/d/workspace/luogu++/app/resources/app
 if [ -d "$DEPLOY" ]; then
   mkdir -p "$DEPLOY/src/chrome" "$DEPLOY/src/settings" "$DEPLOY/src/history" "$DEPLOY/src/popup" "$DEPLOY/src/home" "$DEPLOY/src/dock" "$DEPLOY/assets"
-  cp "$SRC/src/inject.js" "$SRC/src/inject.css" "$SRC/src/ext.css" "$SRC/src/material.css" "$SRC/src/material-lint.js" "$SRC/src/icons.js" "$DEPLOY/src/"
+  cp "$SRC/src/inject.js" "$SRC/src/inject.css" "$SRC/src/ext.css" "$SRC/src/common.css" "$SRC/src/material.css" "$SRC/src/material-lint.js" "$SRC/src/icons.js" "$DEPLOY/src/"
   cp "$SRC/src/chrome/"* "$DEPLOY/src/chrome/"
   cp "$SRC/src/settings/"* "$DEPLOY/src/settings/"
   cp "$SRC/src/history/"* "$DEPLOY/src/history/"

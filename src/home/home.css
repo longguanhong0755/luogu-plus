@@ -12,6 +12,10 @@
   --h-ink: var(--lg-ink, #18181b);
   --h-ink-dim: color-mix(in srgb, var(--lg-ink, #18181b) 62%, transparent);
   --h-ink-faint: color-mix(in srgb, var(--lg-ink, #18181b) 40%, transparent);
+  /* 成句文字档：--h-ink-faint 只有 40% 墨（对比度约 2.5:1），当装饰色
+     （图标/占位符）没问题；成句的提示文字用它低于 WCAG AA 的 4.5:1。
+     这一档 78% 墨 ≈ 8.4:1，留足余量（实测对 --lg-bg-base #f7f7f8）。 */
+  --h-ink-text: color-mix(in srgb, var(--lg-ink, #18181b) 78%, transparent);
   --h-line: var(--lg-glass-line, rgba(0, 0, 0, 0.12));
   --h-face: var(--lg-glass-card, rgba(255, 255, 255, 0.92));
 }
@@ -73,7 +77,13 @@ body {
   gap: 10px;
   padding: 0 8px 0 16px;
 }
-.h-search:focus-within { border-color: var(--h-ink); }
+/* 大搜索框是一张卡：焦点环画在卡上，不画在里面的裸输入框上
+   （输入框是 borderless 的，画在它身上会是个方框套在圆角卡里）。 */
+.h-search:focus-within {
+  border-color: var(--h-ink);
+  outline: 2px solid var(--h-ink);
+  outline-offset: 2px;
+}
 .h-search svg {
   width: 17px; height: 17px;
   flex: none;
@@ -114,7 +124,7 @@ body {
   min-height: 18px;
   margin-top: -10px;
   font-size: 12px;
-  color: var(--h-ink-faint);
+  color: var(--h-ink-dim);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -210,13 +220,16 @@ body {
   grid-column: 1 / -1;
   padding: 10px 2px;
   font-size: var(--fs-base, 12.5px);
-  color: var(--h-ink-faint);
+  color: var(--h-ink-dim);
 }
 
 /* ---------- 底部提示 ---------- */
+/* 底部提示：字号提到 12.5px、颜色提到 --h-ink-text 档。
+   此前是 11px + --h-ink-faint（40% 墨），实测对比度 1.26:1 —— 远低于
+   WCAG AA 正文要求的 4.5:1，这行字基本读不出来。 */
 .h-foot {
-  font-size: var(--fs-sub, 11px);
-  color: var(--h-ink-faint);
+  font-size: var(--fs-base, 12.5px);
+  color: var(--h-ink-text);
   letter-spacing: 0.06em;
 }
 
@@ -301,8 +314,7 @@ body {
   color: var(--h-ink);
   background: transparent;
   border: 1px solid var(--h-line);
-  border-radius: 7px;
-  outline: none;
+  border-radius: var(--lg-radius);
 }
 #cd-name { flex: 1; }
 .h-cd-form button {
@@ -312,7 +324,30 @@ body {
   color: var(--h-ink);
   background: transparent;
   border: 1px solid var(--h-line);
-  border-radius: 7px;
+  border-radius: var(--lg-radius);
   cursor: pointer;
 }
 .h-cd-form button:hover { border-color: var(--h-ink); }
+
+/* ============================================================
+   交互状态：焦点 / 按下 / 禁用
+   —— 本页此前 :focus-visible / :active / :disabled 规则数都是 0：键盘 Tab
+   落在输入框上只有浏览器默认的橙色描边（与主题色无关），按压与禁用无反馈。
+   ============================================================ */
+
+/* 焦点：2px 墨色描边 + 2px offset，明暗自适应 */
+:is(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--h-ink);
+  outline-offset: 2px;
+}
+/* 搜索框的输入框是卡里的裸字段：环画在卡上（见上），字段自己不要环 */
+.h-search input[type="text"]:focus-visible { outline: none; }
+/* 按下：下沉 1px（克制但明确，不改底色——悬停那层已经在了） */
+:is(button, a, [role="button"]):active {
+  transform: translateY(1px);
+}
+/* 禁用：降对比 + not-allowed */
+:is(button, input, select, textarea):disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

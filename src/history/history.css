@@ -15,11 +15,10 @@
   color: var(--ink);
   background: var(--surface-2);
   border: 1px solid var(--hairline);
-  border-radius: 7px;
-  outline: none;
+  border-radius: var(--lg-radius);
 }
 .row-line input[type="text"]:focus { border-color: var(--ink); }
-.hint.inline { flex: 1; margin: 0; font-size: 11.5px; color: var(--ink-faint); }
+.hint.inline { flex: 1; margin: 0; font-size: 11.5px; color: var(--ink-dim); }
 
 .list { display: flex; flex-direction: column; }
 
@@ -57,7 +56,7 @@
 .h-url {
   font-family: var(--lg-mono);
   font-size: 11px;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -72,7 +71,7 @@
   flex: none;
   width: 24px; height: 24px;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--lg-radius-sm);
   background: var(--surface);
   color: var(--ink-dim);
   font-size: 13px;
@@ -109,5 +108,26 @@
   padding: 22px 6px;
   text-align: center;
   font-size: 12.5px;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
+}
+
+/* ============================================================
+   交互状态：焦点 / 按下 / 禁用
+   —— 本页此前 :focus-visible / :active / :disabled 规则数都是 0：键盘 Tab
+   落在输入框上只有浏览器默认的橙色描边（与主题色无关），按压与禁用无反馈。
+   ============================================================ */
+
+/* 焦点：2px 墨色描边 + 2px offset，明暗自适应 */
+:is(button, input, select, textarea, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+/* 按下：下沉 1px（克制但明确，不改底色——悬停那层已经在了） */
+:is(button, a, [role="button"]):active {
+  transform: translateY(1px);
+}
+/* 禁用：降对比 + not-allowed */
+:is(button, input, select, textarea):disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

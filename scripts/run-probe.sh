@@ -31,5 +31,30 @@ if [ ! -d "$PROF/wallpapers" ]; then
   fi
 fi
 echo "probe=$NAME profile=$PROF exe=$EXE"
-"$EXE" --lg-userdata="$(cygpath -w "$PROF")" "$@" >"$ROOT/$NAME.log" 2>&1
-echo "exit=$? out=$OUTDIR"
+# R42：探针必须钉在软件渲染上。无 GPU 的机器上 GPU 进程会直接 FATAL 掉
+# （整窗截图全白 / 视图不出帧），而**探针日志里看不到任何显式报错**——
+# 脚本照常 exit=0，看起来"跑过了"，实际证据全是空的。
+# 这组 flag 与当前在跑的探针实例（dev/probe/pr-v2，端口 9309）启动参数一致：
+#   --disable-gpu + --use-angle=swiftshader  合成走 CPU，不碰 GPU 进程
+#   --no-sandbox/--disable-gpu-sandbox        无 GPU 机上沙箱起不来，得放开
+#   --disable-*-backgrounding/-timer-throttling  探针窗口被摆在屏幕外
+#     (3200,120)，Chromium 会判它"被遮挡/不可见"从而冻结渲染进程与定时器，
+#     动画和交互全停 —— 补上这三条才让离屏窗口保持正常响应。
+# 需要真 GPU 时 LG_GPU=1 放开（默认关：探针要的是可复现，硬件合成各机器时机不同）。
+if [ "${LG_GPU:-0}" != "1" ]; then
+  GPU_FLAGS=(
+    --no-sandbox
+    --disable-gpu-sandbox
+    --disable-gpu
+    --use-angle=swiftshader
+    --disable-renderer-backgrounding
+    --disable-backgrounding-occluded-windows
+    --disable-background-timer-throttling
+  )
+else
+  GPU_FLAGS=()
+fi
+# set -e 会让 exe 非零退出时直接掐掉脚本，底下的 exit= 根本没机会打印 ——
+# 而"跑挂了"恰恰是最该被看见的情况。改成自己接退出码。
+"$EXE" "${GPU_FLAGS[@]}" --lg-userdata="$(cygpath -w "$PROF")" "$@" >"$ROOT/$NAME.log" 2>&1 && rc=0 || rc=$?
+echo "exit=$rc out=$OUTDIR"

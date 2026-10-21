@@ -88,7 +88,7 @@ html[data-lg-theme] ::selection {
   z-index: 80;
   pointer-events: none;
   padding: 3px 9px;
-  border-radius: 8px;
+  border-radius: var(--lg-radius, 8px);
   font-size: var(--fs-base, 12px);
   line-height: 1.5;
   color: var(--ink, #18181b);
@@ -326,7 +326,7 @@ html[data-lg-ext="1"][data-lg-local="1"] .nav {
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   border: 1px solid var(--lg-glass-line) !important;
-  border-radius: var(--lg-radius, 12px) !important;
+  border-radius: var(--lg-radius, 8px) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }
 /* 内块（控件表面）：同一块玻璃减淡一档——外部面的颜色仍只来自 --lg-glass-card */
@@ -337,7 +337,7 @@ html[data-lg-ext="1"][data-lg-local="1"] .h-links a {
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   border: 1px solid var(--lg-glass-line) !important;
-  border-radius: 10px !important;
+  border-radius: var(--lg-radius, 8px) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }
 html[data-lg-ext="1"][data-lg-local="1"] .seg,
@@ -353,7 +353,16 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
 }
 
 /* ============================================================
-   6. 洛谷页登记表（INJECT_CSS 只注入洛谷站，选择器不必再套作用域前缀）
+   6. 洛谷页登记表
+   ⚠️ 这段曾经"不必套作用域前缀"——前提是它住在 INJECT_CSS 里，而 INJECT_CSS
+   只注入洛谷站。但它后来被搬进 material.css（材质单源），material.css 是
+   **全站注入**的（main.js stylesFor() 对每个页面都拼 MATERIAL_CSS）。
+   前提不成立 = 泄漏：站外页每一个 <textarea> / <select> 都会被强制改底色并
+   挂上 backdrop-filter，而 backdrop-filter 会创建包含块与层叠上下文，
+   直接改变 fixed 定位与 z-index —— "给人家容器挂 backdrop-filter 劫持
+   fixed 包含块"那个老坑以另一种形式回归。
+   修法：统一用 :where() 加作用域前缀。:where 自身特异性为 0，所以
+   .l-card 仍是 (0,1,0)，层叠结果与原来完全一致，不牵动任何优先级。
    Ⅰ 面：卡片/面板/容器 = 面色 + 同一把模糊链 + 发丝线 + 顶部高光；
    Ⅱ 内块：同一份玻璃减淡（颜色仍从 --lg-glass-card 派生，单一来源）；
    Ⅲ 白纱清除：站点 frosted 主题的 ::before 白纱（含它自带的 blur）把玻璃
@@ -361,13 +370,13 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
    兜底：inject.js 的 sweepGlassSurfaces() 给"未知类名但实心"的面自动贴
    lg-glass / lg-glass-soft / lg-noveil（站点改版也照样吃进来）。
    ============================================================ */
-.l-card,
-.lg-article,
-.lg-glass,
-.am-panel,
-.am-well,
-.lside,
-.lg-index-content .am-slider {
+:where(html[data-lg-ext="0"]) .l-card,
+:where(html[data-lg-ext="0"]) .lg-article,
+:where(html[data-lg-ext="0"]) .lg-glass,
+:where(html[data-lg-ext="0"]) .am-panel,
+:where(html[data-lg-ext="0"]) .am-well,
+:where(html[data-lg-ext="0"]) .lside,
+:where(html[data-lg-ext="0"]) .lg-index-content .am-slider {
   background-color: var(--lg-glass-card) !important;
   background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
   backdrop-filter: var(--lg-glass-blur) !important;
@@ -375,43 +384,81 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
   border: 1px solid var(--lg-glass-line) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }
-.lg-glass-soft,
-input.am-form-field,
-textarea,
-select {
+:where(html[data-lg-ext="0"]) .lg-glass-soft,
+:where(html[data-lg-ext="0"]) input.am-form-field,
+:where(html[data-lg-ext="0"]) textarea,
+:where(html[data-lg-ext="0"]) select {
   background-color: color-mix(in srgb, var(--lg-glass-card) 55%, transparent) !important;
   background-image: none !important;
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   border-color: var(--lg-glass-line) !important;
 }
-.l-card::before,
-.l-card::after,
-.am-panel::before,
-.am-panel::after,
-.lg-noveil::before,
-.lg-noveil::after,
-.lg-glass::before,
-.lg-glass::after {
+:where(html[data-lg-ext="0"]) .l-card::before,
+:where(html[data-lg-ext="0"]) .l-card::after,
+:where(html[data-lg-ext="0"]) .am-panel::before,
+:where(html[data-lg-ext="0"]) .am-panel::after,
+:where(html[data-lg-ext="0"]) .lg-noveil::before,
+:where(html[data-lg-ext="0"]) .lg-noveil::after,
+:where(html[data-lg-ext="0"]) .lg-glass::before,
+:where(html[data-lg-ext="0"]) .lg-glass::after {
   background: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
-.dropdown > .dropdown-content,
-.dropdown-content,
-.am-modal-dialog,
-.lfe-popper,
-.notification-toast-stack > * {
+:where(html[data-lg-ext="0"]) .dropdown > .dropdown-content,
+:where(html[data-lg-ext="0"]) .dropdown-content,
+:where(html[data-lg-ext="0"]) .am-modal-dialog,
+:where(html[data-lg-ext="0"]) .lfe-popper,
+:where(html[data-lg-ext="0"]) .notification-toast-stack > * {
   background-color: var(--lg-glass-bg) !important;
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   border: 1px solid var(--lg-glass-line) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }
-#lg-quicksearch {
+:where(html[data-lg-ext="0"]) #lg-quicksearch {
   background: var(--lg-glass-bg) !important;
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   border: 1px solid var(--lg-glass-line) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+
+/* ============================================================
+   7. 站外页自动玻璃（.lg-gx）
+   「自动把网页转换成玻璃质感」——站外页的卡片/面板/容器被自动换成
+   我们的玻璃面，与外壳、洛谷页同一套配方同一份变量。
+   作用域用 :where(html[data-lg-glassauto="1"]) 限定：只有**自动探测判定
+   为内容型**的站外页才生效（inject.js detectAutoGlass），表单密集 /
+   内容量不足 / 应用型站点一律不碰，洛谷页更是连这条规则都进不来。
+
+   ⚠️ 为什么要单独一段、而不是复用第 6 段的 .lg-glass：
+   第 6 段是洛谷页登记表，锁在 data-lg-ext="0" 里；站外页的面必须走
+   另一套类名（.lg-gx），这样**撤销只需摘掉一个类**，不会误伤洛谷页
+   自己的面，也不会让站外页的 .lg-glass 与 .lg-gx 两套规则打架。
+
+   ⚠️ backdrop-filter 劫持 fixed 包含块（v3.4.2 教训）：这个坑在站外页
+   比在洛谷页更容易踩——人家站点到处是 fixed 导航条/弹层/悬浮按钮。
+   所以**能不能上玻璃由 JS 判定**：候选容器内部若含 position:fixed 的
+   后代，就不给它挂 backdrop-filter（只留半透明底 + 发丝线），宁可不
+   玻璃也不让人家的浮层错位。判定见 inject.js 的 glassifyExtOne()。
+   ============================================================ */
+:where(html[data-lg-glassauto="1"]) .lg-gx {
+  background-color: color-mix(in srgb, var(--lg-glass-card) 78%, transparent) !important;
+  background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
+  backdrop-filter: var(--lg-glass-blur) !important;
+  -webkit-backdrop-filter: var(--lg-glass-blur) !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  border-radius: var(--lg-radius) !important;
+  box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
+}
+/* 不敢挂模糊的容器（内部有 fixed 后代）：只给半透明底 + 发丝线，
+   观感仍是"玻璃面"，但不吃 backdrop-filter —— 不劫持包含块。 */
+:where(html[data-lg-glassauto="1"]) .lg-gx-noblur {
+  background-color: color-mix(in srgb, var(--lg-glass-card) 78%, transparent) !important;
+  background-image: none !important;
+  border: 1px solid var(--lg-glass-line) !important;
+  border-radius: var(--lg-radius) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }

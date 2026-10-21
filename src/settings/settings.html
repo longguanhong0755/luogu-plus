@@ -13,6 +13,12 @@
         <span class="nav-logo">Luogu++</span>
         <span class="nav-sub">设置</span>
       </div>
+      <!-- 搜索设置：22 张卡 92 个控件纯线性平铺，「找不到」=「不存在」。
+           搜索时跨分组显示所有命中的卡片，导航项按是否有命中自动隐藏。 -->
+      <div class="nav-search">
+        <input type="search" id="nav-search" placeholder="搜索设置…" autocomplete="off" spellcheck="false" />
+        <span class="nav-search-count" id="nav-search-count"></span>
+      </div>
       <div id="nav-list"></div>
       <div class="nav-foot">
         <button class="btn" id="btn-reset">恢复默认</button>
@@ -32,6 +38,13 @@
            统一裁决（resolvedTheme），玻璃与色块全部从主题色一派派生。 -->
       <section class="card" data-nav="外观/配色" data-title="配色"
         data-sub="全应用只认这一个颜色：外壳、洛谷页面、DeepSeek 的玻璃都从它派生">
+        <h2>明暗</h2>
+        <div class="seg" id="seg-theme">
+          <button data-v="auto">跟随</button>
+          <button data-v="light">浅色</button>
+          <button data-v="dark">深色</button>
+        </div>
+        <p class="hint">默认跟随洛谷页面自动识别。洛谷站是深色、外壳也跟着深色；这里可以强制整个应用用浅色或深色。</p>
         <h2>主题色</h2>
         <p class="hint">
           挑一个颜色，洛谷页面与应用外壳的所有色块都会跟着它走——卡片底、页面底、
@@ -101,6 +114,18 @@
           <i class="knob"></i>
         </label>
         <p class="hint">圆角 R 同时作用于外壳与洛谷页面卡片；玻璃风格建议 12–20。只改应用皮肤，不动洛谷自己的数据与功能。</p>
+        <h2>站外网页</h2>
+        <label class="switch-row">
+          <span>自动把网页转成玻璃质感</span>
+          <input type="checkbox" id="ck-autoglass" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">
+          把外部网站上的卡片、面板自动换成和外壳同一套玻璃面（半透明 + 毛玻璃 + 发丝线）。
+          只对<b>以阅读内容为主</b>的页面生效：登录页、后台、在线编辑器、GitHub 这类
+          布局依赖自己底色的站点一律不碰。页面里含悬浮吸顶元素的卡片只给半透明底、不加模糊，
+          以免打乱人家原有的层叠。随时可关，关闭后页面样式立刻恢复原样。
+        </p>
       </section>
 
       <!-- ==================== 窗口与布局 ==================== -->
@@ -108,11 +133,11 @@
         data-sub="界面大小与标签栏形态">
         <h2>窗口外观</h2>
         <label class="slider">
-          <span>界面大小</span>
+          <span>外壳大小</span>
           <input type="range" id="s-uiscale" min="80" max="140" step="5" />
           <output id="o-uiscale"></output>
         </label>
-        <p class="hint">只缩放应用外壳（标签栏 / 工具行），不影响洛谷页面。</p>
+        <p class="hint">只缩放应用外壳（标签栏 / 工具行），不影响洛谷页面。洛谷页面的放大缩小请用 <b>Ctrl + =</b> / <b>Ctrl + -</b>。</p>
         <label class="switch-row">
           <span>IDE 页保持洛谷原生配色</span>
           <input type="checkbox" id="ck-ide" />
@@ -499,6 +524,12 @@
         </label>
         <p class="hint">关闭（默认）：统一存到「下载/Luogu++」，下载面板里可「另存为」；
           开启：每次弹系统另存为对话框。下载记录会保留（重启后未下完的标为中断，可「重试」）。</p>
+        <label class="switch-row">
+          <span>下载完成时发系统通知</span>
+          <input type="checkbox" id="ck-dlnotify" />
+          <i class="knob"></i>
+        </label>
+        <p class="hint">文件下完后在系统通知中心留一条（标题带文件名与体积），点通知会在资源管理器里定位到该文件。</p>
         <button class="btn" id="btn-open-downloads">打开下载文件夹</button>
       </section>
 

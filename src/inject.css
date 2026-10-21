@@ -41,17 +41,6 @@ html[data-lg-wall="1"] #app-old {
 
 /* 壁纸层：#lg-glass-bg 由 inject.js 打上 .lg-wallpaper 类，几何/cover/滤镜/
    压暗/视差全部来自 material.css 的唯一公式（与外壳 #wall、弹层副本逐字相同）。
-   页面只负责把视图矩形写成 --lg-wall-x/y/w/h（见 inject.js applyViewRect）。
-   这里是"视口裁剪壳"：fixed + 负偏移 + 视差变换的壁纸层左沿会伸出视图边界、
-   在外壳区域再画一遍，套一层 overflow:hidden 的壳把它裁干净。 */
-#lg-glass-clip {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  overflow: hidden;
-  pointer-events: none;
-  transform: translateZ(0);
-}
 
 /* 页面骨架放透明，露出背景层。R37：IDE 页开"保持原生"时整块不生效
    （html[data-lg-ide="1"]）——原生模式要连骨架底色都还给洛谷，只留我们的
@@ -132,7 +121,7 @@ pre.code {
 }
 code, .inline-code, .lfe-marked code {
   font-family: var(--lg-mono);
-  border-radius: 5px;
+  border-radius: var(--lg-radius-sm);
 }
 
 /* ---------- IDE (Monaco) ----------
@@ -214,11 +203,11 @@ input[type="password"],
 input[type="search"],
 textarea,
 select {
-  border-radius: 6px !important;
+  border-radius: var(--lg-radius) !important;
 }
 .lfe-caption.tags .tag,
 .tags .tag {
-  border-radius: 5px !important;
+  border-radius: var(--lg-radius-sm) !important;
 }
 
 /* ---------- 洁净模式：隐藏广告与推广 ---------- */
@@ -383,7 +372,7 @@ html:not([data-lg-ide="1"]) .editor-tab.editor-title {
   color: var(--lg-ink, #18181b) !important;
   box-shadow: none !important;
   border: 1px solid var(--lg-glass-line) !important;
-  border-radius: 6px !important;
+  border-radius: var(--lg-radius) !important;
 }
 /* 语言选择器（C++11 下拉） */
 html:not([data-lg-ide="1"]) .combo-wrapper.lang-select .text,
@@ -397,7 +386,7 @@ html:not([data-lg-ide="1"]) .editor-actions-container select {
   background: var(--lg-glass-card) !important;
   color: var(--lg-ink, #18181b) !important;
   border: 1px solid var(--lg-glass-line) !important;
-  border-radius: 6px !important;
+  border-radius: var(--lg-radius) !important;
 }
 /* 输入/输出文本域 */
 html:not([data-lg-ide="1"]) .io-editor-container textarea,
@@ -406,7 +395,7 @@ html:not([data-lg-ide="1"]) .output-editor-container textarea {
   background: var(--lg-glass-card) !important;
   color: var(--lg-ink, #18181b) !important;
   border: 1px solid var(--lg-glass-line) !important;
-  border-radius: 6px !important;
+  border-radius: var(--lg-radius) !important;
 }
 /* Monaco 光标行：浅黄高亮改为发丝线 */
 html:not([data-lg-ide="1"]) .monaco-editor .current-line {
@@ -433,26 +422,6 @@ html[data-lg-anim="0"] *::after {
   scroll-behavior: auto !important;
 }
 
-/* 代码块一键复制：悬停才显形，平时不打扰阅读 */
-pre[data-lg-copyable="1"] { position: relative; }
-.lg-code-copy {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  padding: 2px 9px;
-  font-family: var(--lg-sans, sans-serif);
-  font-size: 11px;
-  line-height: 1.7;
-  color: var(--lg-ink, #18181b);
-  background: var(--lg-glass-card);
-  border: 1px solid var(--lg-glass-line);
-  border-radius: 6px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-pre[data-lg-copyable="1"]:hover .lg-code-copy { opacity: 1; }
-.lg-code-copy:hover { border-color: var(--lg-accent, #18181b); color: var(--lg-accent, #18181b); }
 
 /* 难度标签灰阶化（洛谷新前端用 class 里带 difficulty 的徽章） */
 html[data-lg-diff="mono"] [class*="difficulty" i],
@@ -510,7 +479,7 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
      在部分合成路径下会把这块内容一起糊掉，自带底色能保证它始终读得出来 */
   background: var(--lg-glass-soft);
   border: 1px solid var(--lg-glass-line);
-  border-radius: var(--lg-radius, 10px);
+  border-radius: var(--lg-radius, 8px);
 }
 #lg-hello .lg-hello-av {
   width: 46px; height: 46px;
@@ -658,105 +627,4 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
 .lg-random-btn.primary:hover { background: var(--lg-glass-soft); }
 .lg-random-btn:disabled { opacity: 0.55; cursor: default; }
 
-/* ==================== 阅读模式（纯纸面，非玻璃面） ====================
-   .lg-fake/.lg-face 那套是"玻璃面"；阅读视图故意做成素纸面（长时间阅读），
-   用固定色 + 明暗两套，不吃材质变量。 */
-#lg-reader {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483000;
-  overflow-y: auto;
-  background: #fbfbfc;
-  color: #1b1b1f;
-  font-family: var(--lg-sans), "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  line-height: 1.85;
-}
-html[data-lg-page="dark"] #lg-reader { background: #17171a; color: #e9e9ec; }
-#lg-reader.lg-reader-dark { background: #17171a; color: #e9e9ec; }
-#lg-reader .lg-reader-bar {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: inherit;
-  border-bottom: 1px solid rgba(128, 128, 140, 0.3);
-  font-size: 12px;
-}
-#lg-reader .lg-reader-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.72; }
-#lg-reader .lg-reader-btn {
-  flex: none;
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid rgba(128, 128, 140, 0.4);
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-#lg-reader .lg-reader-btn:hover { border-color: currentColor; }
-#lg-reader .lg-reader-body { max-width: 720px; margin: 0 auto; padding: 28px 22px 80px; }
-#lg-reader .lg-reader-body img { max-width: 100%; height: auto; }
-#lg-reader .lg-reader-body pre { overflow-x: auto; padding: 10px; background: rgba(128, 128, 140, 0.12); border-radius: 8px; }
-#lg-reader .lg-reader-body h1, #lg-reader .lg-reader-body h2, #lg-reader .lg-reader-body h3 { line-height: 1.4; }
-
-/* ==================== 翻译（划词气泡 + 整页悬浮条） ====================
-   面本身走 .lg-face（material.css 的唯一配方），这里只排形态。 */
-#lg-tr-bubble {
-  position: fixed;
-  z-index: 2147483001;
-  width: min(320px, calc(100vw - 24px));
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-family: var(--lg-sans), "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--lg-ink, #1b1b1f);
-}
-#lg-tr-bubble .lg-tr-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
-#lg-tr-bubble .lg-tr-src { flex: 1; min-width: 0; opacity: 0.6; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#lg-tr-bubble .lg-tr-x {
-  flex: none;
-  width: 18px; height: 18px;
-  border: none; border-radius: 5px;
-  background: transparent; color: inherit; opacity: 0.6;
-  cursor: pointer; font-size: 12px; line-height: 1;
-  display: grid; place-items: center;
-}
-/* R41：关闭钮文本 × → 统一线稿（与 icons.js winClose 同 path） */
-#lg-tr-bubble .lg-tr-x svg { width: 10px; height: 10px; }
-#lg-tr-bubble .lg-tr-x:hover { opacity: 1; background: rgba(128, 128, 140, 0.18); }
-#lg-tr-bubble .lg-tr-err { color: #c0392b; }
-#lg-tr-bar {
-  position: fixed;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  z-index: 2147483001;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-family: var(--lg-sans), "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  font-size: 12.5px;
-  color: var(--lg-ink, #1b1b1f);
-}
-#lg-tr-bar .lg-tr-info { min-width: 92px; }
-#lg-tr-bar .lg-tr-btn {
-  flex: none;
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid rgba(128, 128, 140, 0.42);
-  border-radius: 7px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
 #lg-tr-bar .lg-tr-btn:hover { border-color: currentColor; }

@@ -28,7 +28,10 @@ function derived(dark) {
 function paint() {
   // 明暗与外壳同源：主进程 resolvedTheme 随 lg-config:get 下发——以前设置页
   // 自己看系统深色、外壳看洛谷嗅探（lastNative），两边对不上就是这么来的。
-  const dark = cfg.resolvedTheme === "dark";
+  // 但主进程只在启动时下发一次 resolvedTheme，强制深/浅色后设置页自己不会
+  // 立刻翻面（设置页不订阅配置回推），所以这里显式认 cfg.theme 的强制值。
+  const forced = cfg.theme === "dark" ? true : cfg.theme === "light" ? false : null;
+  const dark = forced != null ? forced : cfg.resolvedTheme === "dark";
   document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
 
   // 只贴四个基色；--surface-2/--ink-dim/--ink-faint 由 CSS 的 color-mix 自动派生
@@ -80,10 +83,17 @@ function paint() {
   $("s-border").value = bs;
   $("o-border").value = bs + "%";
   $("ck-anim").checked = cfg.animations !== false;
+  /* 站外页自动玻璃（默认开）：把外部网站上的卡片自动换成我们的玻璃面 */
+  $("ck-autoglass").checked = cfg.autoGlass !== false;
 
   // 玻璃皮肤
   const gl = cfg.glass === "liquid" ? "liquid" : "flat";
   document.querySelectorAll("#seg-glass button").forEach((b) => b.classList.toggle("active", b.dataset.v === gl));
+
+  // 明暗三态：cfg.theme 此前有键有逻辑（主进程 resolvedTheme 会读）但设置页
+  // 完全没有 UI，用户想强制深色/浅色只能改配置文件。
+  const th = ["auto", "light", "dark"].includes(cfg.theme) ? cfg.theme : "auto";
+  document.querySelectorAll("#seg-theme button").forEach((b) => b.classList.toggle("active", b.dataset.v === th));
 
   // 关闭重复标签的保留策略（整理标签页）
   const dk = ["active", "first", "mru"].includes(cfg.dedupeKeep) ? cfg.dedupeKeep : "active";
@@ -154,6 +164,8 @@ function paint() {
   $("ck-lucky").checked = cfg.luckyDay === true;
   $("ck-bsearch").checked = cfg.betterSearch !== false;
   $("ck-dlask").checked = cfg.dlAsk === true;
+  /* 下载完成系统通知（默认开） */
+  $("ck-dlnotify").checked = cfg.downloadNotify !== false;
 
   // 应用首页板块偏好（默认值与主进程 DEFAULT_CONFIG.homePrefs 一致）
   const hpv = Object.assign(
@@ -270,6 +282,7 @@ function buildNav() {
   showSection(all.some((x) => x.key === hash) ? hash : all[0].key);
 }
 
+let currentKey = "";   // 当前显示的导航项（搜索结束后要回到这里）
 function showSection(key) {
   const all = $("nav-list")._all || [];
   for (const it of all) {
@@ -284,9 +297,59 @@ function showSection(key) {
       $("pane-sub").textContent = it.sub || "改动即时生效，无需重启";
     }
   }
+  currentKey = key;
   try { history.replaceState(null, "", "#" + encodeURIComponent(key)); } catch {}
   $("pane").scrollTop = 0;
   window.scrollTo(0, 0);
+}
+
+/* ---------- 设置搜索 ----------
+   22 张卡、92 个控件纯线性平铺，"找不到"就等于"不存在"。搜索时跨分组
+   显示所有命中的卡片（而不是只筛导航），这样搜"壁纸"能一次看到配色卡
+   和壁纸卡里的所有相关项。空关键词时恢复原来的"一次只看一组"。 */
+function cardSearchText(card) {
+  const parts = [];
+  const push = (s) => { if (s) parts.push(s); };
+  push(card.dataset.title);
+  push(card.dataset.sub);
+  card.querySelectorAll("h2, h3, h4, label, legend, .hint, p").forEach((el) => push(el.textContent));
+  return parts.join(" ").replace(/\s+/g, " ").toLowerCase();
+}
+
+function runNavSearch(raw) {
+  const all = $("nav-list")._all || [];
+  const kw = String(raw || "").trim().toLowerCase();
+  const countEl = $("nav-search-count");
+  if (!kw) {
+    for (const it of all) {
+      it.btn.hidden = false;
+      for (const id of it.ids) {
+        const card = document.getElementById(id);
+        if (card) { card.hidden = false; card.classList.remove("search-hit"); }
+      }
+    }
+    countEl.textContent = "";
+    if (currentKey) showSection(currentKey);
+    return;
+  }
+  let hits = 0;
+  for (const it of all) {
+    let itemHit = false;
+    for (const id of it.ids) {
+      const card = document.getElementById(id);
+      if (!card) continue;
+      const hit = cardSearchText(card).indexOf(kw) >= 0;
+      card.hidden = !hit;
+      card.classList.toggle("search-hit", hit);
+      if (hit) { itemHit = true; hits++; }
+    }
+    it.btn.hidden = !itemHit;
+    it.btn.classList.remove("active");
+  }
+  countEl.textContent = hits ? hits + " 项匹配" : "无匹配";
+  $("pane-title").textContent = "搜索「" + raw.trim() + "」";
+  $("pane-sub").textContent = hits ? hits + " 张卡片包含该关键词" : "换个词试试，或清空搜索框看全部设置";
+  $("pane").scrollTop = 0;
 }
 
 /* ---------- 账号 ---------- */
@@ -784,6 +847,26 @@ async function renderWallpaperSet() {
 
 /* ---------- 绑定 ---------- */
 function bind() {
+  // 明暗三态：强制深/浅色。auto = 跟随洛谷页面嗅探（此前唯一可选行为）。
+  document.querySelectorAll("#seg-theme button").forEach((b) => {
+    b.addEventListener("click", () => {
+      const v = b.dataset.v;
+      if (!["auto", "light", "dark"].includes(v)) return;
+      set({ theme: v }, true);
+      document.querySelectorAll("#seg-theme button").forEach((x) => x.classList.toggle("active", x === b));
+      // 强制值要立刻反映到设置页自身（主进程只在启动时下发 resolvedTheme）
+      document.documentElement.setAttribute("data-theme", v === "auto" ? (cfg.resolvedTheme === "dark" ? "dark" : "light") : v);
+    });
+  });
+  // 设置搜索：跨分组显示命中的卡片；Esc 或清空即恢复原视图
+  const sb = $("nav-search");
+  sb.addEventListener("input", () => runNavSearch(sb.value));
+  sb.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { sb.value = ""; runNavSearch(""); sb.blur(); return; }
+    if (e.key !== "Enter") return;
+    const first = document.querySelector("#pane .card.search-hit");
+    if (first) first.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
   document.querySelectorAll("#seg-glass button").forEach((b) => {
     b.addEventListener("click", () => set({ glass: b.dataset.v }, true));
   });
@@ -934,6 +1017,7 @@ function bind() {
   ck("ck-codecopy", "codeCopy");
   ck("ck-diffmono", "diffMono");
   ck("ck-anim", "animations");
+  ck("ck-autoglass", "autoGlass");
   ck("ck-wpmute", "wallpaperMute");
   ck("ck-wppar", "wallpaperParallax");
   ck("ck-hello", "homeHello");
@@ -941,6 +1025,7 @@ function bind() {
   ck("ck-lucky", "luckyDay");
   ck("ck-bsearch", "betterSearch");
   ck("ck-dlask", "dlAsk");
+  ck("ck-dlnotify", "downloadNotify");
 
   /* 清除浏览数据：勾选项是一次性选择（不落配置），按钮读当前勾选执行 */
   $("btn-open-downloads").addEventListener("click", () => window.lgConfig.downloadReveal(0));

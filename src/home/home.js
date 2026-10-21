@@ -39,6 +39,19 @@
     tick(); // 字号/秒显立刻生效，不等下一秒
   }
 
+  /* ---------- 搜索框提示 ----------
+     「映射词」是内部术语，默认配置下 mappings 是空的——把它写进 placeholder
+     等于承诺一种开箱就用不了的输入方式。新人搜中文词 100% 走不通时，第一
+     嫌疑人就是这个看不懂的词。只有真的配了映射才把它显示出来。 */
+  function syncSearchHint() {
+    const inp = document.getElementById("q");
+    if (!inp) return;
+    const has = Object.keys(mappings || {}).length > 0;
+    inp.placeholder = has
+      ? "网址 / 题号 / UID / 搜索词 / 映射词"
+      : "网址 / 题号 / UID / 搜索词";
+  }
+
   /* ---------- 解析：与 omnibox 同一套语义 ----------
      映射词 > 完整 URL > 洛谷域名 > 站内路径 > 题号 > UID > 站内搜索 */
   function resolve(raw) {
@@ -331,6 +344,7 @@
       applyPrefs((c && c.homePrefs) || {});
       renderLinks((c && c.dockItems) || []);
     } catch (e) { /* 空态兜底 */ }
+    syncSearchHint();
     renderRecent();
     if (window.lgConfig && window.lgConfig.onContests) {
       window.lgConfig.onContests((d) => renderContests(d));
@@ -344,10 +358,9 @@
      （板块开关 / 时钟样式 / 快捷入口 / 倒计时都顺势重读） */
   document.addEventListener("lg-config", (e) => {
     const c = (e && e.detail) || {};
-    if (c.mappings) mappings = c.mappings;
+    if (c.mappings) { mappings = c.mappings; syncSearchHint(); }
     if (c.homePrefs) applyPrefs(c.homePrefs);
-    if (c.dockItems) renderLinks(c.dockItems);
-    if (Array.isArray(c.countdowns)) {
+    if (c.dockItems) renderLinks(c.dockItems);    if (Array.isArray(c.countdowns)) {
       countdowns = c.countdowns;
       renderCountdowns();
     }

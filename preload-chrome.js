@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld("lgChrome", {
   onFindResult: (cb) => ipcRenderer.on("chrome:find-result", (_e, r) => cb(r)),
   find: (text, opts) => ipcRenderer.invoke("lg-app:find", { text, ...(opts || {}) }),
   findStop: () => ipcRenderer.invoke("lg-app:find-stop"),
+  /* 标签悬停预览缩略图（Edge 标签预览卡片）：主进程抓页面缩略图并带 20 秒缓存 */
+  tabThumb: (id) => ipcRenderer.invoke("lg-tab:thumb", Number(id)),
   muteAll: (v) => ipcRenderer.invoke("lg-app:mute-all", v),
   screenshot: () => ipcRenderer.invoke("lg-app:screenshot"),
   /* 完整网页截图（含滚动）/ 画中画 / 阅读模式 / 整页翻译 */
@@ -83,6 +85,8 @@ contextBridge.exposeInMainWorld("lgChrome", {
   openTab: (url) => ipcRenderer.invoke("tab:open", url),
   back: () => ipcRenderer.invoke("tab:back"),
   forward: () => ipcRenderer.invoke("tab:fwd"),
+  /* 长按后退/前进弹出的访问历史栈（倒序：最近在前，active 标记当前所在位置） */
+  navHistory: (id) => ipcRenderer.invoke("tab:nav-history", Number(id)),
   reload: () => ipcRenderer.invoke("tab:reload"),
   stop: () => ipcRenderer.invoke("tab:stop"),
   /* 地址栏联想：历史 + 映射词（打开的标签与搜索行在外壳本地合并） */

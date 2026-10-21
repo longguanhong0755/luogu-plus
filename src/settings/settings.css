@@ -48,7 +48,7 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
      统一由 ext.css 的本地页面板规则消费 --lg-glass-*（flat=素面 / liquid=玻璃）。
      这里只留布局与圆角——以前这里手调 62%+blur(18)，和卡片的实心面是两种料，
      就是用户报的"外面的框和里面的块质感完全不一样"。 */
-  border-radius: var(--lg-radius, 12px);
+  border-radius: var(--lg-radius);
   overflow-y: auto;
 }
 .nav-head { padding: 0 8px 14px; }
@@ -67,7 +67,7 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
   font-family: var(--lg-sans); font-size: 13px;
   color: var(--ink-dim);
   background: transparent;
-  border: none; border-radius: 7px;
+  border: none; border-radius: var(--lg-radius-sm);
   transition: background 0.12s, color 0.12s;
 }
 .nav-item:hover { background: var(--surface-2); color: var(--ink); }
@@ -78,6 +78,24 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
 }
 .nav-foot { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; gap: 7px; }
 .nav-foot .btn { width: 100%; justify-content: center; }
+
+/* 设置搜索：22 张卡 92 个控件纯线性平铺，"找不到"就等于"不存在" */
+.nav-search { position: relative; padding: 0 8px 10px; }
+.nav-search input {
+  width: 100%; padding: 6px 9px; font-size: var(--fs-base);
+  border: 1px solid var(--hairline); border-radius: var(--lg-radius-sm);
+  background: var(--surface); color: var(--ink); outline: none;
+  font-family: inherit;
+}
+.nav-search input::placeholder { color: var(--ink-faint); }
+.nav-search input:focus-visible { border-color: var(--ink); outline: 2px solid var(--ink); outline-offset: 1px; }
+.nav-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.nav-search-count {
+  position: absolute; right: 14px; bottom: 14px;
+  font-size: var(--fs-sub); color: var(--ink-faint); pointer-events: none;
+}
+/* 搜索命中：左侧一条主线 + 轻微提亮，扫一眼就能定位 */
+.card.search-hit { box-shadow: inset 2px 0 0 var(--ink); }
 
 .pane {
   min-width: 0;
@@ -102,12 +120,12 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
   position: relative;
   padding: 16px 12px 24px;
   border: 1px solid var(--hairline);
-  border-radius: 9px;
+  border-radius: var(--lg-radius);
 }
 .sp-card {
   padding: 10px 12px;
   border: 1px solid;
-  border-radius: 7px;
+  border-radius: var(--lg-radius-sm);
   font-size: var(--fs-base);
   text-align: center;
 }
@@ -146,7 +164,7 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
 .key-btn {
   padding: 2px 9px;
   border: 1px solid var(--hairline);
-  border-radius: 5px;
+  border-radius: var(--lg-radius-sm);
   background: transparent;
   color: var(--ink-dim);
   font-size: var(--fs-sub);
@@ -203,7 +221,7 @@ code {
 /* 分段选择 */
 .seg { display: flex; gap: 6px; background: var(--surface-2); padding: 4px; border-radius: var(--lg-radius); }
 .seg button {
-  flex: 1; padding: 8px 0; border: none; border-radius: 6px;
+  flex: 1; padding: 8px 0; border: none; border-radius: var(--lg-radius-sm);
   background: transparent; color: var(--ink-dim);
   font-size: 13px; cursor: pointer; transition: all 0.12s;
 }
@@ -236,6 +254,13 @@ input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
   background: var(--ink); cursor: pointer; box-shadow: 0 0 0 1px var(--surface);
 }
+/* 滑杆的键盘焦点：此前 outline:none 且全页无 :focus-visible 规则，
+   Tab 到滑杆上完全看不出自己在哪（方向键能调，但不知道调的是哪根）。 */
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: var(--lg-radius-sm);
+}
 
 /* 按钮 */
 .btn {
@@ -252,8 +277,18 @@ input[type="range"]::-webkit-slider-thumb {
 .btn.primary:hover { background: var(--surface-2); }
 
 /* 开关 */
-.switch-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 13px; cursor: pointer; }
-.switch-row input { display: none; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 13px; cursor: pointer; position: relative; }
+/* 真实 checkbox 不能 display:none —— 那样它不进焦点序列，32 个功能开关
+   对纯键盘用户等于不存在（Tab 一路跳过，全靠鼠标点）。
+   改成保留占位的视觉隐藏：1px、绝对定位、opacity 0，焦点能力完整保留，
+   后面那条 input:checked + .knob 的相邻兄弟选择器也不受影响（DOM 顺序没变）。 */
+.switch-row input {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: 0; padding: 0; border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 .switch-row .knob {
   width: 38px; height: 21px; border-radius: 21px; flex: none;
   border: 1px solid var(--hairline); background: var(--surface-2);
@@ -265,17 +300,22 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .switch-row input:checked + .knob { background: var(--surface); border-color: var(--ink); }
 .switch-row input:checked + .knob::after { transform: translateX(17px); background: var(--ink); }
+/* 焦点落在开关上时，把焦点环画到可见的 knob 上（input 本身是隐藏的） */
+.switch-row input:focus-visible + .knob {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
 
 /* 映射 */
 .map-row { display: grid; grid-template-columns: 120px 1fr 30px; gap: 6px; margin-bottom: 7px; }
 .map-row input {
-  padding: 7px 9px; border-radius: 7px; font-size: var(--fs-base);
+  padding: 7px 9px; border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
   border: 1px solid var(--hairline); background: var(--surface);
   color: var(--ink); outline: none; font-family: var(--lg-mono);
 }
 .map-row input:focus { border-color: var(--ink); }
 .map-row .btn-del {
-  border: 1px solid var(--hairline); border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--hairline); border-radius: var(--lg-radius-sm); cursor: pointer;
   background: var(--surface); color: var(--ink-dim); font-size: 14px;
   display: grid; place-items: center; padding: 0;
 }
@@ -291,14 +331,14 @@ input[type="range"]::-webkit-slider-thumb {
 .dock-row { display: grid; grid-template-columns: 34px 110px 1fr 26px 26px 26px; gap: 6px; margin-bottom: 7px; }
 .dock-row select,
 .dock-row input {
-  padding: 7px 9px; border-radius: 7px; font-size: var(--fs-base);
+  padding: 7px 9px; border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
   border: 1px solid var(--hairline); background: var(--surface);
   color: var(--ink); outline: none;
 }
 .dock-row input { font-family: var(--lg-mono); }
 .dock-row select:focus, .dock-row input:focus { border-color: var(--ink); }
 .dock-row .btn-del, .dock-row .btn-mini {
-  border: 1px solid var(--hairline); border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--hairline); border-radius: var(--lg-radius-sm); cursor: pointer;
   background: var(--surface); color: var(--ink-dim); font-size: 13px;
   display: grid; place-items: center; padding: 0;
 }
@@ -323,7 +363,7 @@ input[type="range"]::-webkit-slider-thumb {
   padding: 8px;
   background: var(--surface);
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: var(--lg-radius);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
 }
 /* hidden 属性靠 UA 的 display:none 生效，但上面对 .icon-panel 写的 display:grid
@@ -334,7 +374,7 @@ input[type="range"]::-webkit-slider-thumb {
   width: 30px; height: 30px;
   display: grid; place-items: center;
   border: 1px solid var(--hairline);
-  border-radius: 7px;
+  border-radius: var(--lg-radius-sm);
   background: transparent;
   color: var(--ink-dim);
   cursor: pointer;
@@ -353,7 +393,7 @@ input[type="range"]::-webkit-slider-thumb {
 .wp-cell {
   position: relative;
   aspect-ratio: 16 / 10;
-  border-radius: 9px;
+  border-radius: var(--lg-radius);
   overflow: hidden;
   border: 2px solid var(--hairline);
   cursor: pointer;
@@ -369,7 +409,7 @@ input[type="range"]::-webkit-slider-thumb {
   position: absolute;
   top: 4px; right: 4px;
   width: 20px; height: 20px;
-  border-radius: 5px;
+  border-radius: var(--lg-radius-sm);
   border: 1px solid var(--hairline);
   background: rgba(255, 255, 255, 0.85);
   color: #303034;
@@ -410,13 +450,13 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--hairline); color: var(--ink-dim);
 }
 .acct-row.active .a-tag { background: var(--surface-2); color: var(--ink); border-color: var(--ink); font-weight: 600; }
-.acct-row .btn { padding: 5px 11px; font-size: 12px; border-radius: 6px; flex: none; }
+.acct-row .btn { padding: 5px 11px; font-size: 12px; border-radius: var(--lg-radius-sm); flex: none; }
 .acct-empty { padding: 8px 0; font-size: var(--fs-base); color: var(--ink-faint); }
 
 .acct-form { display: flex; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
 .acct-form input {
   flex: 1; min-width: 120px;
-  padding: 8px 10px; border-radius: 7px; font-size: var(--fs-base);
+  padding: 8px 10px; border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
   border: 1px solid var(--hairline); background: var(--surface);
   color: var(--ink); outline: none;
 }
@@ -434,7 +474,7 @@ input[type="range"]::-webkit-slider-thumb {
   height: 58px;
   padding: 5px 8px;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--lg-radius-sm);
   background: #ffffff;
   image-rendering: pixelated;
   align-self: stretch;
@@ -477,7 +517,7 @@ footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
 .pcard-chips {
   display: flex;
   border: 1px solid var(--hairline);
-  border-radius: 5px;
+  border-radius: var(--lg-radius-sm);
   overflow: hidden;
 }
 .pcard-chips i {
@@ -516,7 +556,7 @@ footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
 .sw {
   width: 26px; height: 26px; padding: 0;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--lg-radius-sm);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
@@ -527,8 +567,27 @@ footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
 input[type="color"] {
   width: 36px; height: 26px; padding: 0;
   border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border-radius: var(--lg-radius-sm);
   background: var(--surface);
   cursor: pointer;
 }
 
+
+/* ---------- 键盘可达性（统一焦点环）----------
+   此前全页 :focus-visible 规则数为 0：Tab 靠浏览器默认橙环
+   （outline 1px auto rgb(229,151,0)），与主题色无关，也与本页任何
+   其它样式都不搭。统一用 --ink 画一圈，键盘用户才知道自己在哪。 */
+.nav-item:focus-visible,
+.btn:focus-visible,
+.seg button:focus-visible,
+.map-row input:focus-visible,
+.dock-row input:focus-visible,
+.acct-form input:focus-visible,
+.code-area:focus-visible,
+input[type="color"]:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: var(--lg-radius-sm);
+}

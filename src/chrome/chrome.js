@@ -683,6 +683,98 @@ document.getElementById("tabs").addEventListener(
   { passive: false }
 );
 
+/* ---------- 标签悬停预览卡片（Edge 式）----------
+   悬停某个标签时，在标签条下方弹一张小卡：页面缩略图 + 标题 + 网址。
+   这是 Edge 最有辨识度的手感之一——不用点过去就知道那个标签是什么。
+   刻意做成 chrome 视图里的普通浮层（不走 popup 弹层）：标签条本来就在
+   chrome 视图里，卡片锚在标签下方即可，省掉一次跨 webContents 的传图。
+   缩略图由主进程 capturePage 出（窗口遮挡时会失败，失败就只显示标题与
+   网址，**不让卡片空着或卡住**）。 */
+const THUMB_DELAY = 320;   // 悬停多久才弹：太短会误触发（鼠标路过）
+let thumbTimer = null;
+let thumbHideTimer = null;
+let thumbCardEl = null;
+let thumbCardId = 0;
+
+function ensureThumbCard() {
+  if (thumbCardEl) return thumbCardEl;
+  const el = document.createElement("div");
+  el.id = "thumb-card";
+  el.hidden = true;
+  el.innerHTML =
+    '<img class="tc-img" alt=""><div class="tc-meta">' +
+    '<div class="tc-title"></div><div class="tc-url"></div></div>';
+  document.body.appendChild(el);
+  el.addEventListener("mouseenter", () => { clearTimeout(thumbHideTimer); thumbHideTimer = null; });
+  el.addEventListener("mouseleave", () => {
+    clearTimeout(thumbHideTimer);
+    thumbHideTimer = setTimeout(() => hideThumbCard(), 160);
+  });
+  thumbCardEl = el;
+  return el;
+}
+
+function hideThumbCard() {
+  clearTimeout(thumbTimer);
+  thumbTimer = null;
+  clearTimeout(thumbHideTimer);
+  thumbHideTimer = null;
+  if (!thumbCardEl) return;
+  thumbCardEl.hidden = true;
+  thumbCardId = 0;
+}
+
+async function showThumbCard(tabId, anchorEl) {
+  const t = tabsState.tabs.find((x) => x.id === tabId);
+  if (!t) return;
+  const card = ensureThumbCard();
+  card.querySelector(".tc-title").textContent = t.title || "（无标题）";
+  card.querySelector(".tc-url").textContent = t.url || "";
+  const img = card.querySelector(".tc-img");
+  img.removeAttribute("src");
+  card.hidden = false;
+  thumbCardId = tabId;
+  const r = anchorEl.getBoundingClientRect();
+  const w = card.offsetWidth || 320;
+  card.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
+  card.style.top = r.bottom + 8 + "px";
+  /* 缩略图：主进程按 tabId 出图并带 20 秒缓存。没有该能力（老 preload）
+     或出图失败时，只留标题与网址——卡片本身仍然有用。 */
+  if (typeof window.lgChrome.tabThumb !== "function") return;
+  try {
+    const res = await window.lgChrome.tabThumb(tabId);
+    if (!res || !res.ok || thumbCardId !== tabId || !thumbCardEl || thumbCardEl.hidden) return;
+    img.src = res.dataUrl;
+  } catch (e) { /* 出图失败就算了，不影响元信息 */ }
+}
+
+document.getElementById("tabs").addEventListener("mouseover", (e) => {
+  const el = e.target.closest(".tab[data-id]");
+  if (!el) return;
+  const id = Number(el.dataset.id);
+  if (id === thumbCardId) return;
+  clearTimeout(thumbHideTimer);
+  thumbHideTimer = null;
+  clearTimeout(thumbTimer);
+  thumbTimer = setTimeout(() => showThumbCard(id, el), THUMB_DELAY);
+});
+document.getElementById("tabs").addEventListener("mouseout", (e) => {
+  const el = e.target.closest(".tab[data-id]");
+  if (!el) return;
+  const to = e.relatedTarget;
+  if (to && (el.contains(to) || (thumbCardEl && thumbCardEl.contains(to)))) return;
+  clearTimeout(thumbTimer);
+  thumbTimer = null;
+  clearTimeout(thumbHideTimer);
+  thumbHideTimer = setTimeout(() => hideThumbCard(), 160);
+});
+/* 标签条重渲（开/关/移动标签）后旧卡片锚点已失效 */
+const _origRenderTabs = renderTabs;
+renderTabs = function () {
+  hideThumbCard();
+  return _origRenderTabs.apply(this, arguments);
+};
+
 /* ---------- 标签分组（Edge Tab Groups） ----------
    主进程持有分组状态，快照里带 groups 元数据；这里负责：组牌渲染
    （连续同组标签前面插一块色牌）、折叠时组牌带计数、点击折叠/展开、
@@ -2226,6 +2318,7 @@ function commands() {
   return list;
 }
 /* 标签切换条目：命令面板（不含当前标签）与「搜索标签页」面板（含当前标签）共用 */
+let tabSearchClosed = [];   // 最近关闭的标签（主进程持有，现拉现用）
 function tabCommands(includeCurrent) {
   const out = [];
   for (const t of tabsState.tabs || []) {
@@ -2238,6 +2331,20 @@ function tabCommands(includeCurrent) {
       sub: (t.url || "").replace(/^https?:\/\//, ""),
       run: () => window.lgChrome.activateTab(t.id),
     });
+  }
+  /* Edge 的标签搜索是两块：已打开的标签 + 「最近关闭」。已关闭的那些常常
+     才是真正想找回的（"刚才那个页面叫什么来着"）。closedStack 在主进程
+     手里（会话内 20 条），这里现拉现用。 */
+  if (includeCurrent) {
+    for (const e of tabSearchClosed) {
+      out.push({
+        title: e.title || e.url || "",
+        hint: (e.url || "").replace(/^https?:\/\//, "").slice(0, 30),
+        sub: "最近关闭",
+        closed: true,
+        run: () => window.lgChrome.closedOpen(e.i),
+      });
+    }
   }
   return out;
 }
@@ -2270,8 +2377,16 @@ function renderPalette(q) {
     return;
   }
   palItems.forEach((c, i) => {
+    /* 「最近关闭」那一段前面插一个分组标题（Edge 的标签搜索就是这么分的：
+       已打开的标签一块，最近关闭一块） */
+    if (c.closed && !(palItems[i - 1] && palItems[i - 1].closed)) {
+      const sep = document.createElement("div");
+      sep.className = "pal-head";
+      sep.textContent = "最近关闭";
+      list.appendChild(sep);
+    }
     const b = document.createElement("button");
-    b.className = "pal-item" + (i === palIndex ? " on" : "");
+    b.className = "pal-item" + (i === palIndex ? " on" : "") + (c.closed ? " closed" : "");
     if (c.tab) b.appendChild(tabIcon(c.tab)); // 图标（Edge 的标签搜索每行都带）
     const t = document.createElement("span");
     t.className = "pal-title";
@@ -2322,6 +2437,17 @@ function openTabSearch() {
   palIndex = 0;
   renderPalette("");
   inp.focus();
+  /* 现拉「最近关闭」补进列表（Edge 的标签搜索有两块）。拉取失败就只列
+     已打开的标签，面板照常能用——不能因为一个可选数据源失败就废掉搜索。 */
+  try {
+    Promise.resolve(window.lgChrome.closedList()).then(
+      (r) => {
+        tabSearchClosed = (r && r.list) || [];
+        if (palMode === "tabs" && paletteOpen()) renderPalette(document.getElementById("pal-input").value);
+      },
+      () => { tabSearchClosed = []; }
+    );
+  } catch (e) { tabSearchClosed = []; }
 }
 function showShortcuts() {
   document.getElementById("palette").hidden = false;
@@ -2367,6 +2493,15 @@ function applyConfig(cfg) {
   const s = document.documentElement.style;
   const dark = cfg.theme === "dark" || (cfg.theme === "auto" && cfg.resolvedTheme === "dark");
   document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  /* 「映射词」是内部术语：默认 mappings 是空的，写进 placeholder 等于承诺
+     一种开箱用不了的输入方式。只有真配了映射才把它显示出来。 */
+  const hasMappings = !!(cfg.mappings && Object.keys(cfg.mappings).length);
+  const omni = document.getElementById("omni-input");
+  if (omni) {
+    omni.placeholder = hasMappings
+      ? "网址 / 题号 / UID / 搜索词 / 映射词"
+      : "网址 / 题号 / UID / 搜索词";
+  }
   // 配色预设：主进程按当前明暗算好一组基色随配置下发，这里只负责贴上去。
   // 派生色（--surface-2/--ink-dim/--ink-faint）在 CSS 里由基色 color-mix 得出。
   const pv = cfg.presetVars;
@@ -2563,8 +2698,115 @@ function bind() {
   /* 垂直拖拽绑在整个侧栏上（不只是标签列表）：钉住区与标签列表之间的拖进/
      拖出也是合法落点（Edge 的拖进钉住区=钉住、拖出=取消钉住）。 */
   initDrag(document.getElementById("vtab"), true);
-  document.getElementById("btn-back").addEventListener("click", () => window.lgChrome.back());
-  document.getElementById("btn-fwd").addEventListener("click", () => window.lgChrome.forward());
+  /* ---------- 长按后退/前进：弹出访问历史栈（Edge 行为）----------
+     按住不放约半秒，弹出一串访问过的页面，点哪条直接跳过去；短按仍是
+     单步后退/前进。三个容易漏的点：
+       · 长按触发后浏览器仍会补一个 click —— 不抑制的话菜单刚弹出就被
+         自己点关（用户看到的现象是"长按没反应"）
+       · 按下后手抖/拖动超过 5px 要当取消，否则拖窗口时误弹菜单
+       · 那一侧没有历史时（canBack/canFwd 为假）按住也不该弹 */
+  const NAV_HOLD_MS = 500;
+  const NAV_HOLD_SLOP = 5;
+  let navHold = null;
+  let navHoldFired = false;
+
+  function navHoldCancel() {
+    if (navHold && navHold.timer) clearTimeout(navHold.timer);
+    navHold = null;
+  }
+  function navHoldStart(e, dir) {
+    navHoldCancel();
+    const tab = (tabsState.tabs || []).find((t) => t.id === tabsState.activeId);
+    const canGo = dir < 0 ? tab && tab.canBack : tab && tab.canFwd;
+    if (!canGo) return;
+    const btn = e.currentTarget;
+    navHold = {
+      dir,
+      btn,
+      tabId: tab.id,
+      x: e.clientX || 0,
+      y: e.clientY || 0,
+      timer: setTimeout(function () { navHoldFire(); }, NAV_HOLD_MS),
+    };
+  }
+  async function navHoldFire() {
+    if (!navHold) return;
+    const h = navHold;
+    navHold = null;
+    navHoldFired = true; // 抑制紧随其后的那次 click
+    try {
+      const res = await window.lgChrome.navHistory(h.tabId);
+      if (!res || !res.ok || !res.list || !res.list.length) { navHoldFired = false; return; }
+      showNavHistory(res, h.btn);
+    } catch (e) { navHoldFired = false; }
+  }
+  /* 主进程只提供单步 back/forward，所以"跳到第 i 条"= 连续走 |i - index| 步。
+     每步之间留一点间隔：goBack 是异步的，连着发会被前一次导航打断。 */
+  async function jumpNavHistory(index, target) {
+    const steps = Math.abs(target - index);
+    const dir = target > index ? 1 : -1;
+    for (let k = 0; k < steps; k++) {
+      if (dir < 0) await window.lgChrome.back();
+      else await window.lgChrome.forward();
+      await new Promise((r) => setTimeout(r, 70));
+    }
+  }
+  function showNavHistory(res, anchor) {
+    const box = document.createElement("div");
+    box.className = "nav-hist";
+    box.setAttribute("role", "menu");
+    res.list.forEach((it) => {
+      const row = document.createElement("button");
+      row.className = "nh-row" + (it.active ? " on" : "");
+      let host = "", path = "";
+      try {
+        const u = new URL(it.url);
+        host = u.hostname;
+        path = ((u.pathname || "/") + (u.search || "")).slice(0, 40);
+      } catch (e) { path = String(it.url || "").slice(0, 40); }
+      row.innerHTML =
+        '<span class="nh-mark"></span><span class="nh-text">' +
+        '<span class="nh-title"></span><span class="nh-url"></span></span>';
+      row.querySelector(".nh-mark").textContent = it.active ? "●" : it.forward ? "›" : "‹";
+      row.querySelector(".nh-title").textContent = it.title || host || it.url;
+      row.querySelector(".nh-url").textContent = host + path;
+      popBind(row, function () {
+        window.lgChrome.popupHide();
+        jumpNavHistory(res.index, it.i);
+      });
+      box.appendChild(row);
+    });
+    const r = anchor.getBoundingClientRect();
+    const degenerate = !anchor.isConnected || (r.width === 0 && r.height === 0);
+    window.lgChrome.popupShow({
+      html: box.outerHTML,
+      ax: degenerate ? Math.max(8, Math.round(window.innerWidth - 8)) : Math.round(r.left),
+      ay: degenerate ? headerH() : Math.round(r.bottom + 6),
+      ...popupThemePayload(),
+    });
+  }
+  function bindNavHoldButton(btn, dir) {
+    if (!btn) return;
+    btn.addEventListener("pointerdown", (e) => navHoldStart(e, dir));
+    btn.addEventListener("pointermove", (e) => {
+      if (!navHold) return;
+      const dx = Math.abs((e.clientX || 0) - navHold.x);
+      const dy = Math.abs((e.clientY || 0) - navHold.y);
+      if (dx > NAV_HOLD_SLOP || dy > NAV_HOLD_SLOP) navHoldCancel();
+    });
+    btn.addEventListener("pointerup", navHoldCancel);
+    btn.addEventListener("pointerleave", navHoldCancel);
+    btn.addEventListener("pointercancel", navHoldCancel);
+    /* 长按时浏览器仍会补一个 click：这一次要吃掉，否则菜单刚弹出就被自己点关 */
+    btn.addEventListener("click", () => {
+      if (navHoldFired) { navHoldFired = false; return; }
+      if (dir < 0) window.lgChrome.back();
+      else window.lgChrome.forward();
+    });
+    btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+  bindNavHoldButton(document.getElementById("btn-back"), -1);
+  bindNavHoldButton(document.getElementById("btn-fwd"), 1);
   document.getElementById("btn-reload").addEventListener("click", () => window.lgChrome.reload());
   document.getElementById("vtab-set").addEventListener("click", () => window.lgChrome.openSettings());
   /* 唯一一颗 ⌄（左侧保留）：点开「标签页操作」菜单——原右侧那颗的内容
