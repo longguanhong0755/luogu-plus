@@ -46,5 +46,7 @@ contextBridge.exposeInMainWorld("lgPopup", {
   sugHover: (i) => ipcRenderer.send("popup:sug-hover", Number(i) || 0),
   onSugSel: (cb) => ipcRenderer.on("popup:sug-sel", (_e, i) => cb(i)),
   onClear: (cb) => ipcRenderer.on("popup:clear", () => cb()),
-  version: "8",
+  /* 原来这里挂着一个写死的 version:"8"——**没有任何地方读它**
+     （全仓 grep 无命中），而 R42 已经在 preload-page.js 里删过同样的东西：
+     "应用已到 3.14.0，值早就烂了"。留着只会让人以为弹层有版本协商。 */
 });

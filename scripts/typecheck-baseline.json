@@ -1,0 +1,83 @@
+{
+ "total": 430,
+ "per": {
+  "main.js": {
+   "count": 70,
+   "samples": [
+    "Property 'bg' does not exist on type '{}'.",
+    "Property 'bg' does not exist on type '{}'.",
+    "Property 'stack' does not exist on type 'unknown'."
+   ]
+  },
+  "scripts/gen-config-schema.cjs": {
+   "count": 3,
+   "samples": [
+    "Type 'boolean' is not assignable to type 'string'.",
+    "Type 'boolean' is not assignable to type 'string'.",
+    "Type 'number' is not assignable to type 'string'."
+   ]
+  },
+  "src/chrome/chrome.js": {
+   "count": 98,
+   "samples": [
+    "Property 'LGIcons' does not exist on type 'Window & typeof globalThis'.",
+    "Cannot redeclare block-scoped variable 'DOCK_ICONS'.",
+    "Property 'LGIcons' does not exist on type 'Window & typeof globalThis'."
+   ]
+  },
+  "src/dock/dock.js": {
+   "count": 9,
+   "samples": [
+    "Cannot redeclare block-scoped variable 'root'.",
+    "Property 'style' does not exist on type 'Element'.",
+    "Property 'offsetLeft' does not exist on type 'Element'."
+   ]
+  },
+  "src/history/history.js": {
+   "count": 6,
+   "samples": [
+    "Cannot redeclare block-scoped variable '$'.",
+    "Property 'value' does not exist on type 'HTMLElement'.",
+    "Property 'value' does not exist on type 'HTMLElement'."
+   ]
+  },
+  "src/home/home.js": {
+   "count": 12,
+   "samples": [
+    "Property 'placeholder' does not exist on type 'HTMLElement'.",
+    "Property 'value' does not exist on type 'HTMLElement'.",
+    "Property 'value' does not exist on type 'HTMLElement'."
+   ]
+  },
+  "src/icons.js": {
+   "count": 1,
+   "samples": [
+    "Property 'LGIcons' does not exist on type 'Window & typeof globalThis'."
+   ]
+  },
+  "src/inject.js": {
+   "count": 75,
+   "samples": [
+    "Property '__lgNativeTheme' does not exist on type 'Window & typeof globalThis'.",
+    "Property '__lgNativeTheme' does not exist on type 'Window & typeof globalThis'.",
+    "Property '__lgNativeTheme' does not exist on type 'Window & typeof globalThis'."
+   ]
+  },
+  "src/popup/popup.js": {
+   "count": 29,
+   "samples": [
+    "Cannot redeclare block-scoped variable 'root'.",
+    "Property 'closest' does not exist on type 'EventTarget'.",
+    "Property 'closest' does not exist on type 'EventTarget'."
+   ]
+  },
+  "src/settings/settings.js": {
+   "count": 127,
+   "samples": [
+    "Cannot redeclare block-scoped variable '$'.",
+    "Property '_h' does not exist on type 'HTMLElement'.",
+    "Property '_h' does not exist on type 'HTMLElement'."
+   ]
+  }
+ }
+}

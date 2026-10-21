@@ -104,7 +104,9 @@ run_probe() {
 }
 run_probe probe-v316.cjs
 run_probe probe-glass.cjs "http://127.0.0.1:$WEB_PORT/?regress=1"
-PROBE_WEB="http://127.0.0.1:$WEB_PORT" run_probe probe-navhist.cjs
+PROBE_WEB="http://127.0.0.1:$WEB_PORT" PROBE_WEB="http://127.0.0.1:$WEB_PORT" run_probe probe-navhist.cjs
+# 存量 IPC 契约：把每个 preload 暴露的方法都调一遍，抓"调用即崩"的通道
+run_probe probe-ipc-contract.cjs
 
 printf "\n=== 4/4 汇总 ===\n"
 for f in "$OUT"/*-result.json; do

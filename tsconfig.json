@@ -1,0 +1,30 @@
+{
+  "_说明": "类型检查配置：项目是纯 JavaScript（不迁 TypeScript），但用 JSDoc + checkJs 拿到类型层的保护。新增文件后要跑一次 npm run typecheck。",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "allowUnreachableCode": false,
+    "types": ["node"]
+  },
+  "include": [
+    "main.js",
+    "preload-*.js",
+    "src/**/*.js",
+    "src/types/*.d.ts",
+    "scripts/**/*.cjs"
+  ],
+  "exclude": [
+    "node_modules",
+    "dev",
+    "app"
+  ]
+}

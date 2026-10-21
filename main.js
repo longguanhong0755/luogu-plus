@@ -381,7 +381,7 @@ function themeVars(id, mode) {
   /* 自定义基色：用户在设置页自选底色/文字色（cfg.customBase），
      边框从文字色派生；主题色种子照常往上混。 */
   if (id === "custom") {
-    const cb = cfg.customBase || {};
+    const cb = /** @type {{bg?: string, ink?: string}} */ (cfg.customBase || {});
     const ok = (h) => /^#[0-9a-f]{6}$/i.test(String(h || ""));
     const bg = ok(cb.bg) ? cb.bg : "#f7f7f8";
     const ink = ok(cb.ink) ? cb.ink : "#18181b";
@@ -881,6 +881,7 @@ function flushPersistenceNotes() {
 }
 
 const CONFIG_VERSION = 7;
+/** @type {typeof DEFAULT_CONFIG & { configVersion: number, workspaces?: unknown }} */
 let cfg = { ...DEFAULT_CONFIG };
 function loadConfig() {
   const raw = readJsonSafe(configPath(), null, "配置");
@@ -2150,8 +2151,11 @@ setInterval(() => {
   if (cfg.memSleep === false) return;
   try {
     const si = process.getSystemMemoryInfo();
-    const totalKB = si.total || si.totalMem || 0;
-    const freeKB = si.free || si.freeMem || 0;
+    /* Electron 的 SystemMemoryInfo 字段就是 total / free（KB）。
+       此前还写了 "|| si.totalMem || 0" 的兜底——那个字段**根本不存在**
+       （类型检查指出来的），所以它永远读不到，纯属误导性死代码。 */
+    const totalKB = si.total || 0;
+    const freeKB = si.free || 0;
     if (!totalKB) return;
     const low = freeKB < 1572864 || freeKB * 20 < totalKB * 3; // <1.5GB 或 <15%
     if (!low) return;
@@ -6762,6 +6766,339 @@ async function safeCapture(wc, ms = 8000) {
     return null;
   }
 }
+
+
+/* ---------- 自动登录（验证码人工辅助） ---------- */
+async function autoLoginFlow() {
+  if (!autoLogin) return;
+  const fsx = fs;
+  const outDir = selftestShot ? path.dirname(selftestShot) : app.getPath("userData");
+  const out = (p) => path.join(outDir, p);
+  let lw = null;
+  try {
+    lw = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } });
+    // 清掉可能被污染的旧 cookie，走"首页 → 页内跳登录页"的真实用户路径
+    await session.defaultSession.clearStorageData({ storages: ["cookies"] }).catch?.(() => {});
+    let loaded = false;
+    for (let i = 0; i < 3 && !loaded; i++) {
+      try {
+        await lw.loadURL(HOME_URL);
+        loaded = true;
+      } catch (e) {
+        dbg("home load failed (" + i + "): " + e.message);
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+    if (!loaded) {
+      fsx.writeFileSync(out("autologin.json"), JSON.stringify({ ok: false, stage: "home-load-failed" }));
+      return;
+    }
+    await lw.webContents.executeJavaScript('location.href = "/auth/login"', true).catch(() => {});
+    // 等登录页表单出现
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const has = await lw.webContents.executeJavaScript(
+        "!!document.querySelector('input[type=text]')", true
+      ).catch(() => false);
+      if (has) break;
+    }
+    // 等账号输入框
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (await lw.webContents.executeJavaScript("!!document.querySelector('input[type=text]')", true).catch(() => false)) break;
+    }
+    const step1 = await lw.webContents.executeJavaScript(
+      `(async function(){
+        function setValue(input, val) {
+          var proto = HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, val);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        var acc = document.querySelector('input[type=text]');
+        if (!acc) return { ok: false, reason: 'no account input' };
+        setValue(acc, ${JSON.stringify(argUser)});
+        await new Promise(function(r){ setTimeout(r, 400); });
+        var next = Array.from(document.querySelectorAll('button')).find(function(b){ return (b.textContent || '').trim() === '下一步'; });
+        if (!next) return { ok: false, reason: 'no next button' };
+        next.click();
+        for (var i = 0; i < 30; i++) {
+          await new Promise(function(r){ setTimeout(r, 500); });
+          if (document.querySelector('input[type=password]')) return { ok: true };
+        }
+        return { ok: false, reason: 'password input timeout' };
+      })()`,
+      true
+    );
+    if (!step1.ok) {
+      fsx.writeFileSync(out("autologin.json"), JSON.stringify({ ok: false, stage: "step1", ...step1 }));
+      return;
+    }
+    // 填密码
+    await lw.webContents.executeJavaScript(
+      `(function(){
+        function setValue(input, val) {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, val);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        var pwd = document.querySelector('input[type=password]');
+        setValue(pwd, ${JSON.stringify(argPass)});
+      })()`,
+      true
+    );
+    // 验证码：优先用命令行给出的答案；否则 canvas 4x 放大取像素 + 最多 5 次重试
+    let captchaAnswer = argCaptcha;
+    const answerFile = path.join(app.getPath("userData"), "captcha-answer.txt");
+
+    const grabCaptcha = async () => {
+      return await lw.webContents.executeJavaScript(
+        `(async function(){
+          var img = document.querySelector('img[src*="captcha"]');
+          if (!img) return null;
+          if (!img.complete) {
+            await new Promise(function(r){ img.onload = r; setTimeout(r, 3000); });
+          }
+          try {
+            var s = 4;
+            var c = document.createElement('canvas');
+            c.width = (img.naturalWidth || img.width || 80) * s;
+            c.height = (img.naturalHeight || img.height || 30) * s;
+            var ctx = c.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            return c.toDataURL('image/png');
+          } catch (e) { return null; }
+        })()`,
+        true
+      );
+    };
+
+    let loggedIn = false;
+    for (let attempt = 1; attempt <= 5 && !loggedIn; attempt++) {
+      let answer = captchaAnswer;
+      if (!answer) {
+        const dataUrl = await grabCaptcha();
+        if (dataUrl && dataUrl.startsWith("data:image")) {
+          fsx.writeFileSync(out("autologin-captcha.png"), Buffer.from(dataUrl.split(",")[1], "base64"));
+        } else {
+          const shot = await safeCapture(lw.webContents, 5000);
+          if (shot) fsx.writeFileSync(out("autologin-captcha.png"), shot.toPNG());
+        }
+        fsx.writeFileSync(
+          out("autologin-state.json"),
+          JSON.stringify({ ok: false, stage: "captcha-wait", attempt, hint: "write code to " + answerFile })
+        );
+        dbg("autologin captcha wait, attempt " + attempt);
+        let got = false;
+        for (let i = 0; i < 600; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const ans = fsx.readFileSync(answerFile, "utf8").trim();
+            if (ans) { answer = ans; fsx.unlinkSync(answerFile); got = true; break; }
+          } catch {}
+        }
+        if (!got) break;
+      }
+
+      await lw.webContents.executeJavaScript(
+        `(async function(){
+          function setValue(input, val) {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, val);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          var cap = document.querySelector('input[placeholder*="验证码"], input[placeholder*="图形"]');
+          if (!cap) return 'no captcha input';
+          setValue(cap, ${JSON.stringify(answer)});
+          await new Promise(function(r){ setTimeout(r, 300); });
+          var btn = Array.from(document.querySelectorAll('button')).find(function(b){ return /账户密码登录|登录/.test((b.textContent || '').trim()); });
+          if (!btn) return 'no submit button';
+          btn.click();
+          return 'submitted';
+        })()`,
+        true
+      );
+      captchaAnswer = null;
+      // 等结果：跳转/拿到用户 = 成功；仍在登录页 = 可能答错 → 刷新验证码重试
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const url = lw.webContents.getURL();
+        if (!/auth\/login/.test(url)) { loggedIn = true; break; }
+        const u = await lw.webContents.executeJavaScript(
+          "(function(){ try { var u = window._feInjection && window._feInjection.currentUser; return u && u.uid ? true : false; } catch(e){ return false; } })()",
+          true
+        ).catch(() => false);
+        if (u) { loggedIn = true; break; }
+      }
+      if (!loggedIn) {
+        // 刷新验证码图，准备下一轮
+        await lw.webContents.executeJavaScript(
+          `(function(){
+            var img = document.querySelector('img[src*="captcha"]');
+            if (img) img.src = img.src.split('?')[0] + '?_t=' + Date.now();
+          })()`,
+          true
+        ).catch(() => {});
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+    const shot = await safeCapture(lw.webContents, 15000);
+    if (shot) fsx.writeFileSync(out("autologin-result.png"), shot.toPNG());
+    fsx.writeFileSync(
+      out("autologin.json"),
+      JSON.stringify({ ok: loggedIn, url: lw.webContents.getURL() })
+    );
+  } catch (e) {
+    dbg("autologin error: " + (e && e.stack ? e.stack : String(e)));
+    try { fsx.writeFileSync(out("autologin.json"), JSON.stringify({ ok: false, error: String(e) })); } catch {}
+  } finally {
+    try { if (lw) lw.destroy(); } catch {}
+    app.exit(0);
+  }
+}
+
+/* ============================================================
+   生命周期
+   ============================================================ */
+app.whenReady().then(() => {
+  perfMarks.whenReady = Date.now();
+  loadConfig();
+  loadAccounts();
+  loadHistory();
+  loadDownloads();
+  // 本地页（设置/首页/历史）的会话也要接下载（不然从本地页点下载没记录）
+  wireDownloads(session.defaultSession);
+  // 广告拦截同理：默认会话（外壳/本地页）也挂上，规则本身只认广告域
+  wireAdBlock(session.defaultSession);
+  // 壁纸集合：先清掉目录里内容重复的文件（用户报"存在重复的背景"），
+  // 随机/顺序模式下启动换一张，再挂自动轮换定时器
+  dedupeWallpaperDir();
+  if (cfg.wallpaperMode !== "single") rotateWallpaper();
+  scheduleWallpaperRotate();
+  // 全局唤起热键 + 洛谷近期比赛抓取（失败静默，首页显示空态）。
+  // 首次抓取延迟一会儿：等洛谷页打开、过掉访问挑战后 cookie 才齐全。
+  registerGlobalHotkey();
+  setTimeout(fetchContests, 15000);
+  setInterval(fetchContests, 30 * 60 * 1000);
+  dbg("app ready; args=" + JSON.stringify({ selftestShot, configtest, dumpLogin, dumpPromo, autoLogin, START_URL }));
+  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  // 站外共享分区同样默认拒绝权限申请（通知/摄像头等），与默认会话一致
+  session.fromPartition(SHARED_PARTITION).setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
+  // 本地媒体协议：把 file:// 变成 https 页面也能加载的 lg-media://
+  // （静态图走这条路；视频改用 blob，见 wallpaperVideoPayload 的注释）
+  try {
+    // 不能直接 net.fetch(file://)：<video> 会带 Range 头来要分片，那条路不给
+    // Range，视频就卡在 readyState 0 / "MEDIA_ELEMENT_ERROR: Format error"
+    // （图片走 CSS background 不发 Range，所以图片壁纸看着一直是好的，问题
+    // 只在视频壁纸上露出来）。这里自己读文件并实现 Range，视频才能播。
+    protocol.handle("lg-media", async (req) => {
+      try {
+        const u = new URL(req.url);
+        // 路径形式为主，兼容旧的 ?p= 形式（老 URL 可能还残留在缓存里）
+        let p = u.searchParams.get("p") || "";
+        if (!p) {
+          try { p = decodeURIComponent(u.pathname.replace(/^\/+/, "")); } catch (e) { p = ""; }
+        }
+        if (!p) {
+          dbg("lg-media: no p — " + String(req.url).slice(0, 110));
+          return new Response("bad request", { status: 400 });
+        }
+        const abs = path.resolve(decodeURIComponent(p));
+        if (!fs.existsSync(abs)) {
+          dbg("lg-media MISS: " + abs);
+          return new Response("not found", { status: 404 });
+        }
+        const stat = fs.statSync(abs);
+        const type = MEDIA_MIME[path.extname(abs).toLowerCase()] || "application/octet-stream";
+        const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.get("range") || "").trim());
+        // 直接用 Buffer 当 body（不走 Node 流 → Web 流的转换：那条路在这里
+        // 会让 <video> 直接报 "Format error"，实测踩过）。
+        const size = stat.size;
+        const useStream = process.env.LG_STREAM === "1";
+        if (process.env.LG_NO_RANGE !== "1" && m) {
+          const start = m[1] ? parseInt(m[1], 10) : 0;
+          const end = m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
+          if (!(start >= 0) || start > end || start >= size) {
+            return new Response("range not satisfiable", {
+              status: 416,
+              headers: { "content-range": "bytes */" + size },
+            });
+          }
+          const body = useStream
+            ? Readable.toWeb(fs.createReadStream(abs, { start, end }))
+            : await readRange(abs, start, end);
+          return new Response(body, {
+            status: 206,
+            headers: {
+              "content-type": type,
+              "content-length": String(end - start + 1),
+              "content-range": "bytes " + start + "-" + end + "/" + size,
+              "accept-ranges": "bytes",
+            },
+          });
+        }
+        const bodyAll = useStream ? Readable.toWeb(fs.createReadStream(abs)) : fs.readFileSync(abs);
+        return new Response(bodyAll, {
+          status: 200,
+          headers: {
+            "content-type": type,
+            "content-length": String(size),
+            "accept-ranges": "bytes",
+          },
+        });
+      } catch (e) {
+        return new Response("error: " + e, { status: 500 });
+      }
+    });
+  } catch (e) {
+    dbg("protocol.handle failed: " + e);
+  }
+  createMainWindow();
+  /* 用户态改为事件驱动（R41）：did-finish-load / did-navigate-in-page /
+     setActiveTab / 账号菜单打开（user:nudge）时即时抓。旧的每 2s 盲扫是
+     常驻热路径——每两秒往活动页注入一次脚本。这里只留 30s 兜底轮询。 */
+  setInterval(pushUser, 30000);
+  ipcMain.on("user:nudge", () => { pushUser(); refreshUserNet(false); });
+  // 启动即取一次用户态：restoreTabs 关着、首页是本地页时，页面刮取永远没
+  // 机会跑，头像就靠这一发（以及之后每次刮空时的节流兜底）点亮。
+  refreshUserNet(true);
+  startDevWatch(); // --lg-dev：改源码即时生效
+  if (autoLogin) {
+    autoLoginFlow();
+  } else if (selftestShot) {
+    // 自测跑完就退：残留在后台的测试进程会占住单实例锁，
+    // 让下一次开发实例静默退出（这个坑踩过一次，这里堵上）
+    selftest().finally(() => setTimeout(() => app.exit(0), 400));
+  } else {
+    selftest();
+  }
+});
+
+app.on("window-all-closed", () => app.quit());
+/* 退出前把两份防抖存档（标签 / 窗口边界）无条件补写一次。 */
+function flushAppState() {
+  clearTimeout(tabsSaveTimer);
+  tabsSaveTimer = null;
+  try { saveTabsState(); } catch {}
+  clearTimeout(winSaveTimer);
+  winSaveTimer = null;
+  try { saveWindowState(); } catch {}
+  /* R41：配置改了异步落盘、日志改了缓冲——退出这里无条件补写一次 */
+  try { saveConfigSync(); } catch {}
+  try { dbgFlushSync(); } catch {}
+}
+app.on("will-quit", () => {
+  try { globalShortcut.unregisterAll(); } catch {}
+  // 标签存档是 700ms 防抖，退出路径若没走窗口 close（如 app.exit）会丢掉最后一改
+  flushAppState();
+});
+
+/* ============================================================
+   探针段（自测 / UI 回归 / 性能基线）
+   —— 纯搬移：原来它夹在产品代码中间（main.js 第 6754~13691 行），读代码时
+   要在业务逻辑里翻过 6000 多行探针才能看到后面的实现。现在整段挪到文件
+   末尾，产品代码在前、探针在后。
+   ⚠️ 本段只由命令行参数触发（--lg-selftest= / --lg-v315test / --lg-uitest…），
+   正常启动路径完全不进这里。搬移**零逻辑改动**，行为由 --lg-v315test 复验。
+   ============================================================ */
 
 async function selftest() {
   if (!selftestShot) return;
@@ -13701,326 +14038,3 @@ async function selftest() {
     app.exit(0);
   }
 }
-
-/* ---------- 自动登录（验证码人工辅助） ---------- */
-async function autoLoginFlow() {
-  if (!autoLogin) return;
-  const fsx = fs;
-  const outDir = selftestShot ? path.dirname(selftestShot) : app.getPath("userData");
-  const out = (p) => path.join(outDir, p);
-  let lw = null;
-  try {
-    lw = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } });
-    // 清掉可能被污染的旧 cookie，走"首页 → 页内跳登录页"的真实用户路径
-    await session.defaultSession.clearStorageData({ storages: ["cookies"] }).catch?.(() => {});
-    let loaded = false;
-    for (let i = 0; i < 3 && !loaded; i++) {
-      try {
-        await lw.loadURL(HOME_URL);
-        loaded = true;
-      } catch (e) {
-        dbg("home load failed (" + i + "): " + e.message);
-        await new Promise((r) => setTimeout(r, 3000));
-      }
-    }
-    if (!loaded) {
-      fsx.writeFileSync(out("autologin.json"), JSON.stringify({ ok: false, stage: "home-load-failed" }));
-      return;
-    }
-    await lw.webContents.executeJavaScript('location.href = "/auth/login"', true).catch(() => {});
-    // 等登录页表单出现
-    for (let i = 0; i < 30; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      const has = await lw.webContents.executeJavaScript(
-        "!!document.querySelector('input[type=text]')", true
-      ).catch(() => false);
-      if (has) break;
-    }
-    // 等账号输入框
-    for (let i = 0; i < 40; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      if (await lw.webContents.executeJavaScript("!!document.querySelector('input[type=text]')", true).catch(() => false)) break;
-    }
-    const step1 = await lw.webContents.executeJavaScript(
-      `(async function(){
-        function setValue(input, val) {
-          var proto = HTMLInputElement.prototype;
-          Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, val);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        var acc = document.querySelector('input[type=text]');
-        if (!acc) return { ok: false, reason: 'no account input' };
-        setValue(acc, ${JSON.stringify(argUser)});
-        await new Promise(function(r){ setTimeout(r, 400); });
-        var next = Array.from(document.querySelectorAll('button')).find(function(b){ return (b.textContent || '').trim() === '下一步'; });
-        if (!next) return { ok: false, reason: 'no next button' };
-        next.click();
-        for (var i = 0; i < 30; i++) {
-          await new Promise(function(r){ setTimeout(r, 500); });
-          if (document.querySelector('input[type=password]')) return { ok: true };
-        }
-        return { ok: false, reason: 'password input timeout' };
-      })()`,
-      true
-    );
-    if (!step1.ok) {
-      fsx.writeFileSync(out("autologin.json"), JSON.stringify({ ok: false, stage: "step1", ...step1 }));
-      return;
-    }
-    // 填密码
-    await lw.webContents.executeJavaScript(
-      `(function(){
-        function setValue(input, val) {
-          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, val);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-        var pwd = document.querySelector('input[type=password]');
-        setValue(pwd, ${JSON.stringify(argPass)});
-      })()`,
-      true
-    );
-    // 验证码：优先用命令行给出的答案；否则 canvas 4x 放大取像素 + 最多 5 次重试
-    let captchaAnswer = argCaptcha;
-    const answerFile = path.join(app.getPath("userData"), "captcha-answer.txt");
-
-    const grabCaptcha = async () => {
-      return await lw.webContents.executeJavaScript(
-        `(async function(){
-          var img = document.querySelector('img[src*="captcha"]');
-          if (!img) return null;
-          if (!img.complete) {
-            await new Promise(function(r){ img.onload = r; setTimeout(r, 3000); });
-          }
-          try {
-            var s = 4;
-            var c = document.createElement('canvas');
-            c.width = (img.naturalWidth || img.width || 80) * s;
-            c.height = (img.naturalHeight || img.height || 30) * s;
-            var ctx = c.getContext('2d');
-            ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(img, 0, 0, c.width, c.height);
-            return c.toDataURL('image/png');
-          } catch (e) { return null; }
-        })()`,
-        true
-      );
-    };
-
-    let loggedIn = false;
-    for (let attempt = 1; attempt <= 5 && !loggedIn; attempt++) {
-      let answer = captchaAnswer;
-      if (!answer) {
-        const dataUrl = await grabCaptcha();
-        if (dataUrl && dataUrl.startsWith("data:image")) {
-          fsx.writeFileSync(out("autologin-captcha.png"), Buffer.from(dataUrl.split(",")[1], "base64"));
-        } else {
-          const shot = await safeCapture(lw.webContents, 5000);
-          if (shot) fsx.writeFileSync(out("autologin-captcha.png"), shot.toPNG());
-        }
-        fsx.writeFileSync(
-          out("autologin-state.json"),
-          JSON.stringify({ ok: false, stage: "captcha-wait", attempt, hint: "write code to " + answerFile })
-        );
-        dbg("autologin captcha wait, attempt " + attempt);
-        let got = false;
-        for (let i = 0; i < 600; i++) {
-          await new Promise((r) => setTimeout(r, 1000));
-          try {
-            const ans = fsx.readFileSync(answerFile, "utf8").trim();
-            if (ans) { answer = ans; fsx.unlinkSync(answerFile); got = true; break; }
-          } catch {}
-        }
-        if (!got) break;
-      }
-
-      await lw.webContents.executeJavaScript(
-        `(async function(){
-          function setValue(input, val) {
-            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, val);
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-          var cap = document.querySelector('input[placeholder*="验证码"], input[placeholder*="图形"]');
-          if (!cap) return 'no captcha input';
-          setValue(cap, ${JSON.stringify(answer)});
-          await new Promise(function(r){ setTimeout(r, 300); });
-          var btn = Array.from(document.querySelectorAll('button')).find(function(b){ return /账户密码登录|登录/.test((b.textContent || '').trim()); });
-          if (!btn) return 'no submit button';
-          btn.click();
-          return 'submitted';
-        })()`,
-        true
-      );
-      captchaAnswer = null;
-      // 等结果：跳转/拿到用户 = 成功；仍在登录页 = 可能答错 → 刷新验证码重试
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const url = lw.webContents.getURL();
-        if (!/auth\/login/.test(url)) { loggedIn = true; break; }
-        const u = await lw.webContents.executeJavaScript(
-          "(function(){ try { var u = window._feInjection && window._feInjection.currentUser; return u && u.uid ? true : false; } catch(e){ return false; } })()",
-          true
-        ).catch(() => false);
-        if (u) { loggedIn = true; break; }
-      }
-      if (!loggedIn) {
-        // 刷新验证码图，准备下一轮
-        await lw.webContents.executeJavaScript(
-          `(function(){
-            var img = document.querySelector('img[src*="captcha"]');
-            if (img) img.src = img.src.split('?')[0] + '?_t=' + Date.now();
-          })()`,
-          true
-        ).catch(() => {});
-        await new Promise((r) => setTimeout(r, 800));
-      }
-    }
-    const shot = await safeCapture(lw.webContents, 15000);
-    if (shot) fsx.writeFileSync(out("autologin-result.png"), shot.toPNG());
-    fsx.writeFileSync(
-      out("autologin.json"),
-      JSON.stringify({ ok: loggedIn, url: lw.webContents.getURL() })
-    );
-  } catch (e) {
-    dbg("autologin error: " + (e && e.stack ? e.stack : String(e)));
-    try { fsx.writeFileSync(out("autologin.json"), JSON.stringify({ ok: false, error: String(e) })); } catch {}
-  } finally {
-    try { if (lw) lw.destroy(); } catch {}
-    app.exit(0);
-  }
-}
-
-/* ============================================================
-   生命周期
-   ============================================================ */
-app.whenReady().then(() => {
-  perfMarks.whenReady = Date.now();
-  loadConfig();
-  loadAccounts();
-  loadHistory();
-  loadDownloads();
-  // 本地页（设置/首页/历史）的会话也要接下载（不然从本地页点下载没记录）
-  wireDownloads(session.defaultSession);
-  // 广告拦截同理：默认会话（外壳/本地页）也挂上，规则本身只认广告域
-  wireAdBlock(session.defaultSession);
-  // 壁纸集合：先清掉目录里内容重复的文件（用户报"存在重复的背景"），
-  // 随机/顺序模式下启动换一张，再挂自动轮换定时器
-  dedupeWallpaperDir();
-  if (cfg.wallpaperMode !== "single") rotateWallpaper();
-  scheduleWallpaperRotate();
-  // 全局唤起热键 + 洛谷近期比赛抓取（失败静默，首页显示空态）。
-  // 首次抓取延迟一会儿：等洛谷页打开、过掉访问挑战后 cookie 才齐全。
-  registerGlobalHotkey();
-  setTimeout(fetchContests, 15000);
-  setInterval(fetchContests, 30 * 60 * 1000);
-  dbg("app ready; args=" + JSON.stringify({ selftestShot, configtest, dumpLogin, dumpPromo, autoLogin, START_URL }));
-  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
-  // 站外共享分区同样默认拒绝权限申请（通知/摄像头等），与默认会话一致
-  session.fromPartition(SHARED_PARTITION).setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
-  // 本地媒体协议：把 file:// 变成 https 页面也能加载的 lg-media://
-  // （静态图走这条路；视频改用 blob，见 wallpaperVideoPayload 的注释）
-  try {
-    // 不能直接 net.fetch(file://)：<video> 会带 Range 头来要分片，那条路不给
-    // Range，视频就卡在 readyState 0 / "MEDIA_ELEMENT_ERROR: Format error"
-    // （图片走 CSS background 不发 Range，所以图片壁纸看着一直是好的，问题
-    // 只在视频壁纸上露出来）。这里自己读文件并实现 Range，视频才能播。
-    protocol.handle("lg-media", async (req) => {
-      try {
-        const u = new URL(req.url);
-        // 路径形式为主，兼容旧的 ?p= 形式（老 URL 可能还残留在缓存里）
-        let p = u.searchParams.get("p") || "";
-        if (!p) {
-          try { p = decodeURIComponent(u.pathname.replace(/^\/+/, "")); } catch (e) { p = ""; }
-        }
-        if (!p) {
-          dbg("lg-media: no p — " + String(req.url).slice(0, 110));
-          return new Response("bad request", { status: 400 });
-        }
-        const abs = path.resolve(decodeURIComponent(p));
-        if (!fs.existsSync(abs)) {
-          dbg("lg-media MISS: " + abs);
-          return new Response("not found", { status: 404 });
-        }
-        const stat = fs.statSync(abs);
-        const type = MEDIA_MIME[path.extname(abs).toLowerCase()] || "application/octet-stream";
-        const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.get("range") || "").trim());
-        // 直接用 Buffer 当 body（不走 Node 流 → Web 流的转换：那条路在这里
-        // 会让 <video> 直接报 "Format error"，实测踩过）。
-        const size = stat.size;
-        const useStream = process.env.LG_STREAM === "1";
-        if (process.env.LG_NO_RANGE !== "1" && m) {
-          const start = m[1] ? parseInt(m[1], 10) : 0;
-          const end = m[2] ? Math.min(parseInt(m[2], 10), size - 1) : size - 1;
-          if (!(start >= 0) || start > end || start >= size) {
-            return new Response("range not satisfiable", {
-              status: 416,
-              headers: { "content-range": "bytes */" + size },
-            });
-          }
-          const body = useStream
-            ? Readable.toWeb(fs.createReadStream(abs, { start, end }))
-            : await readRange(abs, start, end);
-          return new Response(body, {
-            status: 206,
-            headers: {
-              "content-type": type,
-              "content-length": String(end - start + 1),
-              "content-range": "bytes " + start + "-" + end + "/" + size,
-              "accept-ranges": "bytes",
-            },
-          });
-        }
-        const bodyAll = useStream ? Readable.toWeb(fs.createReadStream(abs)) : fs.readFileSync(abs);
-        return new Response(bodyAll, {
-          status: 200,
-          headers: {
-            "content-type": type,
-            "content-length": String(size),
-            "accept-ranges": "bytes",
-          },
-        });
-      } catch (e) {
-        return new Response("error: " + e, { status: 500 });
-      }
-    });
-  } catch (e) {
-    dbg("protocol.handle failed: " + e);
-  }
-  createMainWindow();
-  /* 用户态改为事件驱动（R41）：did-finish-load / did-navigate-in-page /
-     setActiveTab / 账号菜单打开（user:nudge）时即时抓。旧的每 2s 盲扫是
-     常驻热路径——每两秒往活动页注入一次脚本。这里只留 30s 兜底轮询。 */
-  setInterval(pushUser, 30000);
-  ipcMain.on("user:nudge", () => { pushUser(); refreshUserNet(false); });
-  // 启动即取一次用户态：restoreTabs 关着、首页是本地页时，页面刮取永远没
-  // 机会跑，头像就靠这一发（以及之后每次刮空时的节流兜底）点亮。
-  refreshUserNet(true);
-  startDevWatch(); // --lg-dev：改源码即时生效
-  if (autoLogin) {
-    autoLoginFlow();
-  } else if (selftestShot) {
-    // 自测跑完就退：残留在后台的测试进程会占住单实例锁，
-    // 让下一次开发实例静默退出（这个坑踩过一次，这里堵上）
-    selftest().finally(() => setTimeout(() => app.exit(0), 400));
-  } else {
-    selftest();
-  }
-});
-
-app.on("window-all-closed", () => app.quit());
-/* 退出前把两份防抖存档（标签 / 窗口边界）无条件补写一次。 */
-function flushAppState() {
-  clearTimeout(tabsSaveTimer);
-  tabsSaveTimer = null;
-  try { saveTabsState(); } catch {}
-  clearTimeout(winSaveTimer);
-  winSaveTimer = null;
-  try { saveWindowState(); } catch {}
-  /* R41：配置改了异步落盘、日志改了缓冲——退出这里无条件补写一次 */
-  try { saveConfigSync(); } catch {}
-  try { dbgFlushSync(); } catch {}
-}
-app.on("will-quit", () => {
-  try { globalShortcut.unregisterAll(); } catch {}
-  // 标签存档是 700ms 防抖，退出路径若没走窗口 close（如 app.exit）会丢掉最后一改
-  flushAppState();
-});

@@ -14,19 +14,19 @@ cd "$(dirname "$0")/.."
 fail=0
 step() { printf "\n=== %s ===\n" "$1"; }
 
-step "1/7 材质配方 lint（面只能声明在 material.css）"
+step "1/8 材质配方 lint（面只能声明在 material.css）"
 node scripts/lint-material.js || fail=1
 
-step "2/7 契约静态检查（IPC 通道 / preload 方法 / 配置键三方对账）"
+step "2/8 契约静态检查（IPC 通道 / preload 方法 / 配置键三方对账）"
 node scripts/lint-contracts.cjs || fail=1
 
-step "3/7 死代码扫描"
+step "3/8 死代码扫描"
 node scripts/lint-deadcode.cjs || fail=1
 
-step "4/7 静默失败扫描（明明失败却报成功）"
+step "4/8 静默失败扫描（明明失败却报成功）"
 node scripts/lint-silent-catch.cjs || fail=1
 
-step "5/7 JavaScript 语法"
+step "5/8 JavaScript 语法"
 bad=0
 for f in main.js preload-*.js src/*.js src/chrome/*.js src/settings/*.js src/home/*.js \
          src/popup/*.js src/history/*.js src/dock/*.js scripts/*.js scripts/*.cjs; do
@@ -36,10 +36,13 @@ done
 [ "$bad" = 0 ] && echo "  全部通过"
 [ "$bad" = 1 ] && fail=1
 
-step "6/7 行尾守卫（被改文件的行尾风格必须与 HEAD 一致）"
+step "6/8 类型检查（基线门禁：不许新增类型错误）"
+bash scripts/typecheck.sh || fail=1
+
+step "7/8 行尾守卫（被改文件的行尾风格必须与 HEAD 一致）"
 bash scripts/check-eol.sh || fail=1
 
-step "7/7 配置文件可解析"
+step "8/8 配置文件可解析"
 node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('  package.json OK')" || fail=1
 node -e "JSON.parse(require('fs').readFileSync('scripts/lint-contracts.ignore.json','utf8')); console.log('  lint-contracts.ignore.json OK')" || fail=1
 
