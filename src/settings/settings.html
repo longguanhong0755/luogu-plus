@@ -574,8 +574,14 @@
           <div class="about-k">账号</div><div class="about-v"><code>%APPDATA%\LuoguLab\accounts.json</code>（明文）</div>
           <div class="about-k">历史</div><div class="about-v"><code>%APPDATA%\LuoguLab\history.json</code></div>
           <div class="about-k">下载</div><div class="about-v">系统「下载」目录下的 <code>Luogu++</code> 子目录</div>
-          <div class="about-k">日志</div><div class="about-v"><code>%APPDATA%\LuoguGlass\luogu-glass-debug.log</code></div>
+          <div class="about-k">日志</div><div class="about-v"><code>%APPDATA%\LuoguLab\luogu-glass-debug.log</code></div>
         </div>
+        <h2 style="margin-top:22px">故障诊断</h2>
+        <p class="hint">出问题时把这份报告发给维护者：里面有版本、运行时、内存占用、
+          配置摘要（token / 账号 / 密码一律打码）、标签页状态、最近一次写盘失败，
+          以及调试日志的尾部。报告只在你自己点「保存」后才写到磁盘。</p>
+        <button class="btn" id="btn-diagnostics">生成诊断报告…</button>
+        <button class="btn" id="btn-copy-diagnostics">复制诊断报告到剪贴板</button>
         <h2 style="margin-top:22px">快捷键</h2>
         <div class="keys" id="keys-list"></div>
         <p class="hint">上表与主进程菜单加速器同源（设置页不再自己抄一份，避免抄错）。页面内另有：<kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd> 后退与前进，<kbd>Ctrl</kbd>+<kbd>Tab</kbd> 轮换标签。</p>

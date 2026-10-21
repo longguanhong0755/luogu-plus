@@ -153,8 +153,17 @@ contextBridge.exposeInMainWorld("lgChrome", {
   tabContextMenu: (id, sel) => ipcRenderer.invoke("tab:context-menu", { id, sel: Array.isArray(sel) ? sel : [] }),
   /* 主进程侧动作的提示（多选建组这类原生菜单里的操作） */
   onToast: (cb) => ipcRenderer.on("chrome:toast", (_e, m) => cb(m)),
+  /* 催一下主进程刷新用户态（头像/昵称）。主进程那边 ipcMain.on("user:nudge")
+     一直存在、注释也写着"账号菜单打开时即时抓"，但**从来没有任何地方发
+     它** —— 结果是头像只在定时兜底时更新。菜单打开时主动催一次。 */
+  userNudge: () => ipcRenderer.send("user:nudge"),
   downloadReveal: (id) => ipcRenderer.invoke("lg-download:reveal", id),
   downloadClear: () => ipcRenderer.invoke("lg-download:clear"),
+  /* 取下载列表：移除/暂停/取消之后要拿回最新列表刷新面板。
+     这一条之前**漏了**（主进程 lg-download:list 一直有，preload 却没暴露），
+     chrome.js 里 window.lgChrome.downloadList() 直接 TypeError，表现为
+     "移除记录后列表不刷新" + 控制台报错。由契约静态检查抓出来。 */
+  downloadList: () => ipcRenderer.invoke("lg-download:list"),
   /* 下载增强：暂停 / 继续 / 取消 / 重试 / 另存为 / 单条移除 */
   downloadPause: (id) => ipcRenderer.invoke("lg-download:pause", id),
   downloadResume: (id) => ipcRenderer.invoke("lg-download:resume", id),

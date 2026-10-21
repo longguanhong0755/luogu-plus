@@ -1029,6 +1029,30 @@ function bind() {
 
   /* 清除浏览数据：勾选项是一次性选择（不落配置），按钮读当前勾选执行 */
   $("btn-open-downloads").addEventListener("click", () => window.lgConfig.downloadReveal(0));
+
+  /* 诊断报告：出问题时把当前状态打包给维护者。
+     「保存」走主进程的另存为对话框（用户自己选位置，不擅自写盘）；
+     「复制」则直接进剪贴板，粘到聊天窗口即可。 */
+  $("btn-diagnostics").addEventListener("click", async () => {
+    try {
+      const r = await window.lgConfig.diagnosticsSave();
+      if (r && r.ok) toast("诊断报告已保存：" + r.path);
+      else if (r && r.canceled) toast("已取消");
+      else toast("生成失败：" + ((r && r.message) || "未知错误"));
+    } catch (e) {
+      toast("生成失败：" + String(e && e.message ? e.message : e));
+    }
+  });
+  $("btn-copy-diagnostics").addEventListener("click", async () => {
+    try {
+      const r = await window.lgConfig.diagnostics();
+      if (!r || !r.ok) { toast("生成失败：" + ((r && r.message) || "未知错误")); return; }
+      await navigator.clipboard.writeText(r.report);
+      toast("诊断报告已复制到剪贴板");
+    } catch (e) {
+      toast("复制失败：" + String(e && e.message ? e.message : e));
+    }
+  });
   $("btn-clear-data").addEventListener("click", async () => {
     const opts = {
       cache: $("ck-cl-cache").checked,

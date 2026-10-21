@@ -8,6 +8,10 @@ const http = require("http");
 const fs = require("fs");
 const PORT = Number(process.argv[2] || 9310);
 const OUT = process.argv[3] || "";
+/* 测试站地址：不要写死端口——一键回归用另一个端口，写死会让探针跑到
+   一个不存在的站上，表现为「短按后退没反应」这种假失败。 */
+const WEB = process.env.PROBE_WEB || "http://127.0.0.1:8908";
+const WEB_HOST = WEB.replace(/^https?:\/\//, "");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function targets() {
@@ -56,15 +60,15 @@ function check(name, pass, detail) {
   //    （曾经写成"开 4 个标签"——那是 4 段互不相干的历史，每个标签都只有
   //      一条，后退键本来就该是禁用的，测不出任何东西。历史栈是"这个标签
   //      依次去过哪几个页面"，必须在同一标签里累积。）
-  await evalIn(chromeWs, `(()=>{ try{ window.lgChrome.openTab("http://127.0.0.1:8908/?n1"); return 1; }catch(e){ return 0; } })()`);
+  await evalIn(chromeWs, `(()=>{ try{ window.lgChrome.openTab(${JSON.stringify(WEB)} + "/?n1"); return 1; }catch(e){ return 0; } })()`);
   await sleep(2500);
   for (const q of ["n2", "n3", "n4"]) {
     const l = await targets();
-    const pg = l.find((t) => t.type === "page" && t.url.indexOf("127.0.0.1:8908") >= 0);
+    const pg = l.find((t) => t.type === "page" && t.url.indexOf(WEB_HOST) >= 0);
     if (!pg) break;
     const pw = await connect(pg.webSocketDebuggerUrl);
     if (pw) {
-      try { await evalIn(pw, `(()=>{ try{ location.href = "http://127.0.0.1:8908/?${q}"; return 1; }catch(e){ return 0; } })()`); } catch (e) {}
+      try { await evalIn(pw, `(()=>{ try{ location.href = ${JSON.stringify(WEB)} + "/?" + ${JSON.stringify(q)}; return 1; }catch(e){ return 0; } })()`); } catch (e) {}
     }
     await sleep(2200);
   }
@@ -73,7 +77,7 @@ function check(name, pass, detail) {
   // 2) 当前页面 URL（tabsState 没暴露到 window，用 CDP 的 target URL 作观测口）
   const curUrl = async () => {
     const l = await targets();
-    const p = l.filter((t) => t.type === "page" && t.url.indexOf("127.0.0.1:8908") >= 0);
+    const p = l.filter((t) => t.type === "page" && t.url.indexOf(WEB_HOST) >= 0);
     return p.length ? p[0].url : "";
   };
   const before = await curUrl();

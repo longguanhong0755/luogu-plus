@@ -1302,6 +1302,10 @@ let switchPoll = null;
 let switchErr = "";
 
 function renderAccountMenu() {
+  /* 打开账号菜单时催主进程刷一次用户态（头像/昵称）。主进程那边
+     ipcMain.on("user:nudge") 早就挂着，注释也写着"账号菜单打开时即时抓"，
+     但从来没有触发方——头像只能等定时兜底才更新，这里把链路接上。 */
+  try { window.lgChrome.userNudge(); } catch (e) {}
   // 静态的"管理账号…"是写死在 chrome.html 里的，不归 list 管。它也得登记点击键：
   // 菜单 HTML 是复制到覆盖层里执行的，直接挂在原节点上的监听器对副本无效。
   const manage = document.getElementById("am-manage");

@@ -1,0 +1,52 @@
+name: CI
+
+# 触发时机：推主干、开 PR、手动。
+# 门禁范围：**静态检查**（材质配方 lint、契约对账、语法、行尾、配置可解析）。
+# 为什么不在 CI 里跑界面探针：探针需要 Electron 二进制 + 图形会话 + 一个
+# 隔离的 userData profile，在托管 runner 上既慢又不稳（GPU/合成器）。
+# 探针走本地一键回归：bash scripts/run-all-probes.sh
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-checks:
+    name: 静态检查
+    runs-on: windows-latest   # 本仓库是 Windows 桌面应用，且源文件多为 CRLF
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 跑静态检查总入口
+        shell: bash
+        run: bash scripts/check-all.sh
+
+      - name: 探针脚本自检（语法 + 测试页与探针齐全）
+        shell: bash
+        run: |
+          set -e
+          for p in scripts/probe-v316.cjs scripts/probe-glass.cjs scripts/probe-navhist.cjs; do
+            node --check "$p"
+            echo "  ok  $p"
+          done
+          test -f dev/probe/audit/gxtest/index.html || {
+            echo "缺少站外玻璃化测试页（dev/probe/audit/gxtest/index.html）"
+            exit 1
+          }
+          echo "  ok  测试页存在"
+
+      - name: 确认没有误提交密钥
+        shell: bash
+        run: |
+          set -e
+          if git grep -nIE "(ghp_[A-Za-z0-9]{30,}|github_pat_|AKIA[0-9A-Z]{16})" -- . \
+             ':!*.md' ':!.github/workflows/*' ; then
+            echo "疑似提交了访问令牌"
+            exit 1
+          fi
+          echo "  ok  未发现令牌"

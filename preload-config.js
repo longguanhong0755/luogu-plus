@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld("lgConfig", {
   openHome: () => ipcRenderer.invoke("lg-app:open-home"),
   openHistory: () => ipcRenderer.invoke("lg-app:open-history"),
   openUrl: (url) => ipcRenderer.invoke("lg-app:open-url", url),
+  /* 诊断报告：给用户一个"把当前状态打包给维护者"的出口。
+     此前出了问题只能靠描述复现，拿到的是猜测不是事实。 */
+  diagnostics: () => ipcRenderer.invoke("lg-app:diagnostics"),
+  diagnosticsSave: () => ipcRenderer.invoke("lg-app:diagnostics-save"),
   /* 首页快捷入口的 @ide 项：打开/切到 IDE 标签页（与 dock 同一动作） */
   ide: () => ipcRenderer.invoke("tab:toggle-ide"),
   /* 洛谷近期比赛（主进程定时抓取的缓存；抓到后主进程会推一次，

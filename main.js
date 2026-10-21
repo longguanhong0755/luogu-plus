@@ -240,6 +240,15 @@ const DEFAULT_CONFIG = {
   bgThrottle: true,
   /* R41 性能：系统内存吃紧时提前休眠最久未用的后台标签（30 分钟空闲规则不变） */
   memSleep: true,
+  /* 闲置标签自动休眠的分钟数（0 = 关）。此前**只有** main.js 里的运行时
+     兜底（loadConfig 里判 null 就补 30），配置里根本没有这个键——设置页
+     的滑杆读到的值不在 DEFAULT_CONFIG 里，属于"用补丁代替定义"。
+     现在它和其它配置一样有正式定义，老配置仍由 loadConfig 的兜底补齐。 */
+  tabSleepMinutes: 30,
+  /* 自定义 Python 解释器路径（验证码 OCR 用）。空 = 用系统 python。
+     此前代码读 cfg.captchaPython 但配置里没有这个键，用户只能改环境变量
+     LG_PYTHON；现在能在配置里直接指定。 */
+  captchaPython: "",
   listTools: true,
   activeAccountId: "",
   bookmarks: [],           // [{url, title, addedAt}]（收藏功能已删，字段只为兼容旧配置保留）
@@ -668,6 +677,84 @@ process.on("uncaughtException", (e) => {
 });
 process.on("unhandledRejection", (e) => {
   dbg("unhandledRejection: " + (e && e.stack ? e.stack : String(e)));
+});
+
+/* ---------- 诊断报告 ----------
+   用户报障时最缺的是"当时到底发生了什么"。此前只有一份自写的调试日志
+   躺在 userData 里，用户既不知道它在哪、也不会去看——等于没有。
+   这里做一份**人可读**的报告：版本/运行时/内存/配置摘要（脱敏）/标签状态/
+   最近一次写盘失败/日志尾部。一键另存为，用户直接发给维护者即可定位问题。
+   设计约束：① 不含任何凭据（token/账号/密码一律打码）；② 不写盘（只
+   在用户主动点"保存"时才落盘，且写到用户自己选的位置）。 */
+function diagValue(v) {
+  if (v == null) return String(v);
+  const t = typeof v;
+  if (t === "number" || t === "boolean") return String(v);
+  if (t === "string") return v.length > 60 ? v.slice(0, 60) + "…" : v;
+  if (Array.isArray(v)) return "[" + v.length + " 项]";
+  return "{" + Object.keys(v).length + " 键}";
+}
+function buildDiagnostics() {
+  const mem = process.memoryUsage();
+  const out = [];
+  const push = (s) => out.push(s);
+  push("=== LuoguLab 诊断报告 ===");
+  push("生成时间: " + new Date().toISOString());
+  push("应用版本: " + (app.getVersion ? app.getVersion() : "未知"));
+  push("运行时: Electron " + process.versions.electron + " / Chromium " + process.versions.chrome + " / Node " + process.versions.node);
+  push("系统: " + process.platform + " " + process.arch + " " + (process.release && process.release.name ? process.release.name : "?"));
+  push("内存: rss " + Math.round(mem.rss / 1048576) + "MB / heapUsed " + Math.round(mem.heapUsed / 1048576) + "MB");
+  push("标签页: " + tabs.size + " 个（活动 " + activeTabId + "，分组 " + tabGroups.size + "，壁纸目录 " + (wallpapersDir ? "有" : "无") + "）");
+  push("配置版本: " + (cfg.configVersion == null ? "?" : cfg.configVersion));
+  push("皮肤: " + (cfg.glass || "liquid") + " / 圆角 " + (cfg.radius == null ? "?" : cfg.radius) + "px / 主题 " + (cfg.theme || "auto"));
+  push("");
+  push("--- 配置摘要（已脱敏：不含 token / 账号 / 密码）---");
+  const SECRET = /token|password|passwd|secret|cookie|email|account|mailbox/i;
+  for (const k of Object.keys(cfg).sort()) {
+    if (SECRET.test(k)) { push("  " + k + " = <已隐藏>"); continue; }
+    push("  " + k + " = " + diagValue(cfg[k]));
+  }
+  push("");
+  push("--- 最近一次写盘失败 ---");
+  push(lastWriteFailure ? "  " + JSON.stringify(lastWriteFailure) : "  （无）");
+  push("");
+  push("--- 调试日志尾部（最多 120 行）---");
+  try {
+    const p = dbgPath();
+    if (fs.existsSync(p)) {
+      const stat = fs.statSync(p);
+      push("  日志文件: " + p + "（" + Math.round(stat.size / 1024) + "KB）");
+      const fd = fs.openSync(p, "r");
+      try {
+        const len = stat.size;
+        const readLen = Math.min(len, 64 * 1024);
+        const buf = Buffer.alloc(readLen);
+        fs.readSync(fd, buf, 0, readLen, len - readLen);
+        const lines = buf.toString("utf8").split(/\r?\n/).filter(Boolean).slice(-120);
+        for (const l of lines) push("  " + l);
+      } finally { fs.closeSync(fd); }
+    } else {
+      push("  （日志文件尚未生成）");
+    }
+  } catch (e) { push("  读取失败: " + (e && e.message ? e.message : e)); }
+  return out.join("\n");
+}
+ipcMain.handle("lg-app:diagnostics", () => {
+  try { return { ok: true, report: buildDiagnostics() }; }
+  catch (e) { return { ok: false, message: String((e && e.message) || e) }; }
+});
+ipcMain.handle("lg-app:diagnostics-save", async () => {
+  try {
+    const report = buildDiagnostics();
+    const r = await dialog.showSaveDialog(mainWin, {
+      title: "保存诊断报告",
+      defaultPath: path.join(app.getPath("desktop"), "LuoguLab-诊断报告.txt"),
+      filters: [{ name: "文本文件", extensions: ["txt"] }],
+    });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    await fs.promises.writeFile(r.filePath, report, "utf8");
+    return { ok: true, path: r.filePath };
+  } catch (e) { return { ok: false, message: String((e && e.message) || e) }; }
 });
 
 /* ============================================================
@@ -2054,11 +2141,6 @@ let groupSeq = 0;
 const GROUP_PALETTE = ["blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "cyan", "gray"];
 let groupColorCursor = 0;
 
-function groupOf(id) {
-  const t = tabs.get(id);
-  const g = t && t.groupId != null ? tabGroups.get(t.groupId) : null;
-  return g || null;
-}
 function groupMembers(gid) {
   return tabOrder.filter((id) => {
     const t = tabs.get(id);
@@ -5220,16 +5302,11 @@ async function translateTexts(texts) {
   const out = (Array.isArray(data) ? data : []).map((d) => (d && d.translations && d.translations[0] ? d.translations[0].text : ""));
   return { ok: true, texts: out, target };
 }
-ipcMain.handle("lg-translate:text", async (_e, p) => {
-  const req = p && typeof p === "object" ? p : { text: p };
-  const texts = Array.isArray(req.texts) ? req.texts : [req.text];
-  try {
-    return await translateTexts(texts);
-  } catch (e) {
-    dbg("translate failed: " + e);
-    return { ok: false, message: String((e && e.message) || e) };
-  }
-});
+/* 原来这里还有一个 ipcMain.handle("lg-translate:text")：**死通道**——
+   页面侧的划词/整页翻译走的是 preload-page 暴露的 lgApp.translate
+   （另一条通道），这个 handler 从来没有任何 preload 或页面调用过。
+   留着它会让人以为"翻译有两套实现"，也污染 IPC 清单（契约检查会报
+   "注册了但没人引用"）。translateTexts 本身仍在用（main.js:3176 走它）。 */
 
 /* ---------- 洛谷近期比赛（首页倒计时用；抓取失败静默降级为空） ----------
    洛谷旧 _contentOnly=1 API 已失效（实测返回 HTML）。新版服务端把页面数据
