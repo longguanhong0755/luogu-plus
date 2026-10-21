@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld("lgApp", {
   /* 题目页自带 IDE 模式（洛谷「进入 IDE 模式」）开关：注入层判定后上报，
      主进程据此让该标签铺满整窗（外壳与坞让位 = 真·全屏）。 */
   ideMode: (on) => ipcRenderer.send("lg-app:ide-mode", !!on),
-  /* 外壳版本号：注入脚本可用它做能力探测 */
-  version: "6",
+  /* R42：这里原本挂着一个写死的 version:"6"（应用已到 3.14.0，值早就烂了，
+     而且全库没有任何地方读它）。手抄的版本号一定会过期，且会让"能力探测"
+     得到一个静默错误答案——宁愿没有这个字段。真需要时由主进程从
+     package.json 取真实版本走 IPC，不要在 preload 里写常数。 */
 });

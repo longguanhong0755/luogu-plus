@@ -73,6 +73,11 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
 - **题目页自带 IDE 模式**（R38）：inject.js 判定（`/problem/` + 编辑器容器可见 +
   「退出 IDE 模式」文案）→ `data-lg-ide="1"`（与 /ide 页同一套原生规则）+
   `lgApp.ideMode` 上报 → 主进程让该标签视图铺满整窗（外壳与坞让位 = 真·全屏）
+- **持久化地基**（R42）：`readJsonSafe` / `writeTextAtomic(Sync)` 一处收口六份数据
+  （配置 / 账号 / 标签 / 窗口 / 历史 / 下载）。读坏先备份 `.corrupt-<时间>` 再回退；
+  写走 `<file>.tmp-<pid>` + rename 原子替换；失败（ENOSPC / EACCES）记
+  `lastWriteFailure` 并在外壳 toast 一次（60s 冷却）。新增持久化点不许再自己写
+  `fs.writeFileSync`。
 
 ## 开发
 
@@ -103,6 +108,10 @@ LuoguLab.exe --lg-hidden --lg-v313test --lg-url=https://www.luogu.com.cn/  # v3.
               # 题目页 IDE 真全屏（真站选择器 + 反例不误判）/ 窄条 ⌄ 交接菜单活下来 /
               # 坞=书签语义（普通点换当前页、newTab 才新开）/ 题单广场搜索条已删 /
               # 中键点链接 = 后台新标签
+LuoguLab.exe --lg-hidden --lg-v315test   # R42 可靠性：坏 JSON 先备份再回退 /
+              # 六份数据原子写（tmp + rename，失败可见、ENOSPC 有文案）/
+              # 默认值对齐 / 探针僵尸字段清零 / 投影软约束基线
+              # （23 项断言，逐条真跑；--lg-selftest= 仍必填）
 LuoguLab.exe --lg-hidden --lg-perftest   # R41 性能基线/验收：冷启动分段耗时 /
               # 按进程内存 / 6 标签内存曲线 / 休眠差值与唤醒耗时 / 后台节流落位
               # （cfg.bgThrottle 存在才断言：活动关/后台开）
@@ -120,18 +129,22 @@ LuoguLab.exe --lg-autologin --lg-user=… --lg-pass=…   # 自动登录（验�
 omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色预设往返 +
 浏览器能力（缩放/重排/右键菜单）+ 历史下载 + 命令面板。
 
-## 部署状态（2026-10-05）
+## 部署状态（2026-10-21）
 
 - 部署产物：`D:\workspace\luogu++\app\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.14.0）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.15.0）
 - 源码仓库：`D:\workspace\luogu++\repo`（git 远端 `longguanhong0755/luogu-plus`）；
   开发运行目录 `D:\workspace\luogu++\dev`
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
-- 设计迭代史见 `design-log.md`（R1~R41，全部有探针/截图证据）
+- 设计迭代史见 `design-log.md`（R1~R42，全部有探针/截图证据）
 
 ## 已知环境注意事项
 
+- **`ELECTRON_RUN_AS_NODE=1` 会让探针静默空跑**：某些宿主（IDE / AI 会话 /
+  启动器）会注入这个变量，Electron 二进制整个退化成 Node，所有 `--lg-*`
+  都会被当成 node CLI 选项、直接报 `bad option` 退出。`scripts/run-probe.sh`
+  已在调用前 `unset`；手跑单个探针时也要自己清掉。
 - **Electron 44 在本机崩溃（0xc0000005）**，39.8.10 正常 —— 已固定 39.x
 - 硬杀进程（taskkill/timeout 打断）可能弄脏 cookie 库导致会话被重置；正常关窗不受影响
 - 配置面板改「无边框窗口」后需重启生效

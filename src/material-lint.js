@@ -32,7 +32,10 @@ const FORBIDDEN = [
 const ALLOW = new Set(["material.css", "material-lint.js"]);
 
 function stripComments(text, isCss) {
-  let s = text.replace(/\/\*[\s\S]*?\*\//g, "");
+  /* R42：注释替换成**等量换行**而不是空串。整块删掉会让后面的行号整体前移，
+     报出来的 file:line 对不上真实文件（按它去改会改错行）。 */
+  const keepNl = (m) => m.replace(/[^\n]/g, "");
+  let s = text.replace(/\/\*[\s\S]*?\*\//g, keepNl);
   if (!isCss) s = s.replace(/^[ 	]*\/\/.*$/gm, "");
   return s;
 }
@@ -76,4 +79,32 @@ function scan(rootDir) {
   }
   return bad;
 }
-module.exports = { scan, FORBIDDEN };
+/* ---------- 投影配方（R42）：软约束 ----------
+   box-shadow 的**外投影**（裸 rgba 黑色）是"材质单源"最后一块缺口：它不受
+   --lg-glass-drop 控制，用户调面不透明度/皮肤时这些浮层投影不跟着走。
+   存量 6 处（material.css 的 #drag-tip + settings×3 + inject×2），先把它们
+   钉成基线（v315test 断言数量），**新增一处就红**；收敛成变量要先定档位
+   （会动观感），留给后续设计轮。
+   注意：inset 描边 / 落点线（inset 0 0 0 1px var(--hairline)）是**形态**，
+   颜色来自变量，不算配方，不在检查范围。 */
+const SHADOW_HARD = /box-shadow\s*:[^;]*rgba\(\s*0\s*,\s*0\s*,\s*0\s*,/i;
+const SHADOW_BASELINE = 6; // 2026-10-21 存量；只许减，不许增
+
+function scanShadows(rootDir) {
+  const files = walk(rootDir, []);
+  const hits = [];
+  for (const f of files) {
+    if (!/\.(css|js)$/i.test(f)) continue;
+    const raw = fs.readFileSync(f, "utf8");
+    const text = stripComments(raw, /\.css$/i.test(f));
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      if (SHADOW_HARD.test(lines[i])) {
+        hits.push({ file: path.relative(rootDir, f), line: i + 1, text: lines[i].trim().slice(0, 120) });
+      }
+    }
+  }
+  return hits;
+}
+
+module.exports = { scan, FORBIDDEN, scanShadows, SHADOW_BASELINE };

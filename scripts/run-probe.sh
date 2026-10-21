@@ -5,6 +5,11 @@
 #   输出目录  证据落盘目录
 # 环境: LG_EXE 可覆盖 exe 路径；LG_PREP=1（默认）预置真实配置+账号+重复壁纸
 set -e
+# R42：宿主环境（IDE / AI 会话 / 某些启动器）会注入 ELECTRON_RUN_AS_NODE=1，
+# 此时 Electron 二进制整个退化成 node：所有 --lg-* 被当成 node CLI 选项，
+# 直接报 "bad option: --lg-xxx" 并退出——探针看起来"跑了"，实际一次都没启动。
+# 这一条必须在调用 exe 之前清掉。
+unset ELECTRON_RUN_AS_NODE
 NAME="$1"; shift
 OUTDIR="$1"; shift || true
 EXE="${LG_EXE:-D:/workspace/luogu++/app/LuoguLab.exe}"

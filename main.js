@@ -159,8 +159,12 @@ const DEFAULT_CONFIG = {
   uiScale: 1,
   ideNative: true,
   mappings: {},
-  /* 三态页面配色：native=保持洛谷原样 / light=亮色美化 / dark=整页重绘深色 */
-  pageTheme: "native",
+  /* 页面配色：auto=跟随全应用统一明暗（唯一支持的语义）。v3.5.1 起"原色/亮/暗"
+     三态已撤（原色正是"里面一个颜色、外面一个颜色"的根因），旧配置里的
+     native/light/dark 仍认，native 归 auto（见 loadConfig 的 v5 迁移）。
+     R42：默认值原先写的是 "native"——一个注入层早就不再接受的死值，
+     会让人以为"默认原色"，实际跑的是 auto。这里与真实语义对齐。 */
+  pageTheme: "auto",
   /* 配色预设：中性基色，决定明暗两套的底色/墨色骨架 */
   preset: "ink",
   /* 主题色种子：挑一个颜色（比如紫色），所有色块都朝它混色，任何色相自动适配 */
@@ -641,15 +645,121 @@ process.on("unhandledRejection", (e) => {
   dbg("unhandledRejection: " + (e && e.stack ? e.stack : String(e)));
 });
 
+/* ============================================================
+   持久化地基（R42）：读损坏要留证据、写要原子、失败要说话
+   ------------------------------------------------------------
+   改造前每个 *.json 各写一套 try/catch，三条隐患都指向"用户数据悄悄没了"：
+     1) 读：解析失败 → 静默回退默认值，紧接着一次 save 就把原文件覆盖掉
+        （配置/账号/历史"自己变回默认"就是这么发生的，且没有任何痕迹）；
+     2) 写：fs.writeFile 直写目标文件，进程在写一半退出 → 文件残缺 →
+        下次读失败 → 又回到默认值；
+     3) 失败：catch {} 一律吞掉 —— 磁盘满时改设置毫无反应，用户以为改成功了。
+   这里收成三条地基，六个持久化点（配置/账号/标签/窗口/历史/下载）全走它：
+     1) readJsonSafe：坏文件先备份 .corrupt-<时间戳> 再回退，并进 recoveredFiles
+        （外壳首帧后统一提示一次）；
+     2) writeTextAtomic(Sync)：写 <file>.tmp-<pid> → rename 覆盖。同盘 rename
+        原子，中途崩不会留下半个 JSON；临时名带 pid，探针实例互不干扰；
+     3) reportWriteFail：ENOSPC/EACCES 等 → dbg 留痕 + 外壳 toast（60s 冷却），
+        窗口还没就绪时挂 pending，did-finish-load 后补发。
+   ============================================================ */
+const recoveredFiles = [];   // [{file, backup}]：启动时判损坏并已备份的文件
+let writeFailPending = "";   // 窗口没就绪时的待发提示
+let writeFailNotifiedAt = 0;
+/* 最近一次写失败（R42）：toast 是一次性的、pending 发完即清，事后无从查证。
+   留一份带时间戳的记录给诊断与探针（v315test 断言它，而不是猜 toast 发没发）。 */
+let lastWriteFailure = null;
+
+function reportWriteFail(file, err) {
+  const code = String((err && err.code) || "");
+  const label = path.basename(file);
+  const msg =
+    code === "ENOSPC"
+      ? "磁盘空间不足，" + label + " 没能保存"
+      : code === "EACCES" || code === "EPERM"
+        ? "没有写入权限，" + label + " 没能保存"
+        : label + " 写入失败（" + (code || "IO") + "）";
+  dbg("write fail: " + file + " " + code + " " + ((err && err.message) || ""));
+  lastWriteFailure = { file: path.basename(file), code, msg, at: Date.now() };
+  writeFailPending = writeFailPending || msg;
+  const now = Date.now();
+  if (mainWin && !mainWin.isDestroyed() && now - writeFailNotifiedAt > 60000) {
+    writeFailNotifiedAt = now;
+    writeFailPending = "";
+    try { mainWin.webContents.send("chrome:toast", msg); } catch {}
+  }
+  return msg; // 探针要断言文案（v315test），别让它靠猜
+}
+
+function readJsonSafe(file, fallback, label) {
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (e) {
+    /* 文件不存在 = 首次运行，属于正常；权限/IO 错误要留痕 */
+    if (e && e.code !== "ENOENT") dbg("read fail: " + file + " " + ((e && e.code) || (e && e.message)));
+    return fallback;
+  }
+  if (!text.trim()) return fallback; // 空文件（上次写空/占位）当作没有
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const bak = file + ".corrupt-" + stamp;
+    let saved = false;
+    try { fs.writeFileSync(bak, text, "utf8"); saved = true; } catch {}
+    dbg("corrupt json: " + file + " → " + (saved ? bak : "backup failed") + " (" + e.message + ")");
+    recoveredFiles.push({ file: label || path.basename(file), backup: saved ? path.basename(bak) : "" });
+    return fallback;
+  }
+}
+
+function writeTextAtomicSync(file, text) {
+  const tmp = file + ".tmp-" + process.pid;
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(tmp, text, "utf8");
+    fs.renameSync(tmp, file);
+    return true;
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch {}
+    reportWriteFail(file, e);
+    return false;
+  }
+}
+
+function writeTextAtomic(file, text) {
+  const tmp = file + ".tmp-" + process.pid;
+  return fs.promises
+    .mkdir(path.dirname(file), { recursive: true })
+    .then(() => fs.promises.writeFile(tmp, text, "utf8"))
+    .then(() => fs.promises.rename(tmp, file))
+    .then(() => true)
+    .catch((e) => {
+      try { fs.unlinkSync(tmp); } catch {}
+      reportWriteFail(file, e);
+      return false;
+    });
+}
+
+/* 首帧后把启动期的坏文件/写失败一次性告诉用户（此前完全静默） */
+function flushPersistenceNotes() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  const send = (m) => { try { mainWin.webContents.send("chrome:toast", m); } catch {} };
+  if (recoveredFiles.length) {
+    const names = recoveredFiles.map((r) => r.file).join("、");
+    const hasBak = recoveredFiles.some((r) => r.backup);
+    send(names + " 内容已损坏，已" + (hasBak ? "备份并" : "") + "回退默认值");
+  }
+  if (writeFailPending) {
+    send(writeFailPending);
+    writeFailPending = "";
+  }
+}
+
 const CONFIG_VERSION = 7;
 let cfg = { ...DEFAULT_CONFIG };
 function loadConfig() {
-  let raw = null;
-  try {
-    raw = JSON.parse(fs.readFileSync(configPath(), "utf8"));
-  } catch {
-    raw = null;
-  }
+  const raw = readJsonSafe(configPath(), null, "配置");
   cfg = { ...DEFAULT_CONFIG, ...(raw || {}) };
   // v1 → v2 迁移：旧版本默认把内容去色设在 0.8，是"页面灰蒙蒙"的来源，
   // 用户从未主动调过这个滑杆（原话就是抱怨发灰），因此重置为 0=保持原色。
@@ -701,39 +811,25 @@ function loadConfig() {
    拖滑杆/换壁纸的热路径上是一次同步盘 IO。启动判定与退出补写仍走同步。 */
 let saveConfigChain = Promise.resolve();
 function saveConfig() {
-  try { fs.mkdirSync(path.dirname(configPath()), { recursive: true }); } catch {}
+  /* 异步串行链保留（R41 的"滑杆热路径不做同步盘 IO"）；写入走原子替换，
+     失败由 reportWriteFail 统一发声（此前直接 writeFile + .catch(() => {})，
+     磁盘满时改设置毫无反应）。 */
   const data = JSON.stringify(cfg, null, 2);
-  saveConfigChain = saveConfigChain
-    .then(() => new Promise((res) => { fs.writeFile(configPath(), data, "utf8", res); }))
-    .catch(() => {});
+  saveConfigChain = saveConfigChain.then(() => writeTextAtomic(configPath(), data)).catch(() => {});
 }
 function saveConfigSync() {
-  try {
-    fs.mkdirSync(path.dirname(configPath()), { recursive: true });
-    fs.writeFileSync(configPath(), JSON.stringify(cfg, null, 2), "utf8");
-  } catch (e) {
-    console.error("saveConfig failed:", e);
-  }
+  writeTextAtomicSync(configPath(), JSON.stringify(cfg, null, 2));
 }
 
 /* ---------- 账号账密库（本地独立文件，不与其它配置混放） ---------- */
 const accountsPath = () => path.join(app.getPath("userData"), "accounts.json");
 let accounts = [];
 function loadAccounts() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(accountsPath(), "utf8"));
-    accounts = Array.isArray(raw) ? raw : [];
-  } catch {
-    accounts = [];
-  }
+  const raw = readJsonSafe(accountsPath(), [], "账号库");
+  accounts = Array.isArray(raw) ? raw : [];
 }
 function saveAccounts() {
-  try {
-    fs.mkdirSync(path.dirname(accountsPath()), { recursive: true });
-    fs.writeFileSync(accountsPath(), JSON.stringify(accounts, null, 2), "utf8");
-  } catch (e) {
-    dbg("saveAccounts failed: " + e);
-  }
+  writeTextAtomicSync(accountsPath(), JSON.stringify(accounts, null, 2));
 }
 // 只暴露给渲染层的脱敏视图
 function publicAccounts() {
@@ -772,7 +868,7 @@ function saveTabsState() {
       const ids = g.ids.map((id) => tabOrder.indexOf(id)).filter((x) => x >= 0);
       if (ids.length >= 2) splitPairs.push({ ids, ratio: g.colRatio });
     }
-    fs.writeFileSync(
+    writeTextAtomicSync(
       tabsStatePath(),
       JSON.stringify({
         tabs: tabOrder.map((id) => {
@@ -792,10 +888,8 @@ function scheduleSaveTabs() {
   tabsSaveTimer = setTimeout(() => { tabsSaveTimer = null; saveTabsState(); }, 700);
 }
 function loadTabsState() {
-  try {
-    const s = JSON.parse(fs.readFileSync(tabsStatePath(), "utf8"));
-    if (s && Array.isArray(s.tabs) && s.tabs.length) return s;
-  } catch {}
+  const s = readJsonSafe(tabsStatePath(), null, "标签存档");
+  if (s && Array.isArray(s.tabs) && s.tabs.length) return s;
   return null;
 }
 
@@ -805,10 +899,8 @@ function loadTabsState() {
    显示器拔插/改分辨率由 ensureOnScreen 兜底，所以这里不做屏幕校验。 */
 const winStatePath = () => path.join(app.getPath("userData"), "window-state.json");
 function loadWindowState() {
-  try {
-    const s = JSON.parse(fs.readFileSync(winStatePath(), "utf8"));
-    if (s && Number.isFinite(s.width) && Number.isFinite(s.height) && s.width >= 400 && s.height >= 300) return s;
-  } catch {}
+  const s = readJsonSafe(winStatePath(), null, "窗口位置");
+  if (s && Number.isFinite(s.width) && Number.isFinite(s.height) && s.width >= 400 && s.height >= 300) return s;
   return null;
 }
 /* 纯函数：把存档折算成 BrowserWindow 的尺寸项（下限=窗口最小尺寸） */
@@ -825,13 +917,11 @@ function windowBoundsFor(ws) {
 }
 function saveWindowState() {
   if (!mainWin || mainWin.isDestroyed()) return;
-  try {
-    const b = mainWin.isMaximized() || mainWin.isFullScreen() ? mainWin.getNormalBounds() : mainWin.getBounds();
-    fs.writeFileSync(
-      winStatePath(),
-      JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, maximized: mainWin.isMaximized() })
-    );
-  } catch {}
+  const b = mainWin.isMaximized() || mainWin.isFullScreen() ? mainWin.getNormalBounds() : mainWin.getBounds();
+  writeTextAtomicSync(
+    winStatePath(),
+    JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, maximized: mainWin.isMaximized() })
+  );
 }
 let winSaveTimer = null;
 function scheduleSaveWindowState() {
@@ -852,6 +942,8 @@ const glassTest = argv.includes("--lg-glasstest");
 const dumpHome = argv.includes("--lg-dump-home");
 const glassSrc = (argv.find((a) => a.startsWith("--lg-glass-src=")) || "").split("=").slice(1).join("=");
 const autoLogin = argv.includes("--lg-autologin");
+/* R42：持久化地基 / 假信息清理 / 材质守卫的验收探针 */
+const v315test = argv.includes("--lg-v315test");
 const argUser = (argv.find((a) => a.startsWith("--lg-user=")) || "").split("=").slice(1).join("=");
 const argPass = (argv.find((a) => a.startsWith("--lg-pass=")) || "").split("=").slice(1).join("=");
 const argCaptcha = (argv.find((a) => a.startsWith("--lg-captcha=")) || "").split("=").slice(1).join("=");
@@ -3540,6 +3632,8 @@ function createMainWindow() {
     pushAccountState();
     pushDownloads();
     pushWinState();
+    /* R42：启动期"文件损坏已备份"/"写盘失败"在此一次性告诉用户（此前全静默） */
+    flushPersistenceNotes();
     ensureSiteTabs();
   });
 
@@ -5884,21 +5978,15 @@ const historyPath = () => path.join(app.getPath("userData"), "history.json");
 const HISTORY_MAX = 800;
 let history = [];
 function loadHistory() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(historyPath(), "utf8"));
-    history = Array.isArray(raw) ? raw : [];
-  } catch {
-    history = [];
-  }
+  const raw = readJsonSafe(historyPath(), [], "浏览历史");
+  history = Array.isArray(raw) ? raw : [];
 }
 let historyTimer = null;
 function saveHistory() {
   clearTimeout(historyTimer);
   historyTimer = setTimeout(() => {
     historyTimer = null;
-    try {
-      fs.writeFileSync(historyPath(), JSON.stringify(history.slice(-HISTORY_MAX)), "utf8");
-    } catch {}
+    writeTextAtomicSync(historyPath(), JSON.stringify(history.slice(-HISTORY_MAX)));
   }, 900);
 }
 function recordHistory(url, title) {
@@ -5947,22 +6035,15 @@ let downloadSeq = 0;
    wc 留着给"重试"（用它原来的会话重新发起，别把站外下载塞进默认会话）。 */
 const dlItems = new Map();
 function loadDownloads() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(downloadsPath(), "utf8"));
-    const list = Array.isArray(raw) ? raw : [];
-    downloads = list
-      .filter((d) => d && d.id)
-      .map((d) => (d.state === "progressing" || d.state === "paused" ? { ...d, state: "interrupted" } : d));
-    downloadSeq = downloads.reduce((m, d) => Math.max(m, Number(d.id) || 0), 0);
-  } catch {
-    downloads = [];
-  }
+  const raw = readJsonSafe(downloadsPath(), [], "下载记录");
+  const list = Array.isArray(raw) ? raw : [];
+  downloads = list
+    .filter((d) => d && d.id)
+    .map((d) => (d.state === "progressing" || d.state === "paused" ? { ...d, state: "interrupted" } : d));
+  downloadSeq = downloads.reduce((m, d) => Math.max(m, Number(d.id) || 0), 0);
 }
 function saveDownloads() {
-  try {
-    fs.mkdirSync(path.dirname(downloadsPath()), { recursive: true });
-    fs.writeFileSync(downloadsPath(), JSON.stringify(downloads.slice(-80), null, 1), "utf8");
-  } catch {}
+  writeTextAtomicSync(downloadsPath(), JSON.stringify(downloads.slice(-80), null, 1));
 }
 function publicDownloads() {
   return downloads.slice(-40).map((d) => ({
@@ -6242,7 +6323,134 @@ async function selftest() {
   if (!selftestShot) return;
   const fsx = fs;
   try {
-    if (configtest) {
+    if (v315test) {
+      /* ============================================================
+         R42：持久化地基 / 假信息清理 / 材质守卫
+         —— 每一项都是**真跑一遍**再断言，不是查字符串存在性。
+         ============================================================ */
+      const out = { version: "3.15.0", checks: [], ok: true };
+      const chk = (name, pass, detail) => {
+        out.checks.push({ name, pass: !!pass, detail: detail === undefined ? null : detail });
+        if (!pass) out.ok = false;
+      };
+      const storeDir = path.join(app.getPath("userData"), "selftest-store");
+      try { fs.rmSync(storeDir, { recursive: true, force: true }); } catch {}
+      fs.mkdirSync(storeDir, { recursive: true });
+
+      /* 1) 坏 JSON：备份 + 回退 + 进 recovered 列表 + 备份逐字保真 */
+      const badFile = path.join(storeDir, "broken.json");
+      const badText = '{"a": 1, broken';
+      fs.writeFileSync(badFile, badText, "utf8");
+      const recBefore = recoveredFiles.length;
+      const got = readJsonSafe(badFile, { fallback: true }, "测试文件");
+      const baks = fs.readdirSync(storeDir).filter((f) => f.startsWith("broken.json.corrupt-"));
+      chk("corrupt-fallback", got && got.fallback === true, got);
+      chk("corrupt-backup", baks.length === 1, baks);
+      chk("corrupt-reported", recoveredFiles.length === recBefore + 1, recoveredFiles.length - recBefore);
+      chk(
+        "corrupt-backup-bytes",
+        baks.length === 1 && fs.readFileSync(path.join(storeDir, baks[0]), "utf8") === badText,
+        baks[0] || ""
+      );
+
+      /* 2) 空文件 / 不存在：按"没有"处理，且**不许**误判成损坏 */
+      fs.writeFileSync(path.join(storeDir, "empty.json"), "  \n", "utf8");
+      chk("empty-as-missing", readJsonSafe(path.join(storeDir, "empty.json"), [], "空文件").length === 0, "ok");
+      chk("missing-as-fallback", readJsonSafe(path.join(storeDir, "nope.json"), { d: 1 }, "缺文件").d === 1, "ok");
+      chk("no-false-corrupt", recoveredFiles.length === recBefore + 1, recoveredFiles.length - recBefore);
+
+      /* 3) 原子写：成功后内容正确、不留 tmp */
+      const okFile = path.join(storeDir, "ok.json");
+      const w1 = writeTextAtomicSync(okFile, JSON.stringify({ x: 42 }));
+      const tmps = fs.readdirSync(storeDir).filter((f) => f.includes(".tmp-"));
+      chk("atomic-write", w1 === true && JSON.parse(fs.readFileSync(okFile, "utf8")).x === 42, w1);
+      chk("atomic-no-tmp", tmps.length === 0, tmps);
+
+      /* 4) 写失败可见：拿一个**目录**当目标（EISDIR，稳定可复现、不破坏任何东西） */
+      const dirAsFile = path.join(storeDir, "iam-a-dir");
+      fs.mkdirSync(dirAsFile, { recursive: true });
+      writeFailPending = "";
+      lastWriteFailure = null;
+      const w2 = writeTextAtomicSync(dirAsFile, "x");
+      chk("fail-returns-false", w2 === false, w2);
+      /* "可见"= 有文案、有错误码、且是刚刚发生的（pending 已被一次性 toast 消费掉，
+         所以断言持久记录；这正是不该只看 writeFailPending 的原因） */
+      chk(
+        "fail-visible",
+        !!(lastWriteFailure && lastWriteFailure.msg && Date.now() - lastWriteFailure.at < 5000),
+        lastWriteFailure
+      );
+      const msgEnospc = reportWriteFail(dirAsFile, { code: "ENOSPC", message: "no space left" });
+      chk("fail-enospc-text", /磁盘空间不足/.test(msgEnospc), msgEnospc);
+      const msgPerm = reportWriteFail(dirAsFile, { code: "EACCES", message: "denied" });
+      chk("fail-perm-text", /没有写入权限/.test(msgPerm), msgPerm);
+      writeFailPending = "";
+
+      /* 5) 默认值与死字段清理 */
+      chk("default-page-theme-auto", DEFAULT_CONFIG.pageTheme === "auto", DEFAULT_CONFIG.pageTheme);
+      let selfSrc = "";
+      try { selfSrc = fs.readFileSync(__filename, "utf8"); } catch {}
+      chk("no-alpha-card-read", !/getPropertyValue\(\s*['"]--lg-alpha-card/.test(selfSrc), "main.js");
+      chk("no-cardalpha-write", !/lgConfig\.set\(\{\s*cardAlpha/.test(selfSrc), "main.js");
+      let preloadSrc = "";
+      try { preloadSrc = fs.readFileSync(path.join(__dirname, "preload-page.js"), "utf8"); } catch {}
+      chk("preload-no-version", preloadSrc !== "" && !/^\s*version\s*:\s*["']\d+["'],?\s*$/m.test(preloadSrc), "preload-page.js");
+
+      /* 6) 六个持久化点：真写一遍，都能落盘且不留 tmp */
+      saveAccounts();
+      saveTabsState();
+      saveWindowState();
+      saveDownloads();
+      saveConfigSync();
+      saveHistory();
+      await new Promise((r) => setTimeout(r, 1200)); // saveHistory 是 900ms 防抖
+      const six = [accountsPath(), tabsStatePath(), winStatePath(), historyPath(), downloadsPath(), configPath()];
+      const missing = six.filter((f) => !fs.existsSync(f));
+      chk("six-files-exist", missing.length === 0, missing);
+      chk("six-no-tmp", !six.some((f) => fs.existsSync(f + ".tmp-" + process.pid)), "ok");
+      /* 写出来的必须是能解析的 JSON（原子写不能写出半个文件） */
+      const unparsable = six.filter((f) => {
+        try { JSON.parse(fs.readFileSync(f, "utf8")); return false; } catch { return true; }
+      });
+      chk("six-valid-json", unparsable.length === 0, unparsable);
+
+      /* 7) 材质守卫：投影软约束没被突破 */
+      let shadowCount = -1;
+      let lintErr = "";
+      let lintClean = false;
+      try {
+        const lint = require(path.join(__dirname, "src", "material-lint.js"));
+        const hits = [
+          ...lint.scanShadows(path.join(__dirname, "src")),
+          ...lint.scanShadows(path.join(__dirname, "main.js")),
+        ];
+        shadowCount = hits.length;
+        lintClean = lint.scan(path.join(__dirname, "src")).length === 0;
+      } catch (e) {
+        lintErr = String((e && e.message) || e);
+      }
+      chk("shadow-baseline", shadowCount >= 0 && shadowCount <= 6, { count: shadowCount, err: lintErr });
+      chk("lint-clean", lintClean, lintErr);
+
+      /* 8) 页面侧：preload 那个会烂掉的版本号确实不在了 */
+      const siteTab = tabOrder.map((id) => tabs.get(id)).find((t) => t && !isLocalKind(t.kind) && t.view);
+      let pageVer = "no-site-tab";
+      if (siteTab) {
+        try {
+          pageVer = await siteTab.view.webContents.executeJavaScript("typeof window.lgApp.version", true);
+        } catch (e) {
+          pageVer = "err:" + ((e && e.message) || e);
+        }
+      }
+      chk("page-no-version-field", pageVer === "undefined" || pageVer === "no-site-tab", pageVer);
+
+      fs.writeFileSync(selftestShot + ".json", JSON.stringify(out, null, 2));
+      fs.writeFileSync(
+        selftestShot + ".txt",
+        out.checks.map((c) => (c.pass ? "PASS " : "FAIL ") + c.name + "  " + JSON.stringify(c.detail)).join("\n")
+      );
+      dbg("v315test " + (out.ok ? "PASS" : "FAIL") + " " + out.checks.filter((c) => !c.pass).map((c) => c.name).join(","));
+    } else if (configtest) {
       const cfgBackup = JSON.parse(JSON.stringify(cfg)); // 自测结束要把用户配置原样放回
       openSettingsTab();
       await new Promise((r) => setTimeout(r, 2500));
@@ -6251,7 +6459,7 @@ async function selftest() {
       if (st) img = (await safeCapture(st.view.webContents)) ;
       if (img) fsx.writeFileSync(selftestShot, img.toPNG());
       await st.view.webContents.executeJavaScript(
-        `window.lgConfig.set({ cardAlpha: 0.7, theme: 'dark', clean: false, uiScale: 1.15, mappings: { deepseek: 'https://chat.deepseek.com' } })`,
+        `window.lgConfig.set({ faceAlpha: 0.7, theme: 'dark', clean: false, uiScale: 1.15, mappings: { deepseek: 'https://chat.deepseek.com' } })`,
         true
       );
       await new Promise((r) => setTimeout(r, 1200));
@@ -6463,7 +6671,9 @@ async function selftest() {
         await waitInjected(t.view.webContents);
         ipc = await t.view.webContents.executeJavaScript(
           `JSON.stringify({
-            cardAlpha: document.documentElement.style.getPropertyValue('--lg-alpha-card'),
+            /* R42：--lg-alpha-card 自 v6 并入 faceAlpha 后已不存在（material-lint
+               也明令禁止），旧探针一直在读一个空值。这里改读材质下发的实际变量。 */
+            faceAlpha: document.documentElement.style.getPropertyValue('--lg-glass-card'),
             theme: document.documentElement.getAttribute('data-lg-theme'),
             clean: document.documentElement.getAttribute('data-lg-clean')
           })`,
