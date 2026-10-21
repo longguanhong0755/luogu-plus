@@ -1,0 +1,281 @@
+{
+  "_说明": "本文件由 scripts/gen-config-schema.cjs 自动生成，请勿手改。改了设置页的滑杆范围后重新生成。",
+  "_来源": "src/settings/settings.js 的 bindSlider/ck 绑定 + main.js 的 DEFAULT_CONFIG 字面量默认值",
+  "keys": {
+    "uiScale": {
+      "type": "number",
+      "min": 0.8,
+      "max": 1.4,
+      "def": 1
+    },
+    "wallpaperDim": {
+      "type": "number",
+      "min": 0,
+      "max": 0.8,
+      "def": 0
+    },
+    "wallpaperBlur": {
+      "type": "number",
+      "min": 0,
+      "max": 30,
+      "def": 0
+    },
+    "tabSleepMinutes": {
+      "type": "number",
+      "min": 0,
+      "max": 120,
+      "def": 30
+    },
+    "radius": {
+      "type": "number",
+      "min": 0,
+      "max": 28,
+      "def": 8
+    },
+    "faceAlpha": {
+      "type": "number",
+      "min": 0.3,
+      "max": 1,
+      "def": 0.92
+    },
+    "blur": {
+      "type": "number",
+      "min": 0,
+      "max": 40,
+      "def": 26
+    },
+    "borderStrength": {
+      "type": "number",
+      "min": 0.4,
+      "max": 3,
+      "def": 1
+    },
+    "glassTint": {
+      "type": "number",
+      "min": 0,
+      "max": 1,
+      "def": 0.12
+    },
+    "glassSat": {
+      "type": "number",
+      "min": 100,
+      "max": 300,
+      "def": 180
+    },
+    "themeStrength": {
+      "type": "number",
+      "min": 0,
+      "max": 100,
+      "def": 45
+    },
+    "ideNative": {
+      "type": "boolean",
+      "def": true
+    },
+    "clean": {
+      "type": "boolean",
+      "def": true
+    },
+    "declutter": {
+      "type": "boolean",
+      "def": false
+    },
+    "verticalTabs": {
+      "type": "boolean",
+      "def": true
+    },
+    "quickSearch": {
+      "type": "boolean",
+      "def": true
+    },
+    "restoreTabs": {
+      "type": "boolean",
+      "def": false
+    },
+    "bgThrottle": {
+      "type": "boolean",
+      "def": true
+    },
+    "memSleep": {
+      "type": "boolean",
+      "def": true
+    },
+    "listTools": {
+      "type": "boolean",
+      "def": true
+    },
+    "codeCopy": {
+      "type": "boolean",
+      "def": true
+    },
+    "diffMono": {
+      "type": "boolean",
+      "def": false
+    },
+    "animations": {
+      "type": "boolean",
+      "def": true
+    },
+    "autoGlass": {
+      "type": "boolean",
+      "def": true
+    },
+    "wallpaperMute": {
+      "type": "boolean",
+      "def": true
+    },
+    "wallpaperParallax": {
+      "type": "boolean",
+      "def": true
+    },
+    "homeHello": {
+      "type": "boolean",
+      "def": true
+    },
+    "smartPid": {
+      "type": "boolean",
+      "def": true
+    },
+    "luckyDay": {
+      "type": "boolean",
+      "def": false
+    },
+    "betterSearch": {
+      "type": "boolean",
+      "def": true
+    },
+    "dlAsk": {
+      "type": "boolean",
+      "def": false
+    },
+    "downloadNotify": {
+      "type": "boolean",
+      "def": true
+    },
+    "theme": {
+      "type": "enum",
+      "values": [
+        "auto",
+        "light",
+        "dark"
+      ],
+      "def": "auto"
+    },
+    "wallpaper": {
+      "type": "string",
+      "def": ""
+    },
+    "contentDesat": {
+      "type": "number",
+      "def": 0
+    },
+    "pageTheme": {
+      "type": "string",
+      "def": "auto"
+    },
+    "preset": {
+      "type": "string",
+      "def": "ink"
+    },
+    "themeSeed": {
+      "type": "string",
+      "def": ""
+    },
+    "accent": {
+      "type": "string",
+      "def": ""
+    },
+    "glass": {
+      "type": "enum",
+      "values": [
+        "flat",
+        "liquid"
+      ],
+      "def": "flat"
+    },
+    "wallpaperKind": {
+      "type": "string",
+      "def": ""
+    },
+    "vtabWidth": {
+      "type": "number",
+      "def": 212
+    },
+    "vtabSide": {
+      "type": "enum",
+      "values": [
+        "left",
+        "right"
+      ],
+      "def": "left"
+    },
+    "dockPos": {
+      "type": "enum",
+      "values": [
+        "auto",
+        "left",
+        "bottom",
+        "top",
+        "right"
+      ],
+      "def": "auto"
+    },
+    "dedupeKeep": {
+      "type": "enum",
+      "values": [
+        "active",
+        "first",
+        "mru"
+      ],
+      "def": "active"
+    },
+    "searchEngine": {
+      "type": "enum",
+      "values": [
+        "luogu",
+        "bing",
+        "baidu",
+        "google",
+        "ddg",
+        "custom"
+      ],
+      "def": "luogu"
+    },
+    "searchCustom": {
+      "type": "string",
+      "def": ""
+    },
+    "translateProvider": {
+      "type": "enum",
+      "values": [
+        "bing",
+        "custom"
+      ],
+      "def": "bing"
+    },
+    "translateCustom": {
+      "type": "string",
+      "def": ""
+    },
+    "captchaPython": {
+      "type": "string",
+      "def": ""
+    },
+    "activeAccountId": {
+      "type": "string",
+      "def": ""
+    },
+    "wallpaperMode": {
+      "type": "string",
+      "def": "single"
+    },
+    "wallpaperRotateMin": {
+      "type": "number",
+      "def": 0
+    },
+    "customCSS": {
+      "type": "string",
+      "def": ""
+    }
+  }
+}

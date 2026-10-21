@@ -942,7 +942,67 @@ function loadConfig() {
      不 delete 的话它会一直被 saveConfig 写回去，成为一段看不见的死数据。 */
   delete cfg.workspaces;
   cfg.configVersion = CONFIG_VERSION;
-  if (raw === null || raw.configVersion !== CONFIG_VERSION) saveConfig();
+  /* 非法值回退后要**落盘**：否则每次启动都重新判一次非法、每次都记一条
+     日志，用户那份坏配置还一直躺在文件里（进设置页看到的还是它）。 */
+  const fixedCount = sanitizeConfig();
+  if (fixedCount > 0) {
+    try { saveConfigSync(); } catch (e) {}
+  } else if (raw === null || raw.configVersion !== CONFIG_VERSION) {
+    saveConfig();
+  }
+}
+
+/* ---------- 配置 schema 校验（sanitize）----------
+   配置被手改坏时（radius 写成 9999、uiScale 写成 0、某个开关写成字符串
+   "true"），此前会一路流到渲染层才炸——最坏是渲染出一屏乱码，而且用户
+   完全不知道为什么（设置里也看不出异常）。
+   现在启动时按 src/config-schema.json 统一校验：类型不符或超范围 → 回退
+   默认值，并记一条日志。
+
+   schema **自动生成**（scripts/gen-config-schema.cjs）：范围取自设置页滑杆
+   的 min/max，键名取自 bindSlider/ck 的绑定，类型与默认值取自
+   DEFAULT_CONFIG。设置页改了范围，这里跟着变——不会出现"设置页能设的值
+   被启动校验拒了"这种自相矛盾。
+
+   注意：schema 只约束**有字面量默认值**的键（54 个）；数组/对象类的键
+   （mappings、dockItems、homePrefs…）由各自的代码负责，不在这里管。 */
+let configSchema = null;
+try {
+  configSchema = require(path.join(__dirname, "src", "config-schema.json"));
+} catch (e) {
+  configSchema = null;
+}
+function sanitizeConfig() {
+  if (!configSchema || !configSchema.keys) return 0;
+  const fixed = [];
+  for (const [k, rule] of Object.entries(configSchema.keys)) {
+    if (!(k in cfg)) continue;           // 缺键是"用默认值"的事，不归这里
+    const v = cfg[k];
+    if (v == null) continue;             // null 交给各处的默认值兜底
+    if (rule.type === "number") {
+      const n = Number(v);
+      if (!Number.isFinite(n)) { cfg[k] = rule.def; fixed.push(k + "=" + v + "→" + rule.def); continue; }
+      if (rule.min !== undefined && (n < rule.min || n > rule.max)) {
+        cfg[k] = rule.def;
+        fixed.push(k + "=" + n + "→" + rule.def);
+        continue;
+      }
+      cfg[k] = n;
+    } else if (rule.type === "boolean") {
+      if (typeof v !== "boolean") { cfg[k] = rule.def; fixed.push(k + "=" + JSON.stringify(v) + "→" + rule.def); }
+    } else if (rule.type === "enum") {
+      if (!Array.isArray(rule.values) || !rule.values.includes(v)) {
+        cfg[k] = rule.def;
+        fixed.push(k + "=" + JSON.stringify(v) + "→" + rule.def);
+      }
+    } else if (rule.type === "string") {
+      if (typeof v !== "string") { cfg[k] = rule.def; fixed.push(k + "=" + JSON.stringify(v) + "→" + rule.def); }
+    }
+  }
+  if (fixed.length) {
+    try { dbg("config sanitize 回退 " + fixed.length + " 个非法值: " + fixed.join(", ")); } catch {}
+  }
+  return fixed.length;
 }
 /* R41：落盘改异步（串行链防乱序）。此前每次 saveConfig 同步写整个配置——
    拖滑杆/换壁纸的热路径上是一次同步盘 IO。启动判定与退出补写仍走同步。 */
@@ -2632,7 +2692,11 @@ function toggleDrawer() {
       try {
         mainWin.contentView.removeChildView(v);
         v.webContents.close();
-      } catch {}
+      } catch (e) {
+        /* 视图移除失败（已被别处销毁）不该让整个抽屉关不掉，但要有痕迹：
+           此前这里是空 catch，出了"抽屉关不掉"的问题完全查不到。 */
+        try { dbg("drawer close: removeChildView failed: " + ((e && e.message) || e)); } catch {}
+      }
     }
     layout();
     return { ok: true, open: false };
@@ -5990,8 +6054,16 @@ ipcMain.handle("win:close", () => {
 });
 
 ipcMain.handle("app:copy-text", (_e, text) => {
-  try { clipboard.writeText(String(text || "")); } catch {}
-  return { ok: true };
+  /* 复制失败要**说失败**：剪贴板被别的应用占用时 writeText 会抛，
+     此前一律 catch 掉并返回 ok:true —— 用户以为复制好了，其实没复制，
+     粘贴出来的是上一次的旧内容。 */
+  try {
+    clipboard.writeText(String(text || ""));
+    return { ok: true };
+  } catch (e) {
+    try { dbg("copy-text failed: " + ((e && e.message) || e)); } catch {}
+    return { ok: false, message: String((e && e.message) || e) };
+  }
 });
 
 ipcMain.handle("app:open-external", (_e, url) => {

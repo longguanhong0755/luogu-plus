@@ -324,6 +324,29 @@ for (const k of uiBound) {
   }
 }
 
+/* ---------- 6：配置 schema 与 DEFAULT_CONFIG 对账 ----------
+   src/config-schema.json 是自动生成的（scripts/gen-config-schema.cjs），
+   但生成之后没人保证它没过期：改了 DEFAULT_CONFIG 的默认值而忘了重新生成，
+   启动校验就会用旧值把用户的配置判成"非法"并回退——比不校验更糟。 */
+try {
+  const schema = JSON.parse(fs.readFileSync(R("src/config-schema.json"), "utf8"));
+  const skeys = Object.keys(schema.keys || {});
+  for (const k of skeys) {
+    if (!defined.has(k)) {
+      P("error", "src/config-schema.json", `schema 里有键 "${k}"，但 DEFAULT_CONFIG 没有它 → 重新生成 schema`);
+    }
+  }
+  /* 重新生成一遍比对：内容不一致说明 schema 过期了 */
+  const { execFileSync } = require("child_process");
+  const fresh = execFileSync(process.execPath, [R("scripts/gen-config-schema.cjs")], { encoding: "utf8" });
+  const cur = fs.readFileSync(R("src/config-schema.json"), "utf8");
+  if (fresh.trim() !== cur.trim()) {
+    P("error", "src/config-schema.json", "schema 与源码不同步（默认值或滑杆范围变了）→ 跑 node scripts/gen-config-schema.cjs --write");
+  }
+} catch (e) {
+  P("error", "src/config-schema.json", "读不到或解析失败: " + ((e && e.message) || e));
+}
+
 /* ---------- 输出 ---------- */
 console.log("契约检查：" + problems.length + " 个问题，" + notes.length + " 条待人工确认\n");
 if (problems.length) {

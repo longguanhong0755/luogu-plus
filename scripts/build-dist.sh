@@ -19,8 +19,10 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD/src" "$BUILD/assets" "$BUILD/docs"
 cp "$SRC/main.js" "$SRC/package.json" "$BUILD/"
 cp "$SRC"/preload-*.js "$BUILD/"
-cp -r "$SRC/src/chrome" "$SRC/src/settings" "$SRC/src/history" "$SRC/src/popup" "$SRC/src/home" "$BUILD/src/"
-cp "$SRC/src/inject.js" "$SRC/src/inject.css" "$SRC/src/ext.css" "$BUILD/src/"
+# 整个 src 目录进包（不用名单）：名单制下每加一个 src 文件就要记得改
+# 这里，漏一次就是"新装的用户少一个文件"。此前这份名单就漏过
+# material.css / common.css / dock/ / icons.js —— 打出来的包主题是坏的。
+cp -r "$SRC/src/." "$BUILD/src/"
 cp "$SRC/assets/"* "$BUILD/assets/"
 cp "$SRC/docs/FINAL-REPORT.md" "$BUILD/docs/"
 [ -f "$SRC/docs/使用说明.txt" ] && cp "$SRC/docs/使用说明.txt" "$BUILD/"

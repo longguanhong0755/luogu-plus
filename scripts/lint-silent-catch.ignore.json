@@ -1,0 +1,14 @@
+{
+  "_说明": "静默失败扫描的人工豁免。每项写清为什么这个位置的空 catch 是合理的——这份清单本身就是文档。",
+  "allow": [
+    { "file": "main.js", "match": "clearStorageData", "why": "清会话分区失败无所谓：账号已删，多半是分区本来就不存在" },
+    { "file": "main.js", "match": "webContents.reload()", "why": "标签视图已销毁时 reload 失败是正常时序" },
+    { "file": "main.js", "match": "setAudioMuted", "why": "标签已休眠/销毁时静音失败无影响" },
+    { "file": "main.js", "match": "popupView && popupView.setVisible(false)", "why": "弹层可能已销毁；失败不影响主流程" },
+    { "file": "main.js", "match": "chrome:popup-picked", "why": "窗口已销毁时发不出去，调用方此时也不需要这个回执" },
+    { "file": "main.js", "match": "webContents.stop()", "why": "停止加载失败无害" },
+    { "file": "main.js", "match": "chrome:winstate", "why": "窗口状态推送失败（窗口正在关）无害" },
+    { "file": "main.js", "match": "window.find", "why": "页面内字符串，非主进程代码" },
+    { "file": "main.js", "match": "n.show()", "why": "系统通知弹不出来不该让截图失败——截图本身已经存好了" }
+  ]
+}
