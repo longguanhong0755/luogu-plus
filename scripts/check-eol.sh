@@ -21,12 +21,16 @@ for f in $(git status --porcelain | awk '{print $2}' | grep -v '^$'); do
   now_cr=$(tr -cd '\r' < "$f" | wc -c)
   now_lines=$(wc -l < "$f")
   if [ -n "$head_cr" ]; then
+    head_lf=$((head_lines - head_cr))
+    now_lf=$((now_lines - now_cr))
     if [ "$head_cr" = "0" ]; then want="LF"; else want="CRLF"; fi
-    if [ "$head_cr" != "0" ] && [ "$now_cr" != "$now_lines" ]; then
-      echo "行尾不一致: $f  期望 $want（HEAD CRLF=$head_cr/$head_lines） 现状 CRLF=$now_cr/$now_lines"
-      bad=1
-    elif [ "$head_cr" = "0" ] && [ "$now_cr" != "0" ]; then
+    if [ "$head_cr" = "0" ] && [ "$now_cr" != "0" ]; then
       echo "行尾不一致: $f  期望 $want（HEAD 是 LF） 现状 CRLF=$now_cr/$now_lines"
+      bad=1
+    elif [ "$head_cr" != "0" ] && [ "$now_lf" != "$head_lf" ]; then
+      # CRLF 文件里可能本来就有个别 LF 行（design-log.md 的 R42 行是历史遗留）；
+      # 判据改成"LF 行数量不许变"，既不放过批量转换，也不误报历史混合行尾。
+      echo "行尾不一致: $f  期望 $want（HEAD CRLF=$head_cr/$head_lines，LF 行=$head_lf） 现状 CRLF=$now_cr/$now_lines，LF 行=$now_lf"
       bad=1
     fi
   else

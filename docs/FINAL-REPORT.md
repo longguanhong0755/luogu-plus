@@ -1,11 +1,11 @@
 # LuoguLab 最终成果说明
 
-> 版本 **3.15.0** · 便携免安装 Windows 桌面应用（Electron 39.8.10）
+> 版本 **3.16.5** · 便携免安装 Windows 桌面应用（Electron 39.8.10）
 > 定位：**面向编程的洛谷工作台**（OJ + IDE + 多标签浏览器壳）
 > 视觉：**黑白单色 / 线条风 / 极简**（无 Emoji、无彩色渐变、无 AI 味配色）
 >
 > 说明：本文的迭代章节写到这里收录的最后一轮为止；**v3.5.2 之后的迭代记录见
-> `design-log.md`（R25–R42）与 `使用说明.txt` 的版本小节**（v3.6.0 = 浏览器功能补齐 +
+> `design-log.md`（R25–R48）与 `使用说明.txt` 的版本小节**（v3.6.0 = 浏览器功能补齐 +
 > 垂直栏重做 + 整理标签页 + 删除工作区；v3.7.0 = 垂直侧边栏全量对齐 Edge +
 > Edge 式标签分组；v3.7.1 = 悬停展开重做为"与常驻展开逐像素同一条"（整高贴边、
 > 盖住窄条、隐藏窄条、材质对齐），并修掉 rect 弹层假壁纸按视图尺寸铺的底层 bug；
@@ -38,6 +38,12 @@
 > （`--lg-alpha-card`）与 preload 死字段 `version:"6"`、`pageTheme` 默认值由死值 native 改为 auto、
 > lint 违规行号不再前移；材质守卫补投影软约束（6 处基线）；probe 脚本 unset
 > `ELECTRON_RUN_AS_NODE`（宿主注入会让探针静默空跑）。新探针 `--lg-v315test` 23 项全 PASS。
+> v3.16.0 = 交互手感 + 站外网页自动玻璃化（标签悬停真实缩略图、后退/前进长按历史栈、
+> 每站独立缩放、设置搜索与明暗三态、站外内容站自动玻璃化 + 能力注册表）；
+> v3.16.1–v3.16.4 = 工程化加固（契约/死代码/静默失败静态检查、CI、配置 schema 与启动校验、
+> 类型基线门禁、IPC 存量契约探针、注入层 2521→627 行拆成 8 个模块）；
+> v3.16.5 = 设计系统加固（design.md 像素规范 + material.css 令牌 + 静态/运行时双重守卫 +
+> `lgasset://` 协议修 `file://` CSS 缓存）。
 
 ---
 
@@ -50,6 +56,9 @@ LuoguLab 把 luogu.com.cn 装进一个自带的浏览器外壳里，并且是**�
 3. **补齐浏览器该有的能力**：页面缩放、标签拖拽排序/分组/四分屏、标签与网页两级右键菜单、停止加载、搜索引擎可切换、地址栏联想、历史、下载接管（暂停/继续/重试/另存为）、清除浏览数据、整页截图、画中画、命令面板。
 4. **管住多个洛谷账号**：每个账号一个独立的 cookie 分区，顶栏一键全局切换，不用再登出登入。
 
+界面层面：v3.16.5 起间距/圆角/字号/控件高度全部按 `design.md` 的像素规范与
+`material.css` 令牌实现，提交前有静态 lint 与运行时量值双重守卫。
+
 三个阶段的状态：
 
 | 阶段 | 状态 |
@@ -57,6 +66,7 @@ LuoguLab 把 luogu.com.cn 装进一个自带的浏览器外壳里，并且是**�
 | 设计迭代（R1–R24，**24 轮**，每轮都有截图或 JSON 断言证据） | 完成 |
 | 收尾规范实现（垂直标签栏 / 三态配色 / 账号体系 / 全部功能开关 / 设置页分组） | 完成 |
 | 打包部署（便携版 + 桌面成品） | 完成 |
+| 交互手感、工程化门禁与设计系统（R43–R48，**6 轮**） | 完成 |
 
 ---
 
@@ -665,6 +675,7 @@ window.open("luogu-glass://ide")             // 打开 IDE 标签页
 | `--lg-mattest` | 材质三层对拍（外壳/页面/弹层 同坐标补丁像素比对，flat/liquid 各一遍） |
 | `--lg-v311test` | v3.11.0 全量：坞方向四位置轮测（左/右 = column 且两颗胶囊同列上下叠、上/下 = row 且并排；`dockBounds()` 与方向同源）/ 悬停卡片已删（外壳函数·桥·视图三处 undefined；悬停标签 1.4s 不冒出任何新视图）/ 题目页自带 IDE 模式（真实 `/problem/P1002` 页合成编辑器容器 + 「退出 IDE 模式」→ 2 拍内上报 → 视图落整窗 0,0,w,h、坞隐藏、`data-lg-ide=1`、面板背景 alpha≥0.99 且无 `.lg-glass`；移除 → 全部还原）/ 分组拖动（外壳合成 pointer 手势拖到标签中段 → `drop-merge` → 建组且默认名「N 组」；折叠组当落点、组内锚点排序、拖出组块、整组排序、组块连续）（4 段） |
 | `--lg-v313test` | v3.13.0 全量：题目页 IDE 真全屏（注入**真站形状**的 DOM：只有容器 / 只有「退出 IDE 模式」文案两个反例都不许触发；正例 → 视图落整窗 0,0,w,h、坞隐藏、`data-lg-ide=1`、面板摘 `.lg-glass` 且底色不透明；拆掉 DOM → 标志清、视图回 inset）/ 窄条 ⌄（合成 mouseenter 开悬停浮层 → 点浮层里的 ⌄ → 菜单 100ms 出现且活过 200ms 兜底窗口、8 项、弹层视图 = 整窗（不被窄条矩形裁掉）、关掉后窄条 `visibility:visible`）/ 坞书签语义（`dockOpen("@home")` 不新开、当前标签变 luogu.com.cn；`{newTab:true}` 才 +1 标签；`@ide` 无 IDE 标签时就地导航不新开）/ 题单广场（/contest/list 筛选条在、/training/list attr=0 且无 `#lg-quicksearch`）/ 中键链接（真实中键 → 标签 +1 且 `activeTabId` 不变 = 后台标签）（5 段） |
+| `--lg-v315test` | v3.15.0 可靠性：坏 JSON 先备份再回退 / 六份数据原子写（tmp + rename）/ 默认值对齐 / 探针僵尸字段清零 / 投影软约束基线（23 项） |
 | `--lg-perftest` | R41 性能基线/验收：冷启动分段耗时（perfMarks：模块求值→whenReady→winCreated→chromeLoaded→readyShown）/ 按进程内存（`app.getAppMetrics()` 汇总 + 分型）/ 开 6 个测试标签（`https://127.0.0.1:9/` 秒失败不依赖网络）的内存曲线 / 休眠差值（sleepTab 6 个 + 2.5s 回收）与唤醒耗时（setActiveTab→wakeTab）/ 逐视图 `backgroundThrottling` 落位（cfg.bgThrottle 存在才断言「活动关/后台开」，基线跑旧代码自动只记录）。全程 opacity 0 亮窗，不 setAlwaysOnTop/moveTop |
 | `--lg-v312test` | v3.12.0 全量：地址栏（合成 isComposing 回车不导航、真回车按输入内容跳 P1002；`resolveOmnibox` 的 localhost/host:port/裸词/裸域名/题号；联想默认 `on=-1`、首行「打开 xxx」、悬停回传选中）/ 坞首页（书签语义：`dockOpen("@home")` 换当前页、`{newTab:true}` 才新开；URL=luogu.com.cn、坞项高亮）/ 菜单跑位（弹层 `place()` 吃 `payload.win`：win.w=640 时 x+w=632（视口只有 344 也不受影响）、真窗口下贴右缘、`popup:win` 后重摆、账号芯片真实链路右缘对齐）/ 背景（图片层健康 + 被删后 observer 重建；`bgready=0` 时视频不关图片兜底；缩放 1.5 重载后 `--lg-zoom=1.5`；已关标签的 fullscreen/IDE 标志被清理；`reconcileWallpaper` 可读性顺延）/ 分组（FLIP 计数增长、折叠组牌悬停 0.45s 临时展开且**成员行上停留不再被误判为离开**、合并带迟滞 0.5/0.75 保持·0.95 清除）/ 分屏（旧布局/聚焦 API 与 IPC 全删、新 IPC 在；两格相邻 + 中间插入被吸附；反转宽度保持；关右格解散）（6 段） |
 | `--lg-v310test` | v3.10.0 全量：坞渲染（胶囊定位上下文 / 每个坞项有 svg / `--pop-x/y` 与视图原点+offset+边框对齐 / 投影余量）/ IDE 模式（抽屉开着）自动收坞与恢复 / 钉子三姿态 `#btn-vpin` 矩形全等 + 浮层里对钉子坐标发真实鼠标序列真的钉住（46→212）/ 主题嗅探（透明容器不判 dark、真深色判 dark、全透明 unknown、当前页保持 light）/ 跨标签玻璃变量全等 + 首帧兜底值 / 广告（三会话拦截器在位、`/qiafan/` 被拦而对照片放行、右栏推广卡静态 `:has` 与清扫器双层命中）/ IDE 原生（`data-lg-ide="1"` 时 Monaco 规则不生效、清扫器不贴 `.lg-glass`） |
@@ -677,6 +688,10 @@ window.open("luogu-glass://ide")             // 打开 IDE 标签页
 | `--lg-dltest=<dir>` | 下载探针的落盘目录覆盖（隔离测试不写用户下载夹） |
 
 输出：`<path>`（外壳 PNG）、`<path>-page.png`（页面 PNG）、`<path>.json`（断言）。
+
+本地门禁另有两条入口：`bash scripts/check-all.sh`（9 步静态检查：材质 / 契约 / 设计令牌 /
+死代码 / 静默失败 / 语法 / 类型基线 / 行尾 / JSON）与 `bash scripts/run-all-probes.sh`
+（5 个 CDP 探针 77 断言）；`node scripts/probe-design.cjs <CDP端口>` 单独量设计令牌运行时值。
 
 ### 本轮（R11–R15）实测证据
 
@@ -801,7 +816,25 @@ listToolbar / quickBox / problemBar                    ← 三个功能块是否
 
 ---
 
-## 十、快速上手
+## 十、v3.16.x：交互手感、工程化门禁与设计系统（R43–R48）
+
+| 版本 | 内容 | 验证 |
+|---|---|---|
+| v3.16.0 | 标签悬停真实缩略图、后退/前进长按历史栈、每站独立缩放、Ctrl+F 全部高亮、最近关闭；站外页自动玻璃化（内容站探测、`position:fixed` 后代只给半透明底、上限 40）、通用样式拆到 `common.css`、能力注册表差分同步；设置页搜索 / 明暗三态；圆角 token 化 31.5%→90%、flat 五档面色、focus-visible 15 条 | 新增 3 探针 22/22（v316 9 / glass 9 / navhist 4） |
+| v3.16.1 | 契约 / 死代码 / 静默失败三类静态检查 + `check-all.sh` 总入口 + CI + 故障诊断报告；静态检查修掉 6 个真 bug（preload 漏暴露 `downloadList`、`user:nudge` 无人发送等） | check-all 全绿；run-all-probes 22/22 |
+| v3.16.2 | 配置 schema 自动生成 + 启动校验并落盘；打包/同步改整目录复制（不再漏 `material.css` / `dock/` / `icons.js`）；静默失败扫描修 2 个真问题 | check-all 扩到 7 步 |
+| v3.16.3 | 类型检查基线门禁（按文件只降不升）+ 存量 IPC 契约探针（185 成员 / 实调 50 / 0 异常）+ main.js 自测段纯搬移 | 类型基线 430 起；IPC 50/50 |
+| v3.16.4 | 注入层 2521 → 627 行内核 + `src/inject/` 8 模块（纯搬移，99/99 函数体逐字一致）；类型基线 430→308 | check-all 全绿 |
+| v3.16.5 | `design.md` 像素规范（4px 网格 / 嵌套圆角公式 / 控件 28·32·40 / 整数字号）+ `material.css` 令牌 + `lint-design-tokens.cjs`（9 项静态守卫）+ `probe-design.cjs`（运行时量值）+ `lgasset://` 协议修 `file://` CSS 缓存（6 个本地页） | check-all 9 步 + 5 探针 77 断言全绿；repo↔部署 md5 一致 |
+
+**设计系统要点**：规范在 `design.md`，唯一实现在 `material.css`；控件默认高 32px、圆角 8px，
+内层圆角按「外层 − 间距」递减（8→6→4）；字号全部整数（10/11/12/13/14/16/20/24）；
+焦点环统一 `2px solid var(--ink)` + `offset 2px`；提交前由 `check-all.sh` 第 3 步与
+`run-all-probes.sh` 第 5 个探针双重把关。
+
+---
+
+## 十一、快速上手
 
 1. 双击 `D:\workspace\luogu++\app\LuoguLab.exe`
 2. 首次启动是「原色」模式 —— 洛谷长什么样就什么样，只是顶栏换成了应用的

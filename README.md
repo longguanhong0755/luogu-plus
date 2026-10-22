@@ -1,9 +1,10 @@
 # LuoguLab（洛谷编程工作台）
 
 面向编程的洛谷（luogu.com.cn）桌面工作台。Electron 39 免安装绿色版：
-双击即开、多标签浏览（可拖拽排序 + 分组 + 四分屏）、地址栏三合一（网址/题号/映射词）、
+双击即开、多标签浏览（可拖拽排序 + 分组 + 左右分屏）、地址栏三合一（网址/题号/映射词）、
 内置 IDE 标签与分屏编辑器、命令面板、历史/下载/清理、阅读模式与翻译、账号一键切换、
 黑白线条风的 5 套配色预设 + 细粒度外观调校、持久登录。
+v3.16.5 起界面尺寸与间距按 `design.md` 的像素级规范收敛，并有静态 + 运行时双重守卫。
 
 ## 目录结构
 
@@ -11,12 +12,19 @@
 D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json name 仍为 luogu-glass）
 ├── main.js               # 主进程：标签/布局/注入调度/账号隔离会话/历史-下载-清理/
 │                         #   菜单快捷键/自测钩子/自动登录(验证码辅助)
+├── design.md             # 像素级设计规范（4px 网格/间距/圆角/控件/字号/焦点环/动效/层级）
 ├── preload-chrome.js     # 外壳层 contextBridge（onTabs/onUser/onConfig/onDownloads + 动作）
 ├── preload-config.js     # 设置页与历史页 contextBridge
 ├── src/
-│   ├── material.css      # 材质单一来源（面/边框/内块/壁纸配方 + 各层选择器登记表）
+│   ├── material.css      # 材质单一来源（面/边框/内块/壁纸配方 + 设计令牌 + 选择器登记表）
 │   ├── inject.css        # 美化注入层 + IDE 页专属适配（选择器来自真实 DOM 实扒）
-│   ├── inject.js         # 注入运行时：window.__lgGlass.apply(config)（含 --lg-* 全部变量）
+│   ├── common.css        # 站外页通用能力样式（阅读/翻译/代码复制/视口裁剪）
+│   ├── icons.js          # 四页共享图标（window.LGIcons）
+│   ├── inject.js         # 注入运行时内核 + 装载器（v3.16.4：2521 → 627 行）
+│   ├── inject/           # 注入能力模块 ×8（viewrect/wallpaper/material/reader/
+│   │                     #   translate/selection/luogu-list/luogu-page）
+│   ├── config-schema.json # 配置 schema（自动生成，启动时校验）
+│   ├── types/            # tsconfig 的全局声明（window.lgChrome/lgConfig/lgApp/…）
 │   ├── chrome/           # 应用外壳：垂直标签栏 + 工具行 + 坞渲染源 + 下拉 + 命令面板
 │   ├── dock/             # 坞覆盖视图（R36：悬浮在页面之上，页面内容从它底下穿过）
 │   ├── popup/            # 弹出层（菜单/命令面板/地址栏联想/悬停浮层/提示条）
@@ -25,7 +33,8 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
 │   ├── home/             # 应用首页（时钟/搜索/倒计时/快捷入口）
 │   └── config/           # 旧版独立配置窗（保留）
 ├── assets/icon.ico       # 纯 Node 生成的单色图标（墨色方块 + 白 `</>`）
-└── scripts/              # gen-icon.js（PNG/ICO 编码器）+ sync-dev.sh（同步到运行目录）
+└── scripts/              # check-all.sh（9 步静态门禁）/ run-all-probes.sh（5 探针）/
+                          #   lint-*.{js,cjs} / probe-*.cjs / sync-dev.sh / typecheck.sh
 ```
 
 ## 功能一览
@@ -57,6 +66,9 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
   历史（Ctrl+H，按日分组 + 单条删除）、下载接管（暂停/继续/取消/重试/另存为，记录持久化）、
   清除浏览数据（缓存/Cookie/历史/下载记录）、停止加载、搜索引擎可切换、
   地址栏联想、整页截图、画中画、阅读模式、划词/整页翻译
+- **设计系统（v3.16.5）**：间距/圆角/字号/控件高度按 `design.md` 的像素规范与
+  `material.css` 令牌实现（4px 网格、嵌套圆角 = 外层 − 间距），按钮只有 28/32/40
+  三档；本地页 CSS/JS 走 `lgasset://`，升级后样式立即刷新，不受 `file://` 缓存影响
 
 ## 架构要点
 
@@ -73,6 +85,14 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
 - **题目页自带 IDE 模式**（R38）：inject.js 判定（`/problem/` + 编辑器容器可见 +
   「退出 IDE 模式」文案）→ `data-lg-ide="1"`（与 /ide 页同一套原生规则）+
   `lgApp.ideMode` 上报 → 主进程让该标签视图铺满整窗（外壳与坞让位 = 真·全屏）
+- **注入层模块化**（v3.16.4）：`src/inject.js` 627 行内核 + `src/inject/` 8 个能力
+  模块，按依赖顺序拼成一段脚本一次 `executeJavaScript` 注入；缺模块整层不注入
+- **设计系统单源**（v3.16.5）：`design.md` 写规范，`material.css` 是唯一实现；
+  `scripts/lint-design-tokens.cjs` 静态守 9 项（含同规则重复 `border-radius`），
+  `scripts/probe-design.cjs` 量运行时真实高度/圆角/字号
+- **工程门禁**：`scripts/check-all.sh` 9 步（材质 / 契约 / 设计令牌 / 死代码 /
+  静默失败 / 语法 / 类型基线 / 行尾 / JSON）；`scripts/run-all-probes.sh`
+  5 个 CDP 探针 77 断言（隐藏隔离实例）
 - **持久化地基**（R42）：`readJsonSafe` / `writeTextAtomic(Sync)` 一处收口六份数据
   （配置 / 账号 / 标签 / 窗口 / 历史 / 下载）。读坏先备份 `.corrupt-<时间>` 再回退；
   写走 `<file>.tmp-<pid>` + rename 原子替换；失败（ENOSPC / EACCES）记
@@ -86,6 +106,14 @@ npm install                 # electron@^39 + @electron/packager（走 npmmirror�
 npm start                   # 开发运行
 npm run dist                # 打包免安装绿色版
 npm run gen:icon            # 重新生成图标
+```
+
+提交前门禁：
+
+```bash
+bash scripts/check-all.sh        # 9 步静态检查（材质/契约/设计令牌/死代码/静默失败/语法/类型/行尾/JSON）
+bash scripts/run-all-probes.sh   # 5 个 CDP 探针 77 断言（隔离实例、隐藏窗口）
+node scripts/lint-design-tokens.cjs   # 设计令牌守卫（--fix 自动收敛，--fix-strict 更激进）
 ```
 
 开发调试用 `D:\workspace\luogu++\dev`（`edist\electron.exe` + `scripts/dev-hot.sh` 热应用）。
@@ -129,15 +157,18 @@ LuoguLab.exe --lg-autologin --lg-user=… --lg-pass=…   # 自动登录（验�
 omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色预设往返 +
 浏览器能力（缩放/重排/右键菜单）+ 历史下载 + 命令面板。
 
-## 部署状态（2026-10-21）
+设计令牌运行时探针不占 app 参数，走 CDP：
+`node scripts/probe-design.cjs <CDP端口> [输出json]`（量按钮高度/圆角/字号并断言资源全走 `lgasset://`）。
+
+## 部署状态（2026-10-22）
 
 - 部署产物：`D:\workspace\luogu++\app\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 v3.15.0）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 **v3.16.5**）
 - 源码仓库：`D:\workspace\luogu++\repo`（git 远端 `longguanhong0755/luogu-plus`）；
   开发运行目录 `D:\workspace\luogu++\dev`
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
-- 设计迭代史见 `design-log.md`（R1~R42，全部有探针/截图证据）
+- 设计迭代史见 `design-log.md`（R1~R48，全部有探针/截图证据）
 
 ## 已知环境注意事项
 
