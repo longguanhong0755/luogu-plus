@@ -17,7 +17,7 @@ body[data-dock] #dock {
   /* 6px 余量：.lg-face-b 的外投影与选中指示线画在胶囊边界之外，视图矩形
      只有把这点余量包进来它们才不会被 WebContentsView 边界裁掉（主进程按
      dock.js 上报的 offsetWidth/Height 落位，所以这里加了它自然也算进去）。 */
-  padding: 6px;
+  padding: var(--lg-space-3);
   overflow: visible;
   background: transparent;
 }

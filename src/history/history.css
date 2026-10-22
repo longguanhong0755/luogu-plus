@@ -3,13 +3,13 @@
 
 .row-line {
   display: flex;
-  gap: 10px;
+  gap: var(--lg-space-5);
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: var(--lg-space-6);
 }
 .row-line input[type="text"] {
   flex: 1;
-  padding: 8px 11px;
+  padding: 8px var(--lg-space-5);
   font: inherit;
   font-size: 13px;
   color: var(--ink);
@@ -18,15 +18,15 @@
   border-radius: var(--lg-radius);
 }
 .row-line input[type="text"]:focus { border-color: var(--ink); }
-.hint.inline { flex: 1; margin: 0; font-size: 11.5px; color: var(--ink-dim); }
+.hint.inline { flex: 1; margin: 0; font-size: var(--lg-fs-caption); color: var(--ink-dim); }
 
 .list { display: flex; flex-direction: column; }
 
 .h-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 4px;
+  gap: var(--lg-space-5);
+  padding: var(--lg-space-4) 4px;
   border-bottom: 1px solid var(--hairline);
 }
 .h-row:last-child { border-bottom: 0; }
@@ -37,7 +37,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--lg-space-1);
   cursor: pointer;
   text-align: left;
   background: none;
@@ -84,20 +84,20 @@
 /* R41：删除钮文本 × → 统一线稿（icons.js winClose） */
 .h-del svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 /* 下载动作是文字按钮（暂停/继续/取消/重试/另存为/移除）：宽度自适应 */
-.h-del.h-act { width: auto; height: 24px; padding: 0 8px; font-size: 12px; }
+.h-del.h-act { width: auto; height: 24px; padding: 0 var(--lg-space-4); font-size: 12px; }
 
 /* 历史按日期分组的小标题（今天 / 昨天 / 日期） */
 .h-day {
-  padding: 10px 4px 4px;
+  padding: var(--lg-space-5) var(--lg-space-2) var(--lg-space-2);
   font-size: var(--fs-sub, 11px);
   letter-spacing: 0.4px;
   color: var(--ink-faint);
 }
-.h-day:first-child { padding-top: 2px; }
+.h-day:first-child { padding-top: var(--lg-space-1); }
 
 .dl-bar {
   height: 3px;
-  margin-top: 4px;
+  margin-top: var(--lg-space-2);
   background: var(--hairline);
   border-radius: 2px;
   overflow: hidden;
@@ -105,9 +105,9 @@
 .dl-bar i { display: block; height: 100%; background: var(--ink); }
 
 .empty-state {
-  padding: 22px 6px;
+  padding: var(--lg-space-11) var(--lg-space-3);
   text-align: center;
-  font-size: 12.5px;
+  font-size: var(--lg-fs-small);
   color: var(--ink-dim);
 }
 

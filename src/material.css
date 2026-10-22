@@ -51,12 +51,106 @@
     "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif;
   --lg-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "Sarasa Mono SC",
     Consolas, monospace;
-  --fs-base: 12.5px;
+  /* 旧别名 → 新的整数刻度。**12.5px 是半像素**：1x 屏会被像素对齐成 12 或
+     13（同一份样式在不同缩放比下粗细不同），1.5x/2x 屏则发糊。
+     正文基线定为 13px（--lg-fs-body）。 */
+  --fs-base: 13px;
   --fs-sub: 11px;
   --lg-radius-sm: 4px;
+  /* 6px 档：嵌套圆角公式的产物（外层 8px − 间距 2px = 6px）。
+     Fluent 2 的圆角刻度里也有这一档（none/small2/medium4/large6/xlarge8）。 */
+  --lg-radius-md: 6px;
   --lg-radius: 8px;
   --lg-radius-lg: 12px;
   --lg-radius-xl: 16px;
+
+  /* ============================================================
+     设计令牌（design.md 的可执行部分）
+     规范见仓库根目录 design.md —— 刻度参照 GitHub Primer / Microsoft
+     Fluent 2 / Apple-Material 的嵌套圆角公式，不是拍脑袋定的。
+     本段是这些刻度的**唯一来源**：改动前先改 design.md，再改这里。
+     守卫 scripts/lint-design-tokens.cjs 会按这里的刻度逐条检查全仓样式。
+     ============================================================ */
+
+  /* ---------- 间距（4px 基数；6/10 是 Fluent 的半档，用于紧凑控件）---------- */
+  --lg-space-0: 0px;
+  /* 1px = 发丝级（相邻小图标之间的缝）。**不是**间距刻度的一档，而是
+     "1px 而已"——把它塞进刻度会让吸附逻辑把 1px 改成 0（元素贴死）。 */
+  --lg-space-hair: 1px;
+  --lg-space-1: 2px;
+  --lg-space-2: 4px;
+  --lg-space-3: 6px;
+  --lg-space-4: 8px;
+  --lg-space-5: 10px;
+  --lg-space-6: 12px;
+  --lg-space-7: 14px;
+  --lg-space-8: 16px;
+  --lg-space-9: 18px;
+  --lg-space-10: 20px;
+  --lg-space-11: 22px;
+  --lg-space-12: 24px;
+  --lg-space-14: 28px;
+  --lg-space-16: 32px;
+  --lg-space-20: 40px;
+  --lg-space-24: 48px;
+
+  /* ---------- 圆角档位（语义见 design.md §2）---------- */
+  --lg-radius-none: 0px;
+  --lg-radius-pill: 999px;
+
+  /* ---------- 控件尺寸（Primer 按钮规格：28 / 32 / 40）---------- */
+  --lg-ctl-sm: 28px;
+  --lg-ctl-md: 32px;
+  --lg-ctl-lg: 40px;
+  --lg-ctl-icon-sm: 28px;
+  --lg-ctl-icon-md: 32px;
+
+  /* ---------- 字号刻度（全部整数：半像素在 1x 屏会被对齐、在 2x 屏发糊）---------- */
+  --lg-fs-micro: 10px;
+  --lg-fs-caption: 11px;
+  --lg-fs-small: 12px;
+  --lg-fs-body: 13px;
+  --lg-fs-lead: 14px;
+  --lg-fs-h3: 16px;
+  --lg-fs-h2: 20px;
+  --lg-fs-h1: 24px;
+
+  /* ---------- 动效（Primer fast 80 / normal 200）---------- */
+  --lg-dur-fast: 80ms;
+  --lg-dur-base: 120ms;
+  --lg-dur-slow: 200ms;
+  --lg-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================
+   全局焦点环（design.md §5）
+   键盘用户必须能看见自己在哪。此前各处用 outline:none + 改 border-color
+   表示聚焦——鼠标点击时没问题，但 Tab 过去时完全看不到焦点在哪（而
+   outline:none 出现在 14 处）。
+
+   这里用 !important 是**故意的**：局部的 `.map-row input { outline:none }`
+   特异度 (0,1,1) 高于 `:focus-visible` (0,1,0)，不加 !important 会被它
+   压掉——那就等于没加。业界通行做法（Primer 的 focus ring 同理）。
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid var(--ink) !important;
+  outline-offset: 2px !important;
+  border-radius: var(--lg-radius-sm);
+}
+
+/* ============================================================
+   表单控件继承正文的字号与字体族
+   —— 浏览器给 <input> 的 UA 默认字号是 13.3333px（= 10pt），而我们正文是
+   14px。不显式继承的话，**输入框里的字比旁边的字小一号**，而且是半像素
+   （1x 屏被对齐、2x 屏发糊）。这是"排版看着不整齐"最常见的来源之一。
+   显式声明的元素（有 .btn / .nav-item 等）优先级更高，不受影响。
+   ============================================================ */
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+  font-size: inherit;
 }
 
 /* ---------- 0b. 共享细节（R41 收口）：滚动条 / 选区 ----------
@@ -87,7 +181,7 @@ html[data-lg-theme] ::selection {
   position: fixed;
   z-index: 80;
   pointer-events: none;
-  padding: 3px 9px;
+  padding: var(--lg-space-1) var(--lg-space-4);
   border-radius: var(--lg-radius, 8px);
   font-size: var(--fs-base, 12px);
   line-height: 1.5;
@@ -97,9 +191,9 @@ html[data-lg-theme] ::selection {
   white-space: nowrap;
 }
 .lg-err {
-  margin: 48px auto;
+  margin: var(--lg-space-24) auto;
   max-width: 560px;
-  padding: 18px 20px;
+  padding: 18px var(--lg-space-10);
   border: 1px solid var(--lg-glass-line, rgba(24, 24, 27, 0.14));
   border-radius: var(--lg-radius, 8px);
   background: var(--lg-glass-card, rgba(255, 255, 255, 0.92));

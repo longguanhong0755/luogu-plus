@@ -69,7 +69,7 @@ html:not([data-lg-ide="1"]) .theme-frosted::before {
    flat 皮肤下页面卡片与外壳材质分家的原因就在这类地方。 */
 
 .columba-content-wrap .l-card {
-  padding: 14px 16px;
+  padding: var(--lg-space-7) var(--lg-space-8);
 }
 
 /* ---------- 排版 ---------- */
@@ -80,7 +80,7 @@ body {
 }
 .lfe-marked {
   line-height: 1.85 !important;
-  font-size: 15.5px;
+  font-size: var(--lg-fs-h3);
   letter-spacing: 0.01em;
 }
 .lfe-marked p { margin: 0.7em 0; }
@@ -93,7 +93,7 @@ body {
   border-spacing: 0 !important;
   overflow: hidden;
   border-radius: calc(var(--lg-radius) - 4px);
-  font-size: 14.5px;
+  font-size: var(--lg-fs-lead);
 }
 /* 表格条纹/悬停：墨色低浓度 wash（R41 令牌化——同一公式明暗自适应，
    --lg-ink 随主题翻转，不再各写一组 rgba 明暗对） */
@@ -116,7 +116,7 @@ pre.code {
   border: 1px solid var(--lg-glass-line) !important;
   border-radius: calc(var(--lg-radius) - 2px) !important;
   font-family: var(--lg-mono) !important;
-  font-size: 13.5px !important;
+  font-size: var(--lg-fs-body) !important;
   line-height: 1.65 !important;
 }
 code, .inline-code, .lfe-marked code {
@@ -301,8 +301,8 @@ html[data-lg-declutter="1"] [data-lg-promo="1"] {
 html[data-lg-declutter="1"] .columba-content-wrap > header,
 html[data-lg-declutter="1"] .lg-index-content > header {
   min-height: 0 !important;
-  padding-top: 6px !important;
-  padding-bottom: 6px !important;
+  padding-top: var(--lg-space-3) !important;
+  padding-bottom: var(--lg-space-3) !important;
 }
 html[data-lg-declutter="1"] .theme-page::before,
 html[data-lg-declutter="1"] .theme-frosted::before {
@@ -327,9 +327,9 @@ html[data-lg-declutter="1"] .theme-frosted::before {
 #lg-quicksearch {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 12px;
-  padding: 0 12px;
+  gap: var(--lg-space-4);
+  margin: 0 0 var(--lg-space-6);
+  padding: 0 var(--lg-space-6);
   height: 38px;
   border: 1px solid var(--lg-glass-line);
   border-radius: var(--lg-radius, 8px);
@@ -350,7 +350,7 @@ html[data-lg-declutter="1"] .theme-frosted::before {
   background: transparent;
   color: var(--lg-ink, #18181b);
   font-family: var(--lg-sans);
-  font-size: 13.5px;
+  font-size: var(--lg-fs-body);
 }
 #lg-quicksearch input::placeholder { color: color-mix(in srgb, var(--lg-ink, #18181b) 42%, transparent); }
 
@@ -470,11 +470,11 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
 #lg-hello {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--lg-space-7);
   width: 100%;
   height: 100%;
   min-height: 116px;
-  padding: 14px 16px;
+  padding: var(--lg-space-7) var(--lg-space-8);
   /* 内嵌一层很淡的纸色：一是和右侧运势拉开层次，二是卡片的 backdrop-filter
      在部分合成路径下会把这块内容一起糊掉，自带底色能保证它始终读得出来 */
   background: var(--lg-glass-soft);
@@ -490,11 +490,11 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
 }
 #lg-hello .lg-hello-body { min-width: 0; }
 #lg-hello .lg-hello-title {
-  font-size: 17px; font-weight: 700; line-height: 1.4;
+  font-size: var(--lg-fs-h3); font-weight: 700; line-height: 1.4;
   color: var(--lg-ink, #18181b);
 }
 #lg-hello .lg-hello-sub {
-  margin-top: 4px;
+  margin-top: var(--lg-space-2);
   font-size: 13px; line-height: 1.6;
   color: var(--lg-ink, #18181b); opacity: 0.6;
 }
@@ -503,9 +503,9 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
 .lg-pid-tip {
   position: absolute;
   z-index: 2147483000;
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--lg-space-3);
   max-width: 420px;
-  padding: 6px 8px;
+  padding: var(--lg-space-3) var(--lg-space-4);
   border: 1px solid var(--lg-glass-line);
   border-radius: var(--lg-radius, 8px);
   background: var(--lg-glass-card);
@@ -517,12 +517,12 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
   letter-spacing: 0.02em;
   color: var(--lg-ink, #18181b);
   opacity: 0.55;
-  padding-right: 2px;
+  padding-right: var(--lg-space-1);
 }
 .lg-pid-tip .lg-pid-go {
   appearance: none;
   cursor: pointer;
-  padding: 3px 9px;
+  padding: var(--lg-space-1) var(--lg-space-4);
   font-family: var(--lg-mono);
   font-size: 12px;
   line-height: 1.5;
@@ -563,27 +563,27 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
 }
 .lg-random-card {
   width: min(520px, calc(100vw - 48px));
-  padding: 20px 22px 18px;
+  padding: var(--lg-space-10) var(--lg-space-11) var(--lg-space-9);
   border: 1px solid var(--lg-glass-line);
   border-radius: var(--lg-radius, 8px);
   background: var(--lg-glass-card);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
 }
 .lg-random-title {
-  font-size: 15px; font-weight: 700;
+  font-size: var(--lg-fs-lead); font-weight: 700;
   color: var(--lg-ink, #18181b);
-  margin-bottom: 16px;
+  margin-bottom: var(--lg-space-8);
 }
-.lg-random-row { margin-bottom: 14px; }
+.lg-random-row { margin-bottom: var(--lg-space-7); }
 .lg-random-label {
   font-size: 11px; letter-spacing: 0.04em;
   color: var(--lg-ink, #18181b); opacity: 0.55;
-  margin-bottom: 7px;
+  margin-bottom: var(--lg-space-3);
 }
-.lg-random-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.lg-random-opts { display: flex; flex-wrap: wrap; gap: var(--lg-space-3); }
 .lg-random-opt {
   appearance: none; cursor: pointer;
-  padding: 4px 10px;
+  padding: var(--lg-space-2) var(--lg-space-5);
   font-size: 12px; line-height: 1.6;
   color: var(--lg-ink, #18181b);
   background: transparent;
@@ -597,18 +597,18 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
   border-color: var(--lg-accent, #18181b);
 }
 .lg-random-hint {
-  margin-top: 10px;
+  margin-top: var(--lg-space-5);
   font-family: var(--lg-sans);
-  font-size: 11.5px;
+  font-size: var(--lg-fs-caption);
   color: var(--lg-ink-faint, rgba(128, 128, 138, 0.9));
 }
 .lg-random-acts {
-  display: flex; justify-content: flex-end; gap: 8px;
-  margin-top: 18px;
+  display: flex; justify-content: flex-end; gap: var(--lg-space-4);
+  margin-top: var(--lg-space-9);
 }
 .lg-random-btn {
   appearance: none; cursor: pointer;
-  padding: 6px 18px;
+  padding: var(--lg-space-3) var(--lg-space-9);
   font-family: var(--lg-sans); font-size: 13px;
   color: var(--lg-ink, #18181b);
   background: transparent;

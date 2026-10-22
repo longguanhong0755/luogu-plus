@@ -7005,6 +7005,52 @@ app.whenReady().then(() => {
     // Range，视频就卡在 readyState 0 / "MEDIA_ELEMENT_ERROR: Format error"
     // （图片走 CSS background 不发 Range，所以图片壁纸看着一直是好的，问题
     // 只在视频壁纸上露出来）。这里自己读文件并实现 Range，视频才能播。
+    /* ---------- 本地页的样式/脚本走 lgasset://（no-cache 绕开 file:// 缓存）----------
+       file:// 下的 CSS 会被 Chromium 顽固地缓存住：应用更新后，用户可能继续
+       用着旧样式（新外壳 + 旧 CSS 混搭），而且**连带查询串的 fetch 都返回
+       缓存**（实测：改了 settings.css 后重开页面，页面里仍是旧版）。
+       办法：把样式与脚本改走自定义协议，响应头带 cache-control: no-cache
+       强制每次重取（URL 不带版本号）。
+       ⚠️ 页面本身**仍走 file://**：本地页的判定（isLocalKind / file: 前缀）
+       依赖它，改协议会让一堆逻辑失效。 */
+    try {
+      const pkg = require(path.join(__dirname, "package.json"));
+      const ver = String((pkg && pkg.version) || "0");
+      protocol.handle("lgasset", (req) => {
+        try {
+          const u = new URL(req.url);          // lgasset://local/settings/settings.css
+          const rel = decodeURIComponent(u.pathname).replace(/^\/+/, "");
+          const root = path.join(__dirname, "src");
+          const abs = path.join(root, rel);
+          /* 目录穿越防护：解析后的路径必须仍在 src/ 之内 */
+          if (!path.resolve(abs).startsWith(path.resolve(root) + path.sep)) {
+            return new Response("forbidden", { status: 403 });
+          }
+          const data = fs.readFileSync(abs);
+          const type = abs.endsWith(".css") ? "text/css; charset=utf-8"
+            : abs.endsWith(".js") ? "text/javascript; charset=utf-8"
+            : "application/octet-stream";
+          return new Response(data, {
+            headers: {
+              "content-type": type,
+              "cache-control": "no-cache",
+              /* 页面本身是 file://，资源走 lgasset:// → 跨源。
+                 <link> 加载跨源 CSS 本来就允许，但 **<script> 不行**
+                 （需要 CORS 头），所以这里必须给 access-control-allow-origin，
+                 否则设置页/首页/外壳的脚本全都不执行（页面一片空白）。 */
+              "access-control-allow-origin": "*",
+            },
+          });
+        } catch (e) {
+          return new Response("not found", { status: 404 });
+        }
+      });
+      /* URL 形如 lgasset://local/<src 内相对路径>（local 是 host，不是目录）；
+         不带版本号，靠上面的 cache-control: no-cache 保证每次重取。 */
+      dbg("lgasset protocol ready (v" + ver + ")");
+    } catch (e) {
+      dbg("lgasset protocol failed: " + e);
+    }
     protocol.handle("lg-media", async (req) => {
       try {
         const u = new URL(req.url);

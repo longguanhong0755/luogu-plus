@@ -41,9 +41,9 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
   position: sticky; top: 10px;
   height: calc(100vh - 20px);
   display: flex; flex-direction: column;
-  gap: 2px;
-  margin: 10px 0 10px 10px;
-  padding: 18px 12px 14px;
+  gap: var(--lg-space-1);
+  margin: var(--lg-space-5) 0 var(--lg-space-5) var(--lg-space-5);
+  padding: var(--lg-space-9) var(--lg-space-6) var(--lg-space-7);
   /* 面材质不在这里写：本地面板（.nav/.card）与外壳、洛谷页共用同一张配方，
      统一由 ext.css 的本地页面板规则消费 --lg-glass-*（flat=素面 / liquid=玻璃）。
      这里只留布局与圆角——以前这里手调 62%+blur(18)，和卡片的实心面是两种料，
@@ -51,23 +51,33 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
   border-radius: var(--lg-radius);
   overflow-y: auto;
 }
-.nav-head { padding: 0 8px 14px; }
-.nav-logo { display: block; font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
-.nav-sub { display: block; font-size: var(--fs-sub); color: var(--ink-faint); margin-top: 1px; }
+.nav-head { padding: 0 var(--lg-space-4) var(--lg-space-7); }
+.nav-logo { display: block; font-size: var(--lg-fs-lead); font-weight: 700; letter-spacing: 0.01em; }
+.nav-sub { display: block; font-size: var(--fs-sub); color: var(--ink-faint); margin-top: var(--lg-space-hair); }
 .nav-group {
-  margin: 14px 8px 5px;
-  font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em;
+  margin: 14px 8px var(--lg-space-2);
+  font-size: var(--lg-fs-micro); font-weight: 600; letter-spacing: 0.14em;
   color: var(--ink-faint); text-transform: uppercase;
 }
 .nav-item {
   appearance: none; cursor: pointer;
   display: block; width: 100%;
-  padding: 7px 10px;
+  /* 导航项也是"可点的行"：与按钮同档 32px 高、8px 圆角。
+     此前是 padding 撑出来的 27px + 4px 圆角，在设置页里与旁边的按钮
+     并排时明显矮一截、圆角也更方。 */
+  height: var(--lg-ctl-md);
+  padding: 0 10px;
+  border-radius: var(--lg-radius);
   text-align: left;
-  font-family: var(--lg-sans); font-size: 13px;
+  font-family: var(--lg-sans); font-size: var(--lg-fs-body);
   color: var(--ink-dim);
   background: transparent;
-  border: none; border-radius: var(--lg-radius-sm);
+  /* ⚠️ 原来这里还有一句 `border: none; border-radius: var(--lg-radius-sm);`
+     —— 与上面的 border-radius **重复声明**，后者静默胜出（4px），我上面改的
+     8px 根本不生效。同一条规则里写两遍圆角，是很难发现的槽点：两个值都
+     "合法"，静态检查看不出来，只有量到实际渲染值才发现不对。
+     现在只保留一处（var(--lg-radius)）。 */
+  border: none;
   transition: background 0.12s, color 0.12s;
 }
 .nav-item:hover { background: var(--surface-2); color: var(--ink); }
@@ -76,13 +86,13 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
   color: var(--ink); font-weight: 600;
   box-shadow: inset 2px 0 0 var(--accent);
 }
-.nav-foot { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; gap: 7px; }
+.nav-foot { margin-top: auto; padding-top: var(--lg-space-8); display: flex; flex-direction: column; gap: var(--lg-space-3); }
 .nav-foot .btn { width: 100%; justify-content: center; }
 
 /* 设置搜索：22 张卡 92 个控件纯线性平铺，"找不到"就等于"不存在" */
-.nav-search { position: relative; padding: 0 8px 10px; }
+.nav-search { position: relative; padding: 0 var(--lg-space-4) var(--lg-space-5); }
 .nav-search input {
-  width: 100%; padding: 6px 9px; font-size: var(--fs-base);
+  width: 100%; padding: 6px var(--lg-space-4); font-size: var(--fs-base);
   border: 1px solid var(--hairline); border-radius: var(--lg-radius-sm);
   background: var(--surface); color: var(--ink); outline: none;
   font-family: inherit;
@@ -102,28 +112,28 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
   width: 100%;
   max-width: 900px;
   margin: 0 auto; /* 内容列居中：早先靠左，宽屏右边一大片空白 */
-  padding: 22px 26px 40px;
+  padding: 22px var(--lg-space-12) 40px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--lg-space-6);
 }
-.pane-head { margin-bottom: 4px; }
+.pane-head { margin-bottom: var(--lg-space-2); }
 .pane-head h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
-.pane-head .sub { font-size: 12px; color: var(--ink-faint); margin-top: 3px; display: block; }
-.pane-foot { margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+.pane-head .sub { font-size: 12px; color: var(--ink-faint); margin-top: var(--lg-space-1); display: block; }
+.pane-foot { margin-top: var(--lg-space-5); padding-top: var(--lg-space-7); border-top: 1px solid var(--hairline); }
 
 /* 主题色：色板 + 取色器 + 派生预览 */
-.seed-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.seed-preview { display: flex; gap: 10px; margin-top: 12px; }
+.seed-row { display: flex; align-items: center; gap: var(--lg-space-5); flex-wrap: wrap; }
+.seed-preview { display: flex; gap: var(--lg-space-5); margin-top: var(--lg-space-6); }
 .sp-cell {
   flex: 1;
   position: relative;
-  padding: 16px 12px 24px;
+  padding: var(--lg-space-8) var(--lg-space-6) var(--lg-space-12);
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius);
 }
 .sp-card {
-  padding: 10px 12px;
+  padding: var(--lg-space-5) var(--lg-space-6);
   border: 1px solid;
   border-radius: var(--lg-radius-sm);
   font-size: var(--fs-base);
@@ -131,38 +141,38 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
 }
 .sp-label {
   position: absolute; left: 12px; bottom: 6px;
-  font-size: 10.5px; opacity: 0.7;
+  font-size: var(--lg-fs-micro); opacity: 0.7;
 }
 
 /* 关于页 */
 .about-grid {
   display: grid;
   grid-template-columns: 62px 1fr;
-  gap: 7px 12px;
+  gap: var(--lg-space-3) 12px;
   font-size: var(--fs-base);
 }
 .about-k { color: var(--ink-faint); }
 .about-v { color: var(--ink); word-break: break-all; }
-.keys { display: flex; flex-direction: column; gap: 2px; }
+.keys { display: flex; flex-direction: column; gap: var(--lg-space-1); }
 .key-row {
   display: grid;
   grid-template-columns: 168px 1fr auto auto;
-  gap: 12px;
+  gap: var(--lg-space-6);
   align-items: center;
-  padding: 5px 0;
+  padding: var(--lg-space-2) 0;
   font-size: var(--fs-base);
   border-bottom: 1px solid color-mix(in srgb, var(--hairline) 45%, transparent);
 }
 .key-row:last-child { border-bottom: none; }
 .key-cap {
-  font-family: var(--lg-mono); font-size: 11.5px;
+  font-family: var(--lg-mono); font-size: var(--lg-fs-caption);
   color: var(--ink-dim);
 }
 .key-cap.listening { color: var(--ink); animation: key-pulse 1s infinite; }
 @keyframes key-pulse { 50% { opacity: 0.4; } }
 .key-desc { color: var(--ink); }
 .key-btn {
-  padding: 2px 9px;
+  padding: 2px var(--lg-space-4);
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius-sm);
   background: transparent;
@@ -173,8 +183,8 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
 }
 .key-btn:hover { border-color: var(--ink); color: var(--ink); }
 kbd {
-  font-family: var(--lg-mono); font-size: 10.5px;
-  padding: 1px 5px;
+  font-family: var(--lg-mono); font-size: var(--lg-fs-micro);
+  padding: 1px var(--lg-space-2);
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius-sm);
   background: var(--surface-2);
@@ -185,8 +195,8 @@ kbd {
 .group {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 10px 0 -2px;
+  gap: var(--lg-space-5);
+  margin: var(--lg-space-5) 0 -var(--lg-space-1);
   font-size: var(--fs-sub);
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -202,7 +212,7 @@ kbd {
 code {
   font-family: var(--lg-mono);
   font-size: var(--fs-sub);
-  padding: 1px 4px;
+  padding: var(--lg-space-hair) var(--lg-space-2);
   border-radius: var(--lg-radius-sm);
   background: var(--surface-2);
 }
@@ -210,20 +220,33 @@ code {
 .card {
   /* 面/线/圆角由 ext.css 的本地页面板规则统一给（同一张材质配方）；
      这里只留内边距，避免两处各写一份材质 */
-  padding: 15px 16px;
+  padding: var(--lg-space-7) 16px;
 }
 .card h2 {
   font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
-  color: var(--ink-dim); margin-bottom: 11px;
+  color: var(--ink-dim); margin-bottom: var(--lg-space-5);
 }
-.hint { font-size: 11.5px; color: var(--ink-faint); line-height: 1.5; margin-top: 8px; }
+.hint { font-size: var(--lg-fs-caption); color: var(--ink-faint); line-height: 1.5; margin-top: var(--lg-space-4); }
 
-/* 分段选择 */
-.seg { display: flex; gap: 6px; background: var(--surface-2); padding: 4px; border-radius: var(--lg-radius); }
+/* 分段选择（Primer 的 Segmented control）
+   容器 32px 高 / 8px 圆角，内层按钮 28px / **6px** 圆角 —— 6 = 8 − 2，
+   正是 design.md §2.3 的嵌套圆角公式（外层 8px → 内层 6px，Fluent 2 同款）。
+   此前容器无固定高度、内层 4px 圆角，整条控件比旁边的按钮矮一截。 */
+.seg {
+  display: flex; gap: var(--lg-space-1);
+  background: var(--surface-2);
+  padding: var(--lg-space-1);
+  border-radius: var(--lg-radius);
+}
 .seg button {
-  flex: 1; padding: 8px 0; border: none; border-radius: var(--lg-radius-sm);
+  flex: 1; height: var(--lg-ctl-sm);
+  padding: 0 var(--lg-space-2);
+  /* 6px = 外层 8px − 容器内边距 2px（design.md §2.3 嵌套圆角公式） */
+  border: none; border-radius: var(--lg-radius-md);
   background: transparent; color: var(--ink-dim);
-  font-size: 13px; cursor: pointer; transition: all 0.12s;
+  font-size: var(--lg-fs-body); font-weight: 500; line-height: 1;
+  cursor: pointer;
+  transition: background var(--lg-dur-fast) var(--lg-ease), color var(--lg-dur-fast) var(--lg-ease);
 }
 .seg button.active {
   background: var(--surface); color: var(--ink); font-weight: 600;
@@ -232,7 +255,7 @@ code {
 .seg button:hover:not(.active) { background: var(--surface-2); color: var(--ink); }
 
 /* 壁纸 */
-.wp-row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+.wp-row { display: flex; gap: var(--lg-space-6); align-items: center; margin-bottom: var(--lg-space-6); }
 .wp-preview {
   width: 120px; height: 68px; border-radius: var(--lg-radius); flex: none;
   background: var(--surface-2) center/cover no-repeat;
@@ -240,10 +263,10 @@ code {
   display: flex; align-items: center; justify-content: center;
   font-size: var(--fs-sub); color: var(--ink-faint);
 }
-.wp-actions { display: flex; flex-direction: column; gap: 8px; }
+.wp-actions { display: flex; flex-direction: column; gap: var(--lg-space-4); }
 
 /* 滑杆 */
-.slider { display: grid; grid-template-columns: 100px 1fr 46px; align-items: center; gap: 12px; padding: 7px 0; }
+.slider { display: grid; grid-template-columns: 100px 1fr 46px; align-items: center; gap: var(--lg-space-6); padding: var(--lg-space-3) 0; }
 .slider span { font-size: 13px; color: var(--ink); }
 .slider output { font-size: 12px; color: var(--ink-faint); text-align: right; font-variant-numeric: tabular-nums; }
 input[type="range"] {
@@ -264,9 +287,16 @@ input[type="range"]:focus-visible {
 
 /* 按钮 */
 .btn {
-  padding: 8px 16px; border-radius: var(--lg-radius); border: 1px solid var(--hairline);
-  background: var(--surface); color: var(--ink); font-size: 13px;
-  cursor: pointer; transition: all 0.12s;
+  /* 统一到 Primer 的按钮规格（design.md §3.1）：中档 32px 高、水平内边距
+     16px、圆角 8px、字号 14px。此前只有内边距没有高度，同一行里
+     "按钮"与"输入框"会因为行高不同而高低不齐。 */
+  height: var(--lg-ctl-md);
+  min-width: calc(var(--lg-space-8) * 2);
+  padding: 0 var(--lg-space-8);
+  border-radius: var(--lg-radius); border: 1px solid var(--hairline);
+  background: var(--surface); color: var(--ink);
+  font-size: var(--lg-fs-lead); font-weight: 500; line-height: 1;
+  cursor: pointer; transition: background var(--lg-dur-fast) var(--lg-ease), border-color var(--lg-dur-fast) var(--lg-ease);
 }
 .btn:hover { border-color: var(--ink); }
 /* 主按钮走线条风：加粗描边 + 加重字重，不用黑底白字填充——
@@ -277,7 +307,7 @@ input[type="range"]:focus-visible {
 .btn.primary:hover { background: var(--surface-2); }
 
 /* 开关 */
-.switch-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 13px; cursor: pointer; position: relative; }
+.switch-row { display: flex; align-items: center; justify-content: space-between; padding: var(--lg-space-4) 0; font-size: 13px; cursor: pointer; position: relative; }
 /* 真实 checkbox 不能 display:none —— 那样它不进焦点序列，32 个功能开关
    对纯键盘用户等于不存在（Tab 一路跳过，全靠鼠标点）。
    改成保留占位的视觉隐藏：1px、绝对定位、opacity 0，焦点能力完整保留，
@@ -307,9 +337,9 @@ input[type="range"]:focus-visible {
 }
 
 /* 映射 */
-.map-row { display: grid; grid-template-columns: 120px 1fr 30px; gap: 6px; margin-bottom: 7px; }
+.map-row { display: grid; grid-template-columns: 120px 1fr 30px; gap: var(--lg-space-3); margin-bottom: var(--lg-space-3); }
 .map-row input {
-  padding: 7px 9px; border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
+  padding: var(--lg-space-3) var(--lg-space-4); border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
   border: 1px solid var(--hairline); background: var(--surface);
   color: var(--ink); outline: none; font-family: var(--lg-mono);
 }
@@ -325,13 +355,13 @@ input[type="range"]:focus-visible {
   width: 11px; height: 11px;
   fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
 }
-#btn-map-add { margin-top: 4px; }
+#btn-map-add { margin-top: var(--lg-space-2); }
 
 /* ---------- 侧坞编辑器 ---------- */
-.dock-row { display: grid; grid-template-columns: 34px 110px 1fr 26px 26px 26px; gap: 6px; margin-bottom: 7px; }
+.dock-row { display: grid; grid-template-columns: 34px 110px 1fr 26px 26px 26px; gap: var(--lg-space-3); margin-bottom: var(--lg-space-3); }
 .dock-row select,
 .dock-row input {
-  padding: 7px 9px; border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
+  padding: var(--lg-space-3) var(--lg-space-4); border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
   border: 1px solid var(--hairline); background: var(--surface);
   color: var(--ink); outline: none;
 }
@@ -343,7 +373,7 @@ input[type="range"]:focus-visible {
   display: grid; place-items: center; padding: 0;
 }
 .dock-row .btn-del:hover, .dock-row .btn-mini:hover { border-color: var(--ink); color: var(--ink); }
-#btn-dock-add, #btn-dock-reset { margin-top: 4px; }
+#btn-dock-add, #btn-dock-reset { margin-top: var(--lg-space-2); }
 
 /* 图标可视化选择器 */
 .icon-picker { position: relative; }
@@ -359,8 +389,8 @@ input[type="range"]:focus-visible {
   z-index: 60;
   display: grid;
   grid-template-columns: repeat(4, 30px);
-  gap: 4px;
-  padding: 8px;
+  gap: var(--lg-space-2);
+  padding: var(--lg-space-4);
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius);
@@ -387,8 +417,8 @@ input[type="range"]:focus-visible {
 .wp-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
-  margin: 10px 0 4px;
+  gap: var(--lg-space-4);
+  margin: var(--lg-space-5) 0 var(--lg-space-2);
 }
 .wp-cell {
   position: relative;
@@ -421,17 +451,17 @@ input[type="range"]:focus-visible {
 .wp-cell:hover .wp-del { display: grid; place-items: center; }
 .wp-del:hover { background: #303034; color: #fff; }
 
-.custom-base { margin-top: 10px; }
-.custom-base .accent-row { display: flex; align-items: center; gap: 8px; }
+.custom-base { margin-top: var(--lg-space-5); }
+.custom-base .accent-row { display: flex; align-items: center; gap: var(--lg-space-4); }
 .custom-base .accent-label { font-size: var(--fs-base); color: var(--ink-dim); }
-#btn-wall-import, #btn-wall-next, #btn-wall-dedupe { margin-bottom: 4px; }
+#btn-wall-import, #btn-wall-next, #btn-wall-dedupe { margin-bottom: var(--lg-space-2); }
 
 /* ---------- 账号 ---------- */
 .acct-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 9px 0;
+  gap: var(--lg-space-4);
+  padding: var(--lg-space-4) 0;
   border-bottom: 1px solid var(--hairline);
 }
 .acct-row:last-of-type { border-bottom: none; }
@@ -444,35 +474,35 @@ input[type="range"]:focus-visible {
 }
 .acct-row .a-main { flex: 1; min-width: 0; }
 .acct-row .a-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.acct-row .a-mail { font-size: 11.5px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-row .a-mail { font-size: var(--lg-fs-caption); color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .acct-row .a-tag {
-  font-size: 10.5px; padding: 2px 6px; border-radius: var(--lg-radius-sm); flex: none;
+  font-size: var(--lg-fs-micro); padding: var(--lg-space-1) var(--lg-space-3); border-radius: var(--lg-radius-sm); flex: none;
   border: 1px solid var(--hairline); color: var(--ink-dim);
 }
 .acct-row.active .a-tag { background: var(--surface-2); color: var(--ink); border-color: var(--ink); font-weight: 600; }
-.acct-row .btn { padding: 5px 11px; font-size: 12px; border-radius: var(--lg-radius-sm); flex: none; }
-.acct-empty { padding: 8px 0; font-size: var(--fs-base); color: var(--ink-faint); }
+.acct-row .btn { padding: var(--lg-space-2) var(--lg-space-5); font-size: 12px; border-radius: var(--lg-radius-sm); flex: none; }
+.acct-empty { padding: var(--lg-space-4) 0; font-size: var(--fs-base); color: var(--ink-faint); }
 
-.acct-form { display: flex; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
+.acct-form { display: flex; gap: var(--lg-space-3); margin-bottom: var(--lg-space-4); flex-wrap: wrap; }
 .acct-form input {
   flex: 1; min-width: 120px;
-  padding: 8px 10px; border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
+  padding: var(--lg-space-4) var(--lg-space-5); border-radius: var(--lg-radius-sm); font-size: var(--fs-base);
   border: 1px solid var(--hairline); background: var(--surface);
   color: var(--ink); outline: none;
 }
 .acct-form input:focus { border-color: var(--ink); }
 
 #acct-flow {
-  margin-top: 10px; padding: 11px;
+  margin-top: var(--lg-space-5); padding: var(--lg-space-5);
   border: 1px solid var(--hairline); border-radius: var(--lg-radius);
   background: var(--surface-2);
-  display: flex; flex-direction: column; gap: 9px; align-items: flex-start;
+  display: flex; flex-direction: column; gap: var(--lg-space-4); align-items: flex-start;
 }
 #acct-flow[hidden] { display: none; }
 .flow-status { font-size: var(--fs-base); color: var(--ink-dim); }
 #flow-captcha {
   height: 58px;
-  padding: 5px 8px;
+  padding: var(--lg-space-2) 8px;
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius-sm);
   background: #ffffff;
@@ -484,14 +514,14 @@ input[type="range"]:focus-visible {
 #flow-answer-row[hidden] { display: none; }
 #flow-answer-row { width: 100%; margin-bottom: 0; }
 
-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+footer { display: flex; gap: var(--lg-space-5); justify-content: flex-end; margin-top: var(--lg-space-2); }
 
 /* toast */
 #toast {
   position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(8px);
   background: var(--surface); color: var(--ink); border: 1px solid var(--hairline);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
-  padding: 9px 18px; border-radius: var(--lg-radius); font-size: var(--fs-base); opacity: 0;
+  padding: var(--lg-space-4) 18px; border-radius: var(--lg-radius); font-size: var(--fs-base); opacity: 0;
   transition: all 0.22s; pointer-events: none; z-index: 99;
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -500,11 +530,11 @@ footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
 .presets {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
-  gap: 10px;
+  gap: var(--lg-space-5);
 }
 .pcard {
-  display: flex; flex-direction: column; gap: 7px; align-items: flex-start;
-  padding: 11px;
+  display: flex; flex-direction: column; gap: var(--lg-space-3); align-items: flex-start;
+  padding: var(--lg-space-5);
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--hairline);
@@ -528,14 +558,14 @@ footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
   letter-spacing: 0.02em;
 }
 .pcard-name { font-size: var(--fs-base); font-weight: 600; }
-.pcard-desc { font-size: 10.5px; color: var(--ink-faint); line-height: 1.35; }
+.pcard-desc { font-size: var(--lg-fs-micro); color: var(--ink-faint); line-height: 1.35; }
 
 /* ---------- 自定义 CSS 文本域 ---------- */
 .code-area {
   width: 100%;
   min-height: 148px;
   resize: vertical;
-  padding: 10px 12px;
+  padding: var(--lg-space-5) var(--lg-space-6);
   font-family: var(--lg-mono);
   font-size: 12px;
   line-height: 1.65;
@@ -550,19 +580,19 @@ footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
 .code-area:focus { border-color: var(--ink); }
 
 /* ---------- 强调色 ---------- */
-.accent-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.accent-row { display: flex; align-items: center; gap: var(--lg-space-5); flex-wrap: wrap; }
 .accent-label { font-size: var(--fs-base); color: var(--ink-dim); }
-.swatches { display: flex; gap: 6px; }
+.swatches { display: flex; gap: var(--lg-space-3); }
 .sw {
-  width: 26px; height: 26px; padding: 0;
+  width: var(--lg-ctl-icon-sm); height: var(--lg-ctl-icon-sm); padding: 0;
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius-sm);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
-  font-size: 10.5px;
+  font-size: var(--lg-fs-micro);
 }
-.sw-auto { width: auto; padding: 0 9px; }
+.sw-auto { width: auto; padding: 0 var(--lg-space-4); }
 .sw.active { outline: 2px solid var(--ink); outline-offset: 1px; }
 input[type="color"] {
   width: 36px; height: 26px; padding: 0;

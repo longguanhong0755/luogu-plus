@@ -14,19 +14,22 @@ cd "$(dirname "$0")/.."
 fail=0
 step() { printf "\n=== %s ===\n" "$1"; }
 
-step "1/8 材质配方 lint（面只能声明在 material.css）"
+step "1/9 材质配方 lint（面只能声明在 material.css）"
 node scripts/lint-material.js || fail=1
 
-step "2/8 契约静态检查（IPC 通道 / preload 方法 / 配置键三方对账）"
+step "2/9 契约静态检查（IPC 通道 / preload 方法 / 配置键三方对账）"
 node scripts/lint-contracts.cjs || fail=1
 
-step "3/8 死代码扫描"
+step "3/9 设计令牌（design.md 的静态部分：间距/圆角/字号/控件尺寸/焦点环）"
+node scripts/lint-design-tokens.cjs || fail=1
+
+step "4/9 死代码扫描"
 node scripts/lint-deadcode.cjs || fail=1
 
-step "4/8 静默失败扫描（明明失败却报成功）"
+step "5/9 静默失败扫描（明明失败却报成功）"
 node scripts/lint-silent-catch.cjs || fail=1
 
-step "5/8 JavaScript 语法"
+step "6/9 JavaScript 语法"
 bad=0
 # src/inject/ 是注入层的能力模块（内核 src/inject.js 之外的第二层目录），
 # 漏掉它等于新模块从此不受语法门禁管——加进 glob。
@@ -38,13 +41,13 @@ done
 [ "$bad" = 0 ] && echo "  全部通过"
 [ "$bad" = 1 ] && fail=1
 
-step "6/8 类型检查（基线门禁：不许新增类型错误）"
+step "7/9 类型检查（基线门禁：不许新增类型错误）"
 bash scripts/typecheck.sh || fail=1
 
-step "7/8 行尾守卫（被改文件的行尾风格必须与 HEAD 一致）"
+step "8/9 行尾守卫（被改文件的行尾风格必须与 HEAD 一致）"
 bash scripts/check-eol.sh || fail=1
 
-step "8/8 配置文件可解析"
+step "9/9 配置文件可解析"
 node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('  package.json OK')" || fail=1
 node -e "JSON.parse(require('fs').readFileSync('scripts/lint-contracts.ignore.json','utf8')); console.log('  lint-contracts.ignore.json OK')" || fail=1
 

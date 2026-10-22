@@ -62,9 +62,9 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
   position: absolute;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lg-space-4);
   height: 34px;
-  padding: 0 6px 0 12px;
+  padding: 0 var(--lg-space-3) 0 var(--lg-space-6);
   border-radius: 10px 10px 0 0;
   font-size: 12px;
   color: var(--ink-dim);
@@ -80,7 +80,7 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
 }
 #glance-wrap .gl-btn {
   flex: none;
-  padding: 3px 10px;
+  padding: var(--lg-space-1) 10px;
   border-radius: var(--lg-radius-sm);
   color: var(--ink-dim);
   cursor: pointer;
@@ -96,10 +96,10 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
 #lg-toast {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--lg-space-5);
   min-width: 260px;
   max-width: min(560px, 90vw);
-  padding: 9px 10px 9px 14px;
+  padding: var(--lg-space-4) 10px var(--lg-space-4) 14px;
   border-radius: var(--lg-radius);
   font-size: var(--fs-base);
   color: var(--ink);
@@ -108,7 +108,7 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
 #lg-toast .tst-btn {
   flex: none;
   height: 24px;
-  padding: 0 12px;
+  padding: 0 var(--lg-space-6);
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius-sm);
   background: transparent;
@@ -136,7 +136,7 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
 #omni-sug {
   min-width: 320px;
   max-width: min(640px, 90vw);
-  padding: 6px;
+  padding: var(--lg-space-3);
   border-radius: var(--lg-radius);
   font-size: var(--fs-base);
   color: var(--ink);
@@ -147,9 +147,9 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
 #omni-sug .sug-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--lg-space-4);
   height: 30px;
-  padding: 0 8px;
+  padding: 0 var(--lg-space-4);
   border-radius: var(--lg-radius);
   cursor: pointer;
   min-width: 0;

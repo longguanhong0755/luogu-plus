@@ -107,6 +107,9 @@ run_probe probe-glass.cjs "http://127.0.0.1:$WEB_PORT/?regress=1"
 PROBE_WEB="http://127.0.0.1:$WEB_PORT" PROBE_WEB="http://127.0.0.1:$WEB_PORT" run_probe probe-navhist.cjs
 # 存量 IPC 契约：把每个 preload 暴露的方法都调一遍，抓"调用即崩"的通道
 run_probe probe-ipc-contract.cjs
+# 设计令牌运行时：按钮高度/圆角/字号是否真的统一（静态 lint 看不出来，
+# 得量实际渲染值——.nav-item 的圆角曾被同规则里第二处声明静默顶掉）
+run_probe probe-design.cjs
 
 printf "\n=== 4/4 汇总 ===\n"
 for f in "$OUT"/*-result.json; do

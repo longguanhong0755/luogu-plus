@@ -32,8 +32,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding: 48px 24px 28px;
+  gap: var(--lg-space-9);
+  padding: var(--lg-space-24) var(--lg-space-12) var(--lg-space-14);
 }
 
 /* ---------- 时钟 ---------- */
@@ -58,7 +58,7 @@ body {
   letter-spacing: 0.02em;
 }
 .h-date {
-  margin-top: -8px;
+  margin-top: -var(--lg-space-4);
   font-size: 13px;
   color: var(--h-ink-dim);
   letter-spacing: 0.12em;
@@ -74,8 +74,8 @@ body {
   height: 52px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 8px 0 16px;
+  gap: var(--lg-space-5);
+  padding: 0 var(--lg-space-4) 0 var(--lg-space-8);
 }
 /* 大搜索框是一张卡：焦点环画在卡上，不画在里面的裸输入框上
    （输入框是 borderless 的，画在它身上会是个方框套在圆角卡里）。 */
@@ -101,13 +101,13 @@ body {
   background: transparent;
   color: var(--h-ink);
   font: inherit;
-  font-size: 15px;
+  font-size: var(--lg-fs-lead);
 }
 .h-search input::placeholder { color: var(--h-ink-faint); }
 .h-search button {
   flex: none;
   height: 34px;
-  padding: 0 16px;
+  padding: 0 var(--lg-space-8);
   font: inherit;
   font-size: 13px;
   color: var(--h-ink);
@@ -122,7 +122,7 @@ body {
 /* 解析预览：输入时提示这条输入会被当成什么 */
 .h-resolve {
   min-height: 18px;
-  margin-top: -10px;
+  margin-top: -var(--lg-space-5);
   font-size: 12px;
   color: var(--h-ink-dim);
   font-variant-numeric: tabular-nums;
@@ -137,15 +137,15 @@ body {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
+  gap: var(--lg-space-4);
   width: min(620px, 92vw);
 }
 .h-links a {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--lg-space-3);
   height: 36px;
-  padding: 0 14px;
+  padding: 0 var(--lg-space-7);
   font-size: 13px;
   color: var(--h-ink-dim);
   text-decoration: none;
@@ -167,13 +167,13 @@ body {
 /* ---------- 最近访问 ---------- */
 .h-recent {
   width: min(620px, 92vw);
-  padding: 14px 16px 10px;
+  padding: var(--lg-space-7) var(--lg-space-8) var(--lg-space-5);
 }
 .h-card-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--lg-space-4);
   font-size: 12px;
   letter-spacing: 0.1em;
   color: var(--h-ink-faint);
@@ -191,13 +191,13 @@ body {
 .h-recent-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px 18px;
+  gap: var(--lg-space-1) var(--lg-space-9);
 }
 .h-recent-list a {
   display: flex;
-  gap: 8px;
+  gap: var(--lg-space-4);
   align-items: baseline;
-  padding: 5px 2px;
+  padding: var(--lg-space-2) 2px;
   font-size: 13px;
   color: var(--h-ink-dim);
   text-decoration: none;
@@ -218,7 +218,7 @@ body {
 }
 .h-empty {
   grid-column: 1 / -1;
-  padding: 10px 2px;
+  padding: var(--lg-space-5) var(--lg-space-1);
   font-size: var(--fs-base, 12.5px);
   color: var(--h-ink-dim);
 }
@@ -238,35 +238,35 @@ body {
 .h-cdmid .h-list {
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--lg-space-4);
   justify-content: center;
 }
 .h-cdmid .h-list a {
   border: 1px solid var(--h-line);
   border-radius: 999px;
-  padding: 5px 12px;
+  padding: var(--lg-space-2) 12px;
   align-items: center;
-  gap: 7px;
+  gap: var(--lg-space-3);
 }
 .h-cdmid .h-list a:hover { border-bottom-color: var(--h-line); border-color: var(--h-ink); }
 .h-cdmid .h-list .h { margin-left: 0; }
 .h-cdmid .h-list a:hover .h-del { display: block; }
-.h-cdmid .h-empty { text-align: center; padding: 4px 2px 6px; }
+.h-cdmid .h-empty { text-align: center; padding: var(--lg-space-2) var(--lg-space-1) var(--lg-space-3); }
 .h-cdmid .h-cd-form { justify-content: center; }
 
 /* ---------- 双卡区（近期比赛独占一行；倒计时已上移到搜索下方） ---------- */
 .h-duo {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 14px;
+  gap: var(--lg-space-7);
   width: min(620px, 92vw);
 }
 .h-list { display: flex; flex-direction: column; }
 .h-list a {
   display: flex;
-  gap: 8px;
+  gap: var(--lg-space-4);
   align-items: baseline;
-  padding: 5px 2px;
+  padding: var(--lg-space-2) 2px;
   font-size: 13px;
   color: var(--h-ink-dim);
   text-decoration: none;
@@ -300,15 +300,15 @@ body {
 .h-list .h-del svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .h-cd-form {
   display: flex;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--lg-space-3);
+  margin-top: var(--lg-space-4);
 }
 /* 作者样式的 display:flex 会压过 UA 的 [hidden]{display:none}——不补这条，
    添加倒计时的表单永远关不掉（与设置页图标面板同一类坑） */
 .h-cd-form[hidden] { display: none; }
 .h-cd-form input {
   min-width: 0;
-  padding: 6px 8px;
+  padding: var(--lg-space-3) var(--lg-space-4);
   font-size: 12px;
   font-family: inherit;
   color: var(--h-ink);
@@ -318,7 +318,7 @@ body {
 }
 #cd-name { flex: 1; }
 .h-cd-form button {
-  padding: 6px 12px;
+  padding: var(--lg-space-3) var(--lg-space-6);
   font-size: 12px;
   font-family: inherit;
   color: var(--h-ink);
