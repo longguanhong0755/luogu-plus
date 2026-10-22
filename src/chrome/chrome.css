@@ -307,6 +307,25 @@ html, body {
 #user-chip img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; background: var(--surface-2); filter: grayscale(12%); }
 #user-chip .uname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #user-chip .uname.anon { font-weight: 500; color: var(--ink-dim); }
+/* 登录过期：芯片本身是入口，提示"点这里重新登录"，不用另开一个警告条 */
+#user-chip.expired { border-color: var(--ink); color: var(--ink); }
+#user-chip.expired .uname { font-weight: 600; }
+#btn-downloads { position: relative; }
+#btn-downloads .dl-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 var(--lg-space-1);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--bg-base);
+  font-size: var(--lg-fs-micro);
+  line-height: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 
 /* --- 加载指示线（工具行底部，任一标签加载时出现） --- */
 #loadbar {

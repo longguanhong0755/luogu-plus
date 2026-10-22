@@ -106,22 +106,8 @@
   <!-- 标签分组面板（Edge 式：组名 / 10 色 / 组中新建 / 取消分组 / 关闭分组） -->
   <div id="group-menu" hidden></div>
 
-  <!-- 命令面板（Ctrl+Shift+P） -->
-  <div id="palette" hidden>
-    <div class="pal-box">
-      <input id="pal-input" type="text" spellcheck="false" autocomplete="off" placeholder="输入命令…（↑↓ 选择，Enter 执行，Esc 关闭）" />
-      <div id="pal-list"></div>
-    </div>
-  </div>
-
-  <!-- 页内查找条（Ctrl+F） -->
-  <div id="findbar" hidden>
-    <input id="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="在页面中查找…" />
-    <span id="find-count"></span>
-    <button id="find-prev" title="上一个 (Shift+Enter)">↑</button>
-    <button id="find-next" title="下一个 (Enter)">↓</button>
-    <button id="find-close" title="关闭 (Esc)">×</button>
-  </div>
+  <!-- 命令面板（Ctrl+Shift+P）与页内查找条（Ctrl+F）的实体在覆盖层
+       （src/popup/）：外壳层永远压在网页视图下面，画在这里会被网页盖住。 -->
 
   <!-- 坞的渲染源（R36：坞显示在独立覆盖视图 src/dock/，页面内容从它底下穿过、
        不再让位）。外壳层永远压在网页视图底下，坞要浮在页面之上只能走覆盖

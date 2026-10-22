@@ -28,6 +28,11 @@ contextBridge.exposeInMainWorld("lgChrome", {
   // 弹出层（下拉菜单 / 命令面板）：外壳层永远渲染在网页视图之下，自己画的下拉
   // 会被网页盖住，所以统一交给覆盖层显示。这里只做"送 HTML / 收点击键"。
   popupShow: (p) => ipcRenderer.invoke("popup:show", p),
+  /* 请求主进程把键盘焦点交回外壳（Ctrl+L / 命令面板“聚焦地址栏”）：
+     只做 DOM focus() 在页面持有焦点时输入仍会进旧页。 */
+  focusShell: () => ipcRenderer.invoke("lg-app:focus-shell"),
+  /* 探针只读快照：几何/焦点以主进程为准（隐藏窗口里页面 innerWidth 不跟 setBounds） */
+  probeUx: (req) => ipcRenderer.invoke("lg-probe:ux", req),
   popupHide: () => ipcRenderer.invoke("popup:hide"),
   /* 拖拽期间挂住浮层：光标拖出窄条/面板时主进程的光标裁判先别收回 */
   holdPopup: (on) => ipcRenderer.send("popup:hold", !!on),
@@ -143,9 +148,9 @@ contextBridge.exposeInMainWorld("lgChrome", {
     before: !!before,
   }),
   openExternal: (url) => ipcRenderer.invoke("app:open-external", url),
-  openSettings: () => ipcRenderer.invoke("lg-app:open-settings"),
+  openSettings: (section) => ipcRenderer.invoke("lg-app:open-settings", section),
   openHome: () => ipcRenderer.invoke("lg-app:open-home"),
-  switchAccount: (id) => ipcRenderer.invoke("lg-account:switch", id),
+  switchAccount: (id, opts) => ipcRenderer.invoke("lg-account:switch", id, opts),
   accountState: () => ipcRenderer.invoke("lg-account:list"),
   accountAnswer: (code) => ipcRenderer.invoke("lg-account:answer", code),
   accountCancel: () => ipcRenderer.invoke("lg-account:cancel"),

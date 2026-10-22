@@ -222,6 +222,8 @@ code {
      这里只留内边距，避免两处各写一份材质 */
   padding: var(--lg-space-7) 16px;
 }
+/* 首帧：脚本还没 buildNav/paint 完时先别把 22 张卡按兜底色摊出来 */
+body.pre-ready #pane .card { visibility: hidden; }
 .card h2 {
   font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
   color: var(--ink-dim); margin-bottom: var(--lg-space-5);

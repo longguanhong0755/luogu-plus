@@ -5,6 +5,7 @@
 内置 IDE 标签与分屏编辑器、命令面板、历史/下载/清理、阅读模式与翻译、账号一键切换、
 黑白线条风的 5 套配色预设 + 细粒度外观调校、持久登录。
 v3.16.5 起界面尺寸与间距按 `design.md` 的像素级规范收敛，并有静态 + 运行时双重守卫。
+v3.16.6 起面板类界面（命令面板 / F1 / 标签搜索 / 查找条）改走弹层覆盖层，键盘焦点可跨视图路由。
 
 ## 目录结构
 
@@ -33,7 +34,7 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
 │   ├── home/             # 应用首页（时钟/搜索/倒计时/快捷入口）
 │   └── config/           # 旧版独立配置窗（保留）
 ├── assets/icon.ico       # 纯 Node 生成的单色图标（墨色方块 + 白 `</>`）
-└── scripts/              # check-all.sh（9 步静态门禁）/ run-all-probes.sh（5 探针）/
+└── scripts/              # check-all.sh（9 步静态门禁）/ run-all-probes.sh（6 探针）/
                           #   lint-*.{js,cjs} / probe-*.cjs / sync-dev.sh / typecheck.sh
 ```
 
@@ -69,6 +70,11 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
 - **设计系统（v3.16.5）**：间距/圆角/字号/控件高度按 `design.md` 的像素规范与
   `material.css` 令牌实现（4px 网格、嵌套圆角 = 外层 − 间距），按钮只有 28/32/40
   三档；本地页 CSS/JS 走 `lgasset://`，升级后样式立即刷新，不受 `file://` 缓存影响
+- **核心手感（v3.16.6）**：命令面板 / F1 快捷键表 / 标签搜索 / 页内查找条全部改走
+  弹层覆盖层（浮在网页之上，不再被标签页盖住），↑↓/Home/End/Tab 选、Enter/Space 执行、
+  Esc 关闭；焦点按"外壳 ↔ 弹层 ↔ 活动标签"路由（Ctrl+L 回地址栏、关面板回网页、
+  切标签进标签），账号菜单重绘保验证码输入的值/光标/焦点；界面缩放 80%~140% 时
+  页面与弹层几何按同一系数换算
 
 ## 架构要点
 
@@ -92,7 +98,7 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
   `scripts/probe-design.cjs` 量运行时真实高度/圆角/字号
 - **工程门禁**：`scripts/check-all.sh` 9 步（材质 / 契约 / 设计令牌 / 死代码 /
   静默失败 / 语法 / 类型基线 / 行尾 / JSON）；`scripts/run-all-probes.sh`
-  5 个 CDP 探针 77 断言（隐藏隔离实例）
+  6 个 CDP 探针 239 断言（隐藏隔离实例）
 - **持久化地基**（R42）：`readJsonSafe` / `writeTextAtomic(Sync)` 一处收口六份数据
   （配置 / 账号 / 标签 / 窗口 / 历史 / 下载）。读坏先备份 `.corrupt-<时间>` 再回退；
   写走 `<file>.tmp-<pid>` + rename 原子替换；失败（ENOSPC / EACCES）记
@@ -112,7 +118,7 @@ npm run gen:icon            # 重新生成图标
 
 ```bash
 bash scripts/check-all.sh        # 9 步静态检查（材质/契约/设计令牌/死代码/静默失败/语法/类型/行尾/JSON）
-bash scripts/run-all-probes.sh   # 5 个 CDP 探针 77 断言（隔离实例、隐藏窗口）
+bash scripts/run-all-probes.sh   # 6 个 CDP 探针 239 断言（隔离实例、隐藏窗口）
 node scripts/lint-design-tokens.cjs   # 设计令牌守卫（--fix 自动收敛，--fix-strict 更激进）
 ```
 
@@ -163,12 +169,12 @@ omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色
 ## 部署状态（2026-10-22）
 
 - 部署产物：`D:\workspace\luogu++\app\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 **v3.16.5**）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 **v3.16.6**）
 - 源码仓库：`D:\workspace\luogu++\repo`（git 远端 `longguanhong0755/luogu-plus`）；
   开发运行目录 `D:\workspace\luogu++\dev`
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
-- 设计迭代史见 `design-log.md`（R1~R48，全部有探针/截图证据）
+- 设计迭代史见 `design-log.md`（R1~R49，全部有探针/截图证据）
 
 ## 已知环境注意事项
 

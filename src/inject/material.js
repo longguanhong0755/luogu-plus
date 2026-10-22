@@ -167,6 +167,12 @@
     }
     return false;
   }
+  /* 视口够不够"铺开"：新建标签的视图先落在 1×1（隐藏实例里更是全程 1×1），
+     这时页面量出来的尺寸全部不达标，玻璃既贴不上也不该贴。160×60 与
+     glassifyExtOne 的"像个卡片"门槛一致。 */
+  function extViewportReady() {
+    return (window.innerWidth || 0) >= 160 && (window.innerHeight || 0) >= 60;
+  }
   function glassifyExtOne(el) {
     if (!el || el.__lgGx) return;
     if (!EXT_GLASS_TAGS[el.tagName]) return;
@@ -201,6 +207,7 @@
   }
   function sweepExtGlass(rootEl) {
     if (!extHttpPage || !ctx.autoGlass) return;
+    if (!extViewportReady()) return;   /* 视口没铺开：量出来全是 0，扫了也是白扫 */
     /* 页面里若有 background-attachment: fixed 的元素，就整页不做玻璃。
        fixed 背景与 backdrop-filter 叠在一起会让 Chromium 陷入长任务——
        实测：给测试页加一条 fixed 渐变底后，页面的 captureScreenshot 直接
@@ -268,7 +275,11 @@
     {
       id: "ext-face",
       enable: function () {
-        return extHttpPage && ctx.autoGlass && state.cfg.autoGlass !== false;
+        if (!extHttpPage || !ctx.autoGlass || state.cfg.autoGlass === false) return false;
+        /* 视口没铺开就不算"能做"：页面在 1×1 的视图里量尺寸必然全部落空，
+           挂一次面就再也扫不到东西了——注册表只在状态翻转时动手，不会自己
+           再扫一遍。视口恢复后由巡检 diff 出翻转、再补挂一次。 */
+        return extViewportReady();
       },
       mount: function () { sweepExtGlass(); },
       unmount: function () { unglassExt(); }

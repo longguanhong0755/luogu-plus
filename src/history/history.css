@@ -1,5 +1,10 @@
 /* LuoguLab — 历史 / 书签 / 下载 页。沿用设置页的单色线条风。 */
+/* 页面容器：此前只有 max-width，没有居中与内边距，内容贴着窗口左边 */
+.wrap { margin: 0 auto; padding: 28px 24px 48px; }
 .wrap.wide { max-width: 720px; }
+/* 头部与设置页同一个结构（history.html 复用 .pane-head），这里只补与下方
+   分段控件的间距 */
+.wrap > .pane-head { margin-bottom: var(--lg-space-6); }
 
 .row-line {
   display: flex;

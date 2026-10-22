@@ -37,6 +37,21 @@ body.lg-flyout #pop-root > * { pointer-events: auto; }
   width: auto !important;
   height: auto !important;
 }
+/* 命令面板的过滤只切 hidden：.pal-item 自己写了 display:flex，会压过 UA 的
+   [hidden]{display:none}——必须补一条同权重的显式规则，否则过滤不生效。 */
+#pal-list .pal-item[hidden],
+#pal-list .pal-head[hidden],
+#pal-list .pal-empty[hidden] { display: none !important; }
+/* 查找条（fit:"rect"）：视图只盖住这一条；位置由 fitRect 写 inline left/top，
+   这里清掉外壳样式里的 fixed/right/top，否则会与 inline 值打架。 */
+#pop-root > #findbar {
+  position: absolute !important;
+  right: auto !important;
+  top: auto !important;
+}
+/* 键盘导航把焦点放在菜单容器上时不要画整块焦点环；菜单项自己的
+   :focus-visible 圆环来自 chrome.css，保持不变。 */
+#pop-root > *:focus { outline: none; }
 
 /* ---------- Glance 链接速览壳（Zen 式） ----------
    全屏调光遮罩 + 卡片顶栏；卡片本体是主进程摆的独立 WebContentsView，

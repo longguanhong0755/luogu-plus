@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld("lgPopup", {
      覆盖层按 data-pop-stay 标记走这条 */
   pickStay: (k, v) => ipcRenderer.invoke("popup:pick-stay", { k: String(k || ""), v }),
   close: () => ipcRenderer.invoke("popup:hide"),
+  /* 页内查找：查找条实体在覆盖层，但查找逻辑在主进程（与 lg-app:find 同一段）。
+     popup 只回传文本与方向，结果（命中数）直接拿返回值。 */
+  find: (text, opts) => ipcRenderer.invoke("popup:find", { text, ...(opts || {}) }),
+  findStop: () => ipcRenderer.invoke("popup:find-stop"),
   /* 矩形模式回报内容尺寸：主进程据此把弹层视图缩到面板大小并把
      原点/上限回传（面板外的点击不再被弹层吃掉的关键） */
   fit: (d) => ipcRenderer.invoke("popup:fit", d),

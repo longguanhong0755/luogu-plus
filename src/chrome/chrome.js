@@ -1272,15 +1272,19 @@ function renderUser() {
   const chip = document.getElementById("user-chip");
   chip.textContent = "";
   const active = accountsState.accounts.find((a) => a.id === accountsState.activeId);
+  const expired = !!(userState && userState.expired);
   let label = "未登录";
   chip.classList.toggle("anon", !(userState && userState.uid));
+  chip.classList.toggle("expired", expired);
   if (userState && userState.uid) {
     const img = document.createElement("img");
     img.src = userState.avatar || "";
     chip.appendChild(img);
     // 芯片只显示昵称，永远不显示 UID：UID 是数字串，认不出是谁；
     // 昵称一时读不到就退回账号记录里的名字/邮箱前缀（都是人认得的）。
-    label = userState.name || (active && (active.name || active.email.split("@")[0])) || "已登录";
+    label = expired ? "已过期 · 重新登录" : userState.name || (active && (active.name || active.email.split("@")[0])) || "已登录";
+  } else if (expired) {
+    label = "已过期 · 重新登录";
   } else if (active) {
     label = active.name || active.email.split("@")[0];
   }
@@ -1292,7 +1296,7 @@ function renderUser() {
   caret.className = "caret";
   caret.innerHTML = svg("tabMore"); // R41：CSS border 三角 → 统一线稿 chevron
   chip.appendChild(caret);
-  chip.title = label + " · 点击切换账号";
+  chip.title = expired ? "登录已过期 · 点击重新登录" : label + " · 点击切换账号";
 }
 /* ---------- 账号切换进度（菜单内联面板） ----------
    切换可能在后台要求输验证码：主进程把 job.captcha 塞进 lg-account:list，
@@ -1359,6 +1363,16 @@ function renderAccountMenu() {
     list.appendChild(p);
     return;
   }
+  if (userState && userState.expired && accountsState.activeId) {
+    const re = document.createElement("button");
+    re.className = "am-item am-relogin";
+    re.textContent = "登录已过期 · 重新登录";
+    popBind(re, () => doSwitchAccount(accountsState.activeId, true));
+    list.appendChild(re);
+    const sep = document.createElement("div");
+    sep.className = "am-sep";
+    list.appendChild(sep);
+  }
   if (!accountsState.accounts.length) {
     const e = document.createElement("div");
     e.className = "am-empty";
@@ -1397,23 +1411,30 @@ function renderAccountMenu() {
     list.appendChild(out);
   }
 }
-async function doSwitchAccount(id) {
+async function doSwitchAccount(id, force) {
   if (switchJob) return;
   switchErr = "";
-  switchJob = { stage: "starting", message: "正在切换…", captcha: null };
+  switchJob = { stage: "starting", message: force ? "正在重新登录…" : "正在切换…", captcha: null };
   refreshAccountMenu();
+  /* 只在 job 真变了才重绘：验证码阶段每 700ms 整份重发会把输入框 DOM 换掉，
+     即使覆盖层保焦，输入法组字也会被打断。 */
+  let lastJobSig = "";
   switchPoll = setInterval(async () => {
     try {
       const st = await window.lgChrome.accountState();
       if (st && st.job) {
-        switchJob = { ...switchJob, ...st.job };
-        refreshAccountMenu();
+        const sig = JSON.stringify(st.job);
+        if (sig !== lastJobSig) {
+          lastJobSig = sig;
+          switchJob = { ...switchJob, ...st.job };
+          refreshAccountMenu();
+        }
       }
     } catch {}
   }, 700);
   let r = null;
   try {
-    r = await window.lgChrome.switchAccount(id);
+    r = await window.lgChrome.switchAccount(id, force ? { force: true } : undefined);
   } catch (e) {
     r = { ok: false, message: "切换失败：" + e };
   }
@@ -1497,6 +1518,7 @@ function menuAt(id, anchor) {
     html,
     ax,
     ay,
+    focus: "view",
     // 账号切换 / 登录验证码进行中时，点空白不许关菜单
     sticky: id === "account-menu" && !!switchJob,
     ...popupThemePayload(),
@@ -1598,7 +1620,8 @@ function orgMessage(r) {
   if (r.action === "group-by-domain") return r.groups > 0 ? "已按域名建了 " + r.groups + " 个分组" : "没有可建组的同域标签";
   return r.changed > 0 ? "已按站点整理 " + r.changed + " 个标签" : "已经是整理好的顺序";
 }
-function showToast(msg, canUndo) {
+function showToast(msg, canUndoOrOpts) {
+  const opts = canUndoOrOpts && typeof canUndoOrOpts === "object" ? canUndoOrOpts : { undo: !!canUndoOrOpts };
   const box = document.createElement("div");
   box.id = "lg-toast";
   box.className = "lg-fake lg-face-b";
@@ -1606,7 +1629,7 @@ function showToast(msg, canUndo) {
   t.className = "tst-msg";
   t.textContent = msg;
   box.appendChild(t);
-  if (canUndo) {
+  if (opts.undo) {
     const undo = document.createElement("button");
     undo.className = "tst-btn";
     undo.textContent = "撤销";
@@ -1617,6 +1640,24 @@ function showToast(msg, canUndo) {
       else toast("撤销失败");
     });
     box.appendChild(undo);
+  } else if (opts.action) {
+    /* 失败提示不能只是"知道了"：加载失败给重试、下载中断给入口、写盘失败给诊断 */
+    const labels = { "retry-load": "重试", downloads: "查看下载", diagnostics: "诊断" };
+    const acts = {
+      "retry-load": () => window.lgChrome.reload(),
+      downloads: () => showDownloadMenu(),
+      diagnostics: () => window.lgChrome.openSettings("其他/关于与数据"),
+    };
+    if (labels[opts.action]) {
+      const btn = document.createElement("button");
+      btn.className = "tst-btn";
+      btn.textContent = labels[opts.action];
+      popBind(btn, () => {
+        window.lgChrome.popupHide();
+        try { acts[opts.action](); } catch (e) {}
+      });
+      box.appendChild(btn);
+    }
   }
   const x = document.createElement("button");
   x.className = "tst-x";
@@ -1626,13 +1667,21 @@ function showToast(msg, canUndo) {
   box.appendChild(x);
   window.lgChrome.popupShow({ html: box.outerHTML, fit: "rect", center: true, bottom: true, bottomGap: 18, ...popupThemePayload() });
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    // 只有 toast 还在台面上才收（期间开了菜单/浮层就别打扰它们）
-    if (menuOpenId == null && !flyoutOpen) window.lgChrome.popupHide();
-  }, 8000);
+  // 写盘失败这类"还没好"的提示常驻，直到用户处理（或同一文件写成功后主进程换掉它）
+  if (!opts.sticky) {
+    toastTimer = setTimeout(() => {
+      // 只有 toast 还在台面上才收（期间开了菜单/浮层就别打扰它们）
+      if (menuOpenId == null && !flyoutOpen) window.lgChrome.popupHide();
+    }, 8000);
+  }
 }
 function toast(msg) {
   showToast(msg, false);
+}
+function shortName(p) {
+  const s = String(p || "");
+  const i = Math.max(s.lastIndexOf("\\"), s.lastIndexOf("/"));
+  return i >= 0 ? s.slice(i + 1) : s;
 }
 async function runOrganizeUi(action) {
   const r = await window.lgChrome.organizeTabs(action);
@@ -2070,10 +2119,18 @@ function fmtBytes(n) {
 function renderDownloadBtn() {
   const btn = document.getElementById("btn-downloads");
   const active = downloadsState.filter((d) => d.state === "progressing").length;
+  const failed = downloadsState.filter((d) => d.state === "interrupted").length;
   btn.hidden = downloadsState.length === 0;
   btn.classList.toggle("on", active > 0);
-  btn.innerHTML = svg("download");
-  btn.title = active ? active + " 个下载进行中" : "下载记录";
+  btn.classList.toggle("dl-err", failed > 0);
+  btn.innerHTML = svg("download") + (failed ? '<span class="dl-badge">' + (failed > 9 ? "9+" : failed) + "</span>" : "");
+  btn.title = active ? active + " 个下载进行中" : failed ? failed + " 个下载失败" : "下载记录";
+}
+function showDownloadMenu() {
+  if (menuOpenId === "download-menu") { hideAllMenus(); return; }
+  hideAllMenus();
+  renderDownloadMenu();
+  menuAt("download-menu", document.getElementById("btn-downloads"));
 }
 function renderDownloadMenu() {
   // 「清除已完成的记录」是静态节点，但每次渲染都要重新登记点击键：
@@ -2212,8 +2269,26 @@ function commands() {
     { title: "打开 Luogu++ 设置", hint: keyHint("settings", "F2"), run: () => window.lgChrome.openSettings() },
     { title: "恢复最近关闭的标签页", hint: keyHint("reopen-tab", "Ctrl+Shift+T"), run: () => window.lgChrome.reopenTab() },
     { title: "页内查找", hint: keyHint("find", "Ctrl+F"), run: () => window.lgChrome.findStart() },
-    { title: "截图当前页", hint: keyHint("screenshot", "Ctrl+Shift+S"), run: () => window.lgChrome.screenshot() },
-    { title: "截图：完整网页（含滚动）", run: () => window.lgChrome.fullshot() },
+    {
+      title: "截图当前页",
+      hint: keyHint("screenshot", "Ctrl+Shift+S"),
+      run: async () => {
+        toast("正在截图…");
+        const r = await window.lgChrome.screenshot();
+        if (r && r.ok) toast("截图已保存：" + shortName(r.file));
+        else toast("截图失败：" + ((r && r.message) || "未知错误"));
+      },
+    },
+    {
+      title: "截图：完整网页（含滚动）",
+      run: async () => {
+        toast("正在截取整页，长页面需要几秒…");
+        const r = await window.lgChrome.fullshot();
+        if (!r || !r.ok) toast("整页截图失败：" + ((r && r.message) || "未知错误"));
+        else if (r.full === false) toast("CDP 失败，已保存可视区域截图：" + shortName(r.file));
+        else toast("已保存整页截图：" + shortName(r.file));
+      },
+    },
     { title: "画中画：播放页面视频", run: async () => { const r = await window.lgChrome.pip(); if (!r || !r.ok) toast(r && r.result === "no-video" ? "这个页面没有视频" : "画中画启动失败"); } },
     { title: "阅读模式（进入 / 退出）", hint: keyHint("reader"), run: async () => { const r = await window.lgChrome.reader(); if (r && r.result === "no-content") toast("这个页面没找到正文"); } },
     { title: "翻译整页（原文 / 译文）", hint: keyHint("translate-page"), run: async () => { const r = await window.lgChrome.translatePage(); if (r && !r.ok) toast("翻译启动失败：" + ((r && r.message) || "")); } },
@@ -2300,7 +2375,10 @@ function commands() {
     {
       title: "聚焦地址栏",
       hint: "Ctrl+L",
-      run: () => document.getElementById("omni-input").focus(),
+      run: async () => {
+        try { await window.lgChrome.focusShell(); } catch (e) {}
+        document.getElementById("omni-input").focus();
+      },
     },
     { title: "回到洛谷首页", run: () => window.lgChrome.navigate("/") },
     { title: "打开题库", run: () => window.lgChrome.navigate("/problem/list") },
@@ -2353,135 +2431,126 @@ function tabCommands(includeCurrent) {
   return out;
 }
 
-function paletteOpen() {
-  return !document.getElementById("palette").hidden;
+/* ---------- 命令面板 / 标签搜索 / 快捷键总览（实体在覆盖层） ----------
+   外壳层永远在网页视图之下，面板画在这里会被网页盖住（和下拉菜单同一个根因）。
+   现在外壳只负责「数据 + 命令」，popup 负责 DOM / 输入 / 键盘：
+   - 这里生成带 data-pop="pal:<index>" 的 HTML，push 给覆盖层；
+   - popup 本地过滤、↑↓ 选、Enter 回传键；
+   - 外壳收到键后执行 palItems[index].run()。
+   过滤在 popup 内完成，不跨进程往返，输入法组字不会被重绘打断。 */
+let palShown = false;
+function escHtml(v) {
+  return String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
 }
-function closePalette() {
-  document.getElementById("palette").hidden = true;
+function palItemHtml(c, i) {
+  const hintText = c.tab ? c.sub : c.hint;
+  const text = String((c.title || c.sub || "") + " " + (hintText || "")).toLowerCase();
+  const cls = "pal-item" + (i === 0 ? " on" : "") + (c.closed ? " closed" : "");
+  let inner = "";
+  if (c.tab) { try { inner += tabIcon(c.tab).outerHTML; } catch (e) {} }
+  inner += '<span class="pal-title">' + escHtml(c.title || c.sub || "") + "</span>";
+  if (hintText) inner += '<span class="pal-hint">' + escHtml(hintText) + "</span>";
+  if (palMode === "keys") {
+    return '<div class="' + cls + '" data-pal-text="' + escHtml(text) + '">' + inner + "</div>";
+  }
+  return '<button type="button" class="' + cls + '" data-pop="pal:' + i +
+    '" data-pal-text="' + escHtml(text) + '">' + inner + "</button>";
 }
-function renderPalette(q) {
-  const list = document.getElementById("pal-list");
-  list.textContent = "";
-  const ql = String(q || "").trim().toLowerCase();
+function paletteHtml() {
   const all = palMode === "tabs" ? tabCommands(true) : commands();
-  palItems = ql ? all.filter((c) => c.title.toLowerCase().includes(ql) || String(c.hint || "").toLowerCase().includes(ql)) : all;
-  if (palIndex >= palItems.length) palIndex = 0;
-  /* 搜索标签页：顶部一行"共 N 个标签 · 当前 M 个匹配"（Edge 的大列表） */
+  palItems = all;
+  if (palIndex >= all.length) palIndex = 0;
+  let list = "";
   if (palMode === "tabs") {
-    const head = document.createElement("div");
-    head.className = "pal-head";
-    head.textContent = ql ? "匹配 " + palItems.length + " / 共 " + all.length + " 个标签" : "共 " + all.length + " 个标签";
-    list.appendChild(head);
+    list += '<div class="pal-head" id="pal-head" data-total="' + all.length + '">共 ' + all.length + " 个标签</div>";
   }
-  if (!palItems.length) {
-    const e = document.createElement("div");
-    e.className = "pal-empty";
-    e.textContent = palMode === "tabs" ? "没有匹配的标签页" : "没有匹配的命令";
-    list.appendChild(e);
-    return;
+  if (!all.length) {
+    list += '<div class="pal-empty">' + (palMode === "tabs" ? "没有匹配的标签页" : "没有匹配的命令") + "</div>";
   }
-  palItems.forEach((c, i) => {
-    /* 「最近关闭」那一段前面插一个分组标题（Edge 的标签搜索就是这么分的：
-       已打开的标签一块，最近关闭一块） */
-    if (c.closed && !(palItems[i - 1] && palItems[i - 1].closed)) {
-      const sep = document.createElement("div");
-      sep.className = "pal-head";
-      sep.textContent = "最近关闭";
-      list.appendChild(sep);
+  let closedHead = false;
+  all.forEach((c, i) => {
+    if (c.closed && !closedHead) {
+      list += '<div class="pal-head pal-head-closed">最近关闭</div>';
+      closedHead = true;
     }
-    const b = document.createElement("button");
-    b.className = "pal-item" + (i === palIndex ? " on" : "") + (c.closed ? " closed" : "");
-    if (c.tab) b.appendChild(tabIcon(c.tab)); // 图标（Edge 的标签搜索每行都带）
-    const t = document.createElement("span");
-    t.className = "pal-title";
-    t.textContent = c.title || c.sub || "";
-    b.appendChild(t);
-    const hintText = c.tab ? c.sub : c.hint;
-    if (hintText) {
-      const h = document.createElement("span");
-      h.className = "pal-hint";
-      h.textContent = hintText;
-      b.appendChild(h);
-    }
-    b.addEventListener("click", () => runPalette(i));
-    b.addEventListener("mousemove", () => {
-      if (palIndex !== i) {
-        palIndex = i;
-        renderPalette(document.getElementById("pal-input").value);
-      }
-    });
-    list.appendChild(b);
+    list += palItemHtml(c, i);
   });
+  const ph = palMode === "tabs" ? "搜索标签页（↑↓ 选择，Enter 切换，Esc 关闭）"
+    : palMode === "keys" ? "键盘快捷键（Esc 关闭）"
+      : PAL_PLACEHOLDER;
+  return '<div id="palette"' + (palMode === "tabs" ? ' class="pal-tabs"' : "") +
+    ' data-mode="' + palMode + '"><div class="pal-box"><input id="pal-input" type="text" spellcheck="false" autocomplete="off" placeholder="' +
+    escHtml(ph) + '"><div id="pal-list">' + list + "</div></div></div>";
 }
-function runPalette(i) {
+function pushPalette() {
+  palShown = true;
+  window.lgChrome.popupShow({ html: paletteHtml(), kind: "palette", focus: "input", ...popupThemePayload() });
+}
+function paletteOpen() { return palShown; }
+function closePalette() {
+  palShown = false;
+  try { window.lgChrome.popupHide(); } catch (e) {}
+}
+function runPaletteItem(i) {
   const c = palItems[i];
-  closePalette();
+  palShown = false;
   if (c) setTimeout(() => c.run(), 0);
 }
 function openPalette() {
-  const inp = document.getElementById("pal-input");
-  document.getElementById("palette").hidden = false;
-  document.getElementById("palette").classList.remove("pal-tabs");
   palMode = "cmd";
-  inp.placeholder = PAL_PLACEHOLDER; // F1 改过它，每次开面板都要恢复
-  inp.value = "";
   palIndex = 0;
-  renderPalette("");
-  inp.focus();
+  pushPalette();
 }
 /* 搜索标签页（Ctrl+Shift+A，Edge 同款）：面板只列标签，标题/网址都能筛 */
 function openTabSearch() {
-  const inp = document.getElementById("pal-input");
-  const box = document.getElementById("palette");
-  box.hidden = false;
-  box.classList.add("pal-tabs"); // 大列表形态（列表更高、行带图标 + 网址）
   palMode = "tabs";
-  inp.placeholder = "搜索标签页（↑↓ 选择，Enter 切换，Esc 关闭）";
-  inp.value = "";
   palIndex = 0;
-  renderPalette("");
-  inp.focus();
+  pushPalette();
   /* 现拉「最近关闭」补进列表（Edge 的标签搜索有两块）。拉取失败就只列
      已打开的标签，面板照常能用——不能因为一个可选数据源失败就废掉搜索。 */
   try {
     Promise.resolve(window.lgChrome.closedList()).then(
       (r) => {
         tabSearchClosed = (r && r.list) || [];
-        if (palMode === "tabs" && paletteOpen()) renderPalette(document.getElementById("pal-input").value);
+        if (palMode === "tabs" && palShown) pushPalette();
       },
       () => { tabSearchClosed = []; }
     );
   } catch (e) { tabSearchClosed = []; }
 }
 function showShortcuts() {
-  document.getElementById("palette").hidden = false;
-  document.getElementById("palette").classList.remove("pal-tabs");
-  const inp = document.getElementById("pal-input");
   palMode = "keys";
-  inp.value = "";
-  inp.placeholder = "键盘快捷键（Esc 关闭）";
-  const list = document.getElementById("pal-list");
-  list.textContent = "";
-  palItems = [];
-  /* 优先用主进程下发的合成表（含用户自定义，与真实绑定一处维护）；
-     还没收到配置时用本地兜底表 */
-  const rows =
-    cfgState && Array.isArray(cfgState.shortcutRows) && cfgState.shortcutRows.length
-      ? cfgState.shortcutRows.map((r) => [r.text, r.label])
-      : SHORTCUTS;
-  for (const [k, v] of rows) {
-    const row = document.createElement("div");
-    row.className = "pal-item";
-    const t = document.createElement("span");
-    t.textContent = v;
-    const h = document.createElement("span");
-    h.className = "pal-hint";
-    h.textContent = k;
-    row.appendChild(t);
-    row.appendChild(h);
-    list.appendChild(row);
-  }
-  inp.focus();
+  palIndex = 0;
+  pushPalette();
+}
+/* 页内查找条（实体同样在覆盖层）：矩形模式只盖住查找栏，页面其余区域照常点。 */
+function findbarHtml() {
+  return '<div id="findbar"><input id="find-input" type="text" spellcheck="false" autocomplete="off" placeholder="在页面中查找…">' +
+    '<span id="find-count"></span>' +
+    '<button type="button" data-find="prev" title="上一个 (Shift+Enter)">↑</button>' +
+    '<button type="button" data-find="next" title="下一个 (Enter)">↓</button>' +
+    '<button type="button" data-find="close" title="关闭 (Esc)">×</button></div>';
+}
+let findShown = false;
+function openFindbar() {
+  findShown = true;
+  window.lgChrome.popupShow({
+    html: findbarHtml(),
+    kind: "find",
+    fit: "rect",
+    ar: 170,
+    ay: headerH() + 2,
+    focus: "input",
+    ...popupThemePayload(),
+  });
+}
+/* 外部（探针/命令）关闭查找条：清高亮 + 收弹层，不能只做一半 */
+function closeFindbar() {
+  findShown = false;
+  try { window.lgChrome.findStop(); } catch (e) {}
+  window.lgChrome.popupHide();
 }
 
 /* 命令面板 hint：跟真实绑定走（主进程合成表），拿不到才用写死的兜底 */
@@ -2980,80 +3049,8 @@ function bind() {
   document.getElementById("w-min").addEventListener("click", () => window.lgChrome.winMinimize());
   document.getElementById("w-max").addEventListener("click", () => window.lgChrome.winToggleMax());
   document.getElementById("w-close").addEventListener("click", () => window.lgChrome.winClose());
-  /* 页内查找条（Ctrl+F） */
-  const fb = document.getElementById("findbar");
-  const fin = document.getElementById("find-input");
-  const findGo = (findNext, forward) => {
-    const text = fin.value.trim();
-    if (!text) return;
-    window.lgChrome
-      .find(text, { findNext: !!findNext, forward: forward !== false })
-      .then((r) => {
-        document.getElementById("find-count").textContent =
-          r && r.ok ? (r.count ? `${r.count} 处` : "无结果") : "";
-      })
-      .catch(() => {});
-  };
-  fin.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); findGo(true, !e.shiftKey); }
-    else if (e.key === "Escape") { e.preventDefault(); closeFindbar(); }
-  });
-  fin.addEventListener("input", () => findGo(false));
-  document.getElementById("find-next").addEventListener("click", () => findGo(true, true));
-  document.getElementById("find-prev").addEventListener("click", () => findGo(true, false));
-  document.getElementById("find-close").addEventListener("click", () => closeFindbar());
-  function openFindbar() {
-    fb.hidden = false;
-    fin.focus();
-    fin.select();
-    findGo(false);
-  }
-  function closeFindbar() {
-    fb.hidden = true;
-    document.getElementById("find-count").textContent = "";
-    window.lgChrome.findStop();
-  }
+  /* 页内查找条（Ctrl+F）：实体在覆盖层，外壳只负责开面板 */
   window.lgChrome.onFindShortcut(() => openFindbar());
-  window.lgChrome.onFindResult((r) => {
-    document.getElementById("find-count").textContent = r && r.matches ? `${r.active} / ${r.matches}` : "无结果";
-  });
-  document.getElementById("btn-downloads").addEventListener("click", () => {
-    renderDownloadMenu();
-    menuAt("download-menu", document.getElementById("btn-downloads"));
-  });
-  /* #dl-clear 的点击登记挪进了 renderDownloadMenu（popBind）：菜单实体在覆盖层，
-     挂在外壳原节点上的监听器对副本无效——之前在覆盖层里点它是"点空白关闭" */
-  // 命令面板：输入过滤 + ↑↓ 选择 + Enter 执行 + Esc 关闭
-  const palInput = document.getElementById("pal-input");
-  palInput.addEventListener("input", () => {
-    if (palMode !== "cmd") return; // 快捷键总览模式不过滤
-    palIndex = 0;
-    renderPalette(palInput.value);
-  });
-  palInput.addEventListener("keydown", (e) => {
-    if (palMode === "keys") {
-      if (e.key === "Escape") { e.preventDefault(); closePalette(); }
-      return; // 快捷键总览模式：↑↓/Enter 不许跑命令逻辑
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      palIndex = Math.min(palItems.length - 1, palIndex + 1);
-      renderPalette(palInput.value);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      palIndex = Math.max(0, palIndex - 1);
-      renderPalette(palInput.value);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      runPalette(palIndex);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      closePalette();
-    }
-  });
-  document.getElementById("palette").addEventListener("click", (e) => {
-    if (e.target.id === "palette") closePalette();
-  });
   // 点空白处收起下拉（菜单与它们各自的按钮都在放行名单里）
   document.addEventListener("click", (e) => {
     if (!anyMenuOpen()) return;
@@ -3138,6 +3135,8 @@ function bind() {
     if (accountMenuOpen()) hideAccountMenu();
     else showAccountMenu();
   });
+  // 下载面板：按钮此前只渲染不绑定，点下去毫无反应（下载记录无处可看）
+  document.getElementById("btn-downloads").addEventListener("click", () => showDownloadMenu());
   document.getElementById("am-manage").addEventListener("click", () => {
     hideAccountMenu();
     window.lgChrome.openSettings();
@@ -3221,6 +3220,12 @@ if (!window.lgChrome) {
   // 载荷 {k, v}：v 是 data-pop-value 项顺带读回的输入值（验证码提交用）
   window.lgChrome.onPopupPicked((p) => {
     const k = p && typeof p === "object" ? p.k : p;
+    /* 命令面板/标签搜索/快捷键总览的条目：实体在覆盖层，键回到这里执行 */
+    if (/^pal:\d+$/.test(String(k || ""))) {
+      try { document.body.dataset.lgPicked = String(k); } catch (e) {}
+      runPaletteItem(Number(String(k).slice(4)));
+      return;
+    }
     const fn = popActions[k];
     /* 面包屑（链路第二跳）：键到了外壳没有、外壳手里有没有这个键——
        "菜单看得见点下去没反应"的排查就靠这两条 */
@@ -3247,6 +3252,8 @@ if (!window.lgChrome) {
   }
   window.lgChrome.onPopupHidden(() => {
     menuOpenId = null;
+    palShown = false;
+    findShown = false;
     clearTimeout(flyoutGuard);
     openGroupId = null; // 分组面板关了，开着的组 id 一起归零
     // 悬停浮层也是弹层内容：它关了状态要一起复位（光标离开面板被主进程收回）
@@ -3271,7 +3278,12 @@ if (!window.lgChrome) {
     showToast(msg, lastOrgUi.canUndo);
   });
   /* 主进程侧其它动作的提示（多选建组这类原生菜单里的操作） */
-  if (window.lgChrome.onToast) window.lgChrome.onToast((m) => toast(m));
+  if (window.lgChrome.onToast) {
+    window.lgChrome.onToast((m) => {
+      if (m && typeof m === "object") showToast(String(m.msg || ""), { action: m.action, sticky: !!m.sticky });
+      else toast(m);
+    });
+  }
 
   /* Glance 链接速览（Zen 式）：主进程开好卡片视图后推 chrome:glance，
      外壳画壳（调光遮罩 + 卡片顶栏）；顶栏按钮走 popActions。卡片本体是

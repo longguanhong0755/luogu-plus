@@ -21,6 +21,15 @@ function fmtTime(ts) {
   if (sameDay) return hh + ":" + mm;
   return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + hh + ":" + mm;
 }
+/* 清空类操作不可撤销：先走原生确认框，默认按钮是「取消」 */
+async function confirmDanger(o) {
+  try {
+    const r = await window.lgConfig.confirm(o);
+    return !!(r && r.confirmed);
+  } catch (e) {
+    return false;
+  }
+}
 function row(children, extra) {
   const el = document.createElement("div");
   el.className = "h-row" + (extra ? " " + extra : "");
@@ -222,10 +231,24 @@ function showPane(p) {
     qt = setTimeout(renderHistory, 180);
   });
   $("h-clear").addEventListener("click", async () => {
+    const yes = await confirmDanger({
+      title: "清空浏览历史",
+      message: "清空全部浏览历史记录？",
+      detail: "此操作不可撤销。下载记录与已保存的文件不受影响。",
+      okText: "清空",
+    });
+    if (!yes) return;
     await window.lgConfig.historyClear();
     renderHistory();
   });
   $("d-clear").addEventListener("click", async () => {
+    const yes = await confirmDanger({
+      title: "清空下载记录",
+      message: "清除全部下载记录？",
+      detail: "只清除记录，已经下载到磁盘的文件不会被删除。此操作不可撤销。",
+      okText: "清除",
+    });
+    if (!yes) return;
     await window.lgConfig.downloadClear();
     renderDownloads();
   });

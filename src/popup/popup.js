@@ -136,18 +136,34 @@ function show(p) {
   current = p || {};
   applyTheme(current);
   // 菜单内容会按外壳的轮询反复重发（账号切换时每 700ms 一份）：重绘前把
-  // 输入框的值按 class 存下来、重绘后回填，用户正在输的验证码不会被清掉
+  // 输入框的值按 class 存下来、重绘后回填，用户正在输的验证码不会被清掉。
   const saved = {};
   root.querySelectorAll("input").forEach((inp, i) => {
     if (inp.value) saved[inp.className + "#" + i] = inp.value;
   });
-  const hadFocus = root.contains(document.activeElement);
+  /* 重绘会替换整棵 DOM：先把"刚才焦点在哪"记下来（验证码输入框 / 面板项），
+     重绘后按同一个 id / data-pop / 输入框序号还回去——只保存 value 不还焦点，
+     用户每 700ms 就被踢出输入框一次。 */
+  const prevActive = document.activeElement;
+  const hadFocus = root.contains(prevActive);
+  const prevId = prevActive && prevActive.id;
+  const prevPopEl = prevActive && prevActive.closest ? prevActive.closest("[data-pop]") : null;
+  const prevPop = prevPopEl ? prevPopEl.getAttribute("data-pop") : null;
+  const prevInputIdx = prevActive && prevActive.tagName === "INPUT"
+    ? [...root.querySelectorAll("input")].indexOf(prevActive)
+    : -1;
+  const prevInput = prevActive && prevActive.tagName === "INPUT"
+    ? /** @type {HTMLInputElement} */ (prevActive)
+    : null;
+  const prevSel = prevInput && typeof prevInput.selectionStart === "number"
+    ? { s: prevInput.selectionStart, e: prevInput.selectionEnd }
+    : null;
   root.innerHTML = current.html || "";
   root.querySelectorAll("input").forEach((inp, i) => {
     const k = inp.className + "#" + i;
     if (k in saved) inp.value = saved[k];
   });
-  const menu = root.firstElementChild;
+  const menu = /** @type {HTMLElement} */ (root.firstElementChild);
   if (!menu) return;
   /* 面的材质类：material.css 的唯一配方（假壁纸背景 + 与外壳/页面同源同值的
      上色 + 发丝线/高光/投影）。命令面板的面在居中的 .pal-box 上（全屏遮罩
@@ -160,18 +176,187 @@ function show(p) {
   if (faceEl) faceEl.classList.add("lg-fake", "lg-face-b");
   document.body.classList.toggle("lg-flyout", !!current.flyout);
   /* 两种几何：
-     - 矩形模式（fit:"rect"：垂直栏悬停浮层、地址栏联想）：视图只盖面板本身，
-       面板外的点击落到网页/外壳上；
+     - 矩形模式（fit:"rect"：垂直栏悬停浮层、地址栏联想、查找条）：视图只盖面板
+       本身，面板外的点击落到网页/外壳上；
      - 全窗模式（命令面板 / 速览壳 / 现有下拉菜单）：覆盖整窗，点空白即关。
      收回：浮层只认主进程的光标裁判（窄条 ∪ 面板并集），这里不做 mouseleave
      自闭合——跨视图的 enter/leave 接力正是当年"悬停闪烁"的来源。 */
-  if (current.fit === "rect") fitRect(menu);
-  else if (current.kind !== "glance") place(menu, current); // Glance 壳是全屏结构，自己按内联几何定位
-  // 验证码输入框一出现就接住焦点；用户已经点进菜单里就别再抢
-  if (!hadFocus) {
-    const cap = menu.querySelector("input");
-    if (cap) setTimeout(() => { try { cap.focus(); } catch (e) {} }, 30);
+  const afterLayout = () => {
+    if (current.kind === "palette") setupPalette(menu);
+    else if (current.kind === "find") setupFind(menu);
+    else setupMenuKeys(menu);
+    /** @type {HTMLElement|null} */
+    let focusEl = null;
+    if (hadFocus) {
+      if (prevPop) {
+        try { focusEl = /** @type {HTMLElement|null} */ (root.querySelector('[data-pop="' + String(prevPop).replace(/"/g, '\\"') + '"]')); } catch (e) {}
+      }
+      if (!focusEl && prevId) { try { focusEl = /** @type {HTMLElement|null} */ (root.querySelector("#" + CSS.escape(prevId))); } catch (e) {} }
+      if (!focusEl && prevInputIdx >= 0) focusEl = [...root.querySelectorAll("input")][prevInputIdx] || null;
+    }
+    if (!focusEl && current.focus === "input") focusEl = menu.querySelector("input");
+    if (!focusEl && current.focus === "view" && !current.kind) {
+      try {
+        menu.tabIndex = -1;
+        // 有输入框（验证码/重命名）时优先给输入框，菜单本体只接键盘导航
+        focusEl = menu.querySelector("input") || menu;
+      } catch (e) {}
+    }
+    // 验证码输入框一出现就接住焦点；用户已经点进菜单里就别再抢
+    if (!focusEl && !hadFocus) focusEl = menu.querySelector("input");
+    if (focusEl) {
+      try {
+        focusEl.focus();
+        const selEl = /** @type {HTMLInputElement} */ (focusEl);
+        if (prevSel && typeof selEl.setSelectionRange === "function") {
+          selEl.setSelectionRange(prevSel.s, prevSel.e);
+        }
+      } catch (e) {}
+    }
+  };
+  if (current.fit === "rect") {
+    fitRect(menu).then(afterLayout, afterLayout);
+  } else {
+    if (current.kind !== "glance") place(menu, current); // Glance 壳是全屏结构，自己按内联几何定位
+    afterLayout();
   }
+}
+
+/* ---------- 命令面板（palette） ----------
+   外壳把命令/标签/快捷键渲染成带 data-pal-text 与 data-pop="pal:<i>" 的条目，
+   这一层只做本地过滤 + 键盘选择：输入法组字不会触发跨进程往返，列表也不会
+   被整份重绘（只切 hidden 与 .on）。 */
+function setupPalette(menu) {
+  const input = menu.querySelector("#pal-input");
+  const list = menu.querySelector("#pal-list");
+  if (!input || !list) return;
+  const mode = menu.dataset.mode || "cmd";
+  let idx = 0;
+  const items = () => [...list.querySelectorAll(".pal-item")].filter((el) => !el.hidden);
+  const setOn = (n) => {
+    const arr = items();
+    if (!arr.length) return;
+    idx = Math.max(0, Math.min(arr.length - 1, n));
+    // 被过滤掉的行也要脱掉 .on：残留的“选中”会让方向键看起来没反应
+    list.querySelectorAll(".pal-item.on").forEach((el) => el.classList.remove("on"));
+    arr.forEach((el, i) => el.classList.toggle("on", i === idx));
+    try { arr[idx].scrollIntoView({ block: "nearest" }); } catch (e) {}
+  };
+  const filter = () => {
+    const q = mode === "keys" ? "" : String(input.value || "").trim().toLowerCase();
+    let visible = 0;
+    list.querySelectorAll(".pal-item").forEach((el) => {
+      const hit = !q || String(el.dataset.palText || "").includes(q);
+      el.hidden = !hit;
+      if (hit) visible++;
+    });
+    const head = list.querySelector("#pal-head");
+    if (head) {
+      const total = Number(head.dataset.total || 0);
+      head.textContent = q ? "匹配 " + visible + " / 共 " + total + " 个标签" : "共 " + total + " 个标签";
+    }
+    const closedHead = list.querySelector(".pal-head-closed");
+    if (closedHead) {
+      closedHead.hidden = ![...list.querySelectorAll(".pal-item.closed")].some((el) => !el.hidden);
+    }
+    const empty = list.querySelector(".pal-empty");
+    if (empty) empty.hidden = visible > 0;
+    idx = 0;
+    setOn(0);
+  };
+  input.addEventListener("input", () => { if (mode !== "keys") filter(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); window.lgPopup.close(); return; }
+    if (mode === "keys") return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setOn(idx + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setOn(idx - 1); }
+    else if (e.key === "Home") { e.preventDefault(); setOn(0); }
+    else if (e.key === "End") { e.preventDefault(); setOn(items().length - 1); }
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      const el = items()[idx];
+      if (el && el.dataset.pop) window.lgPopup.pick(el.dataset.pop);
+    }
+  });
+  /* 重绘（如标签搜索异步补「最近关闭」）会带回用户已输入的过滤词：这里补跑
+     一次过滤，别让列表回退成全量、把用户刚筛好的结果冲掉。 */
+  if (mode !== "keys" && String(input.value || "").trim()) filter();
+  try { input.focus(); if (!input.value) input.select(); } catch (e) {}
+}
+
+/* ---------- 页内查找条（fit:"rect"） ----------
+   查找在页面上执行（主进程 lg-app:find 的同一段逻辑），这里只负责输入、计数、
+   上一个/下一个与关闭。关闭时同时清掉页面高亮。 */
+function setupFind(menu) {
+  const input = menu.querySelector("#find-input");
+  const count = menu.querySelector("#find-count");
+  if (!input || !count) return;
+  let timer = null;
+  const closeFind = () => {
+    try { window.lgPopup.findStop(); } catch (e) {}
+    window.lgPopup.close();
+  };
+  const go = async (findNext, forward) => {
+    const text = input.value.trim();
+    if (!text) {
+      count.textContent = "";
+      try { await window.lgPopup.findStop(); } catch (e) {}
+      return;
+    }
+    try {
+      const r = await window.lgPopup.find(text, { findNext: !!findNext, forward: forward !== false });
+      count.textContent = r && r.ok ? (r.count ? r.count + " 处" : "无结果") : "";
+    } catch (e) { count.textContent = ""; }
+  };
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => go(false), 80);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); go(true, !e.shiftKey); }
+    else if (e.key === "Escape") { e.preventDefault(); closeFind(); }
+  });
+  menu.querySelectorAll("[data-find]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const a = b.getAttribute("data-find");
+      if (a === "close") closeFind();
+      else go(true, a === "next");
+    });
+  });
+  try { input.focus(); input.select(); } catch (e) {}
+}
+
+/* ---------- 普通菜单的键盘导航 ----------
+   打开时把焦点放到菜单本体（有输入框时留给输入框），↑↓/Home/End/Tab 在
+   [data-pop] 项之间移动，Enter/Space 执行。鼠标流程不变（mousedown 立即执行）。 */
+let kbdEls = [];
+let kbdIdx = -1;
+function setupMenuKeys(menu) {
+  kbdEls = [];
+  kbdIdx = -1;
+  if (current.flyout || current.kind) return;
+  kbdEls = [...menu.querySelectorAll("[data-pop]")].filter(
+    (el) => !el.hasAttribute("data-drag-row") && el.offsetParent !== null
+  );
+  try { menu.tabIndex = -1; } catch (e) {}
+  if (menu.querySelector("input")) return; // 验证码等输入优先，不抢焦点
+  try { menu.focus({ preventScroll: true }); } catch (e) { try { menu.focus(); } catch (e2) {} }
+}
+
+/* 菜单项执行：鼠标 mousedown 与键盘 Enter 共用同一条路（data-pop-value 会读回
+   输入框的值；data-pop-stay 表示点了不关面板）。 */
+function activateEl(hit) {
+  if (!hit) return;
+  try { document.documentElement.dataset.lgPick = String(hit.getAttribute("data-pop") || ""); } catch (e) {}
+  if (hit.hasAttribute("data-drag-row")) return;
+  const sel = hit.getAttribute("data-pop-value");
+  let v;
+  if (sel) {
+    const inp = hit.closest("#pop-root > *").querySelector(sel);
+    v = inp ? inp.value : "";
+  }
+  if (hit.hasAttribute("data-pop-stay")) window.lgPopup.pickStay(hit.getAttribute("data-pop"), v);
+  else window.lgPopup.pick(hit.getAttribute("data-pop"), v);
 }
 
 /* 点菜单项 → 回传点击键；点别处 / Esc → 关闭。
@@ -179,30 +364,48 @@ function show(p) {
    data-pop-stay 标记的项走 pickStay：面板不关（分组面板改色这种点了还要
    留在面板里的操作），内容变了外壳会重发一份。 */
 document.addEventListener("mousedown", (e) => {
-  const hit = e.target.closest ? e.target.closest("[data-pop]") : null;
+  const t = /** @type {Element} */ (e.target);
+  const hit = t.closest ? t.closest("[data-pop]") : null;
   if (hit) {
     /* 面包屑：探针/排障据此判断"点击键有没有从覆盖层发出去"（链路第一跳） */
-    try { document.documentElement.dataset.lgPick = String(hit.getAttribute("data-pop") || ""); } catch (err) {}
-    /* 浮层里的标签行：按下不动作（否则一按下就切走了，根本拖不起来）。
-       点一下的动作改在 pointerup 里补（没拖动才算点击）。 */
-    if (hit.hasAttribute("data-drag-row")) return;
-    // data-pop-value 标记的项要带一个输入框的值回去（验证码提交）
-    const sel = hit.getAttribute("data-pop-value");
-    let v;
-    if (sel) {
-      const inp = hit.closest("#pop-root > *").querySelector(sel);
-      v = inp ? inp.value : "";
-    }
-    if (hit.hasAttribute("data-pop-stay")) window.lgPopup.pickStay(hit.getAttribute("data-pop"), v);
-    else window.lgPopup.pick(hit.getAttribute("data-pop"), v);
+    activateEl(hit);
     return;
   }
   if (current.sticky) return;
-  if (!e.target.closest || !e.target.closest("#pop-root > *")) window.lgPopup.close();
+  if (!t.closest || !t.closest("#pop-root > *")) window.lgPopup.close();
+}, true);
+
+/* 普通菜单的键盘导航（命令面板/查找条/悬停浮层有自己的键盘逻辑） */
+document.addEventListener("keydown", (e) => {
+  if (current.kind === "palette" || current.kind === "find" || current.flyout) return;
+  if (!kbdEls.length) return;
+  const t = /** @type {Element} */ (e.target);
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+  const cur = kbdEls.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+    e.preventDefault();
+    kbdIdx = cur >= 0 ? (cur + 1) % kbdEls.length : 0;
+    try { kbdEls[kbdIdx].focus(); } catch (err) {}
+  } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+    e.preventDefault();
+    kbdIdx = cur >= 0 ? (cur - 1 + kbdEls.length) % kbdEls.length : kbdEls.length - 1;
+    try { kbdEls[kbdIdx].focus(); } catch (err) {}
+  } else if (e.key === "Home") {
+    e.preventDefault(); kbdIdx = 0; try { kbdEls[0].focus(); } catch (err) {}
+  } else if (e.key === "End") {
+    e.preventDefault(); kbdIdx = kbdEls.length - 1; try { kbdEls[kbdIdx].focus(); } catch (err) {}
+  } else if (e.key === "Enter" || e.key === " ") {
+    const el = cur >= 0 ? kbdEls[cur] : (kbdIdx >= 0 ? kbdEls[kbdIdx] : null);
+    if (el) { e.preventDefault(); activateEl(el); }
+  }
 }, true);
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !current.sticky) { window.lgPopup.close(); return; }
+  if (e.key === "Escape" && !current.sticky) {
+    if (current.kind === "find") { try { window.lgPopup.findStop(); } catch (err) {} }
+    window.lgPopup.close();
+    return;
+  }
   // 输入框里回车 = 点带 data-pop-submit 的那个按钮（验证码输入框的
   // keydown 监听器在外壳原节点上，对覆盖层副本无效，只能在这里转一道）
   if (e.key === "Enter" && e.target && e.target.tagName === "INPUT") {
@@ -474,6 +677,10 @@ document.addEventListener("mouseover", (e) => {
 
 /* 菜单关闭时清掉菜单内容（弹出层视图本体由主进程藏掉，不吃点击） */
 if (window.lgPopup.onClear) window.lgPopup.onClear(() => {
+  if (current.kind === "find") { try { window.lgPopup.findStop(); } catch (e) {} }
   root.innerHTML = "";
+  current = {};
+  kbdEls = [];
+  kbdIdx = -1;
   document.body.classList.remove("lg-flyout");
 });

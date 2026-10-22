@@ -73,7 +73,7 @@ unset ELECTRON_RUN_AS_NODE NODE_OPTIONS
   --no-sandbox --disable-gpu-sandbox --disable-gpu --use-angle=swiftshader \
   --disable-renderer-backgrounding --disable-backgrounding-occluded-windows \
   --disable-background-timer-throttling \
-  --lg-dev --remote-debugging-port="$CDP_PORT" \
+  --lg-hidden --lg-dev --remote-debugging-port="$CDP_PORT" \
   --lg-userdata="$(cygpath -w "$PROFILE")" >>"$LOG" 2>&1 &
 APP_PID=$!
 ready=0
@@ -110,6 +110,9 @@ run_probe probe-ipc-contract.cjs
 # 设计令牌运行时：按钮高度/圆角/字号是否真的统一（静态 lint 看不出来，
 # 得量实际渲染值——.nav-item 的圆角曾被同规则里第二处声明静默顶掉）
 run_probe probe-design.cjs
+# UX 手感：面板/查找在覆盖层、键盘与焦点路由、验证码保焦、uiScale 几何、
+# 映射编辑器与本地页首帧（v3.16.6）
+run_probe probe-ux.cjs
 
 printf "\n=== 4/4 汇总 ===\n"
 for f in "$OUT"/*-result.json; do

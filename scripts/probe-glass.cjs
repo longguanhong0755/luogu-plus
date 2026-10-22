@@ -79,9 +79,17 @@ function check(name, pass, detail) {
   if (!pageWs) throw new Error("连不上测试页");
   const send = mk(pageWs);
   await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
-  // 3) 等巡检补扫（glassTick % 6 ≈ 15s）——外部站内容异步渲染，首次 apply 时
-  //    视口还是 0，玻璃要靠巡检补上
-  await sleep(20000);
+  // 3) 等巡检补扫（ext 巡检每 6 拍 ≈ 15s 才 diff 一次注册表；视口也是这期间
+  //    才补上的）——轮询到"面贴上了"为止，别写死时长：写死时长把"扫得慢"
+  //    和"扫不上"混成同一个失败信号
+  const deadline = Date.now() + 30000;
+  let painted = 0;
+  while (Date.now() < deadline) {
+    await sleep(700);
+    painted = Number(await evalIn(pageWs, `(()=>{ try{ return document.querySelectorAll('.lg-gx,.lg-gx-noblur').length; }catch(e){ return 0; } })()`)) || 0;
+    if (painted > 0) break;
+  }
+  await sleep(1200);
 
   const probe = `(()=>{
     const q=(k)=>document.querySelector('[data-test="'+k+'"]');

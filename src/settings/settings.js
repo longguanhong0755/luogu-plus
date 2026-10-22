@@ -20,6 +20,17 @@ function toast(msg) {
   t._h = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
+/* 破坏性操作统一走原生确认框（默认按钮是「取消」）。桥接失败时按取消处理，
+   宁可什么都不做，也不默默删掉用户的数据。 */
+async function confirmDanger(o) {
+  try {
+    const r = await window.lgConfig.confirm(o);
+    return !!(r && r.confirmed);
+  } catch (e) {
+    return false;
+  }
+}
+
 /* ---------- 派生色：设置页自己也跟着主题色走 ---------- */
 function derived(dark) {
   if (!presetInfo) return null;
@@ -189,7 +200,9 @@ function paint() {
   const cssNow = typeof cfg.customCSS === "string" ? cfg.customCSS : "";
   if ($("ta-usercss") && $("ta-usercss").value !== cssNow) $("ta-usercss").value = cssNow;
 
-  renderMappings();
+  /* 映射编辑器不再跟着每次 paint 重建：这里每敲一个键 set() 都会 paint 一次，
+     重建列表 = 输入框被换成新节点，焦点和光标每字符丢一次。草稿留在 DOM 里，
+     只在初次加载与外部重置后 renderMappings()。 */
   renderAccounts();
 }
 
@@ -221,11 +234,12 @@ function renderSeedPreview() {
   }
 }
 
-function set(patch, immediate) {
+function set(patch, immediate, noPaint) {
   cfg = { ...cfg, ...patch };
   const needsDerive = "themeSeed" in patch || "themeStrength" in patch || "preset" in patch;
-  // 先按本地 cfg 涂一遍：选中态、强调色立刻跟手
-  paint();
+  // 先按本地 cfg 涂一遍：选中态、强调色立刻跟手（映射草稿输入时不重涂：
+  // 这一层没有别的控件读 mappings，重涂只会打断正在输入的那一行）
+  if (!noPaint) paint();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     const r = await window.lgConfig.set(patch);
@@ -402,6 +416,13 @@ function renderAccounts() {
     del.className = "btn";
     del.textContent = "删除";
     del.addEventListener("click", async () => {
+      const yes = await confirmDanger({
+        title: "删除账号",
+        message: "删除账号 " + a.email + "？",
+        detail: "该账号的登录会话会一并清除，需要重新登录才能恢复。此操作不可撤销。",
+        okText: "删除",
+      });
+      if (!yes) return;
       const r = await window.lgConfig.accountRemove(a.id);
       if (r && r.ok) {
         acctState.accounts = r.accounts;
@@ -665,7 +686,8 @@ function collectMappings() {
     const u = inputs[1].value.trim();
     if (k && u) obj[k] = u;
   });
-  set({ mappings: obj });
+  // 半成品行留在界面上（不入库），保存防抖由 set() 承担；不触发整页重涂
+  set({ mappings: obj }, false, true);
 }
 
 /* ---------- 侧坞编辑器（cfg.dockItems） ---------- */
@@ -1099,7 +1121,10 @@ function bind() {
   });
 
   $("btn-map-add").addEventListener("click", () => {
-    $("map-list").appendChild(mapRow("", ""));
+    const row = mapRow("", "");
+    $("map-list").appendChild(row);
+    const first = row.querySelector("input");
+    if (first) first.focus();
   });
   $("btn-dock-add").addEventListener("click", () => {
     $("dock-list").appendChild(dockRow({ icon: "page", title: "", href: "" }));
@@ -1111,10 +1136,18 @@ function bind() {
     toast("侧坞已恢复默认");
   });
   $("btn-reset").addEventListener("click", async () => {
+    const yes = await confirmDanger({
+      title: "恢复默认设置",
+      message: "把全部设置恢复成默认值？",
+      detail: "配色、布局、功能开关、地址栏映射都会回到默认值。已保存的账号与浏览历史不受影响。此操作不可撤销。",
+      okText: "恢复默认",
+    });
+    if (!yes) return;
     await window.lgConfig.reset();
     cfg = await window.lgConfig.get();
     await refreshPresets();
     paint();
+    renderMappings(); // 重置会整份换掉 mappings：编辑器跟着重建
     toast("已恢复默认（含配色、布局、全部功能开关）");
   });
   $("btn-relaunch").addEventListener("click", () => window.lgConfig.relaunch());
@@ -1139,9 +1172,13 @@ function bind() {
   await loadKeys();
   buildNav();
   paint();
+  renderMappings();
   await refreshPresets();
   paint();          // 派生色到位后重涂一遍（主题色要立刻反映到设置页自己）
   await refreshAccounts();
   renderDockItems();
   renderWallpaperSet();
+  // 首帧卡片在 pre-ready 里藏着：等导航/配色/账号都就位再一次性显示，
+  // 免得 22 张卡先按兜底色闪一下再被 JS 收起
+  document.body.classList.remove("pre-ready");
 })();

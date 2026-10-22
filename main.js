@@ -780,6 +780,9 @@ let writeFailNotifiedAt = 0;
 /* 最近一次写失败（R42）：toast 是一次性的、pending 发完即清，事后无从查证。
    留一份带时间戳的记录给诊断与探针（v315test 断言它，而不是猜 toast 发没发）。 */
 let lastWriteFailure = null;
+/* 哪份文件正处在写失败状态：同名文件下一次写成功才撤掉"失败"提示，
+   其它文件成功不算恢复（磁盘满时大部分写都会失败，别互相盖掉）。 */
+let writeFailActiveFile = "";
 
 function reportWriteFail(file, err) {
   const code = String((err && err.code) || "");
@@ -792,14 +795,22 @@ function reportWriteFail(file, err) {
         : label + " 写入失败（" + (code || "IO") + "）";
   dbg("write fail: " + file + " " + code + " " + ((err && err.message) || ""));
   lastWriteFailure = { file: path.basename(file), code, msg, at: Date.now() };
+  writeFailActiveFile = file;
   writeFailPending = writeFailPending || msg;
   const now = Date.now();
   if (mainWin && !mainWin.isDestroyed() && now - writeFailNotifiedAt > 60000) {
     writeFailNotifiedAt = now;
     writeFailPending = "";
-    try { mainWin.webContents.send("chrome:toast", msg); } catch {}
+    try { mainWin.webContents.send("chrome:toast", { msg, action: "diagnostics", sticky: true }); } catch {}
   }
   return msg; // 探针要断言文案（v315test），别让它靠猜
+}
+
+/* 同一文件写成功 = 之前那次失败已恢复：把常驻提示换掉，别让用户一直以为还坏着 */
+function noteWriteOk(file) {
+  if (!writeFailActiveFile || writeFailActiveFile !== file) return;
+  writeFailActiveFile = "";
+  try { mainWin.webContents.send("chrome:toast", "数据已恢复正常写入：" + path.basename(file)); } catch {}
 }
 
 function readJsonSafe(file, fallback, label) {
@@ -843,6 +854,7 @@ function writeTextAtomicSync(file, text) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(tmp, text, "utf8");
     fs.renameSync(tmp, file);
+    noteWriteOk(file);
     return true;
   } catch (e) {
     try { fs.unlinkSync(tmp); } catch {}
@@ -857,7 +869,7 @@ function writeTextAtomic(file, text) {
     .mkdir(path.dirname(file), { recursive: true })
     .then(() => fs.promises.writeFile(tmp, text, "utf8"))
     .then(() => fs.promises.rename(tmp, file))
-    .then(() => true)
+    .then(() => { noteWriteOk(file); return true; })
     .catch((e) => {
       try { fs.unlinkSync(tmp); } catch {}
       reportWriteFail(file, e);
@@ -875,7 +887,7 @@ function flushPersistenceNotes() {
     send(names + " 内容已损坏，已" + (hasBak ? "备份并" : "") + "回退默认值");
   }
   if (writeFailPending) {
-    send(writeFailPending);
+    send({ msg: writeFailPending, action: "diagnostics", sticky: true });
     writeFailPending = "";
   }
 }
@@ -1493,14 +1505,19 @@ const vtabBoundary = () => (cfg.verticalTabs ? vtabW() : 0);
    （R36）：页面全幅延伸到坞底下（坞浮在页面之上，内容从它底下穿过）。 */
 /* 侧栏所在侧（Edge 左/右）：页面 inset 的 x / right 是唯一几何来源 */
 const vtabSide = () => (cfg.vtabSide === "right" ? "right" : "left");
+const uiScaleNow = () => clampNum(cfg.uiScale, 0.8, 1.4, 1);
 function inset() {
+  /* 外壳用 webFrame.setZoomFactor(uiScale) 缩放，CSS px ≠ DIP；页面视图 bounds
+     是 DIP。这里统一乘 S，否则 120% 时网页会压住侧栏/顶栏。popup/dock 不
+     zoom，外壳锚点在 popup:show 入口做一次 CSS→DIP 换算。 */
+  const S = uiScaleNow();
   if (cfg.verticalTabs) {
-    const w = vtabW();
+    const w = Math.round(vtabW() * S);
     const right = vtabSide() === "right";
-    return { x: right ? 0 : w, right: right ? w : 0, y: VHEAD_H, footer: 0 };
+    return { x: right ? 0 : w, right: right ? w : 0, y: Math.round(VHEAD_H * S), footer: 0 };
   }
   // 水平布局：历史值 2px 的缝（以前坞在左侧时是 56+2=58）
-  return { x: 2, right: 0, y: INSET.y, footer: 0 };
+  return { x: Math.round(2 * S), right: 0, y: Math.round(INSET.y * S), footer: 0 };
 }
 
 function normalizeUrl(u) {
@@ -2424,6 +2441,9 @@ function newTabInGroup(gid) {
 let popupView = null;
 let popupReady = false;
 let popupShown = false;   // 覆盖层当前是不是真的亮着（setVisible 没有读回来的接口）
+/* 弹层是否主动要过焦点：隐藏窗口/短暂失焦时 webContents.isFocused() 不可靠，
+   关闭时按这个意图归还焦点，避免键盘留在已隐藏的覆盖层里。 */
+let popupFocusWanted = false;
 const popupQueue = [];
 
 function ensurePopupView() {
@@ -2480,6 +2500,41 @@ const POPUP_MARGIN = 12;
 let popupFit = null; // { al, ay, pad, wantW, wantH, contentW, contentH, originX, originY }
 let flyoutHold = false; // 拖拽中：光标裁判暂停收回浮层（popup:hold 控制）
 let popupHideAckTimer = null;  // 关路径握手：等外壳把窄条/侧栏画回来的回执（超时兜底）
+let focusRestoreTimer = null;   // 弹层关闭后归还焦点的延迟（focusShell 会取消它）
+let lastFocusTarget = ""; // 探针：最近一次焦点路由意图（隐藏窗口 isFocused 不可靠）
+function focusShell() {
+  lastFocusTarget = "shell";
+  clearTimeout(focusRestoreTimer);
+  focusRestoreTimer = null;
+  if (!mainWin || mainWin.isDestroyed()) return;
+  try { mainWin.webContents.focus(); } catch {}
+}
+function focusActiveTab() {
+  lastFocusTarget = "tab";
+  const t = activeTabId != null ? tabs.get(activeTabId) : null;
+  if (t && t.view && !t.view.webContents.isDestroyed()) {
+    try { t.view.webContents.focus(); } catch {}
+  } else focusShell();
+}
+function focusPopup() {
+  lastFocusTarget = "popup";
+  if (!popupView || popupView.webContents.isDestroyed()) return;
+  const go = () => {
+    if (!popupShown || !popupView || popupView.webContents.isDestroyed()) return;
+    try { popupView.webContents.focus(); } catch {}
+  };
+  /* 视图刚建/刚 setVisible 时 focus() 可能还没生效：补两次重试（不改变幂等性）。 */
+  if (popupReady) go();
+  setTimeout(go, 30);
+  setTimeout(go, 120);
+}
+/* Ctrl+L 的唯一实现：先收弹层，再把键盘交回外壳，最后让外壳聚焦地址栏。
+   焦点只在 DOM 里 focus() 是不够的——页面视图持有键盘时输入仍进旧页。 */
+function focusOmnibox() {
+  hidePopup();
+  focusShell();
+  try { mainWin.webContents.send("chrome:focus-omni"); } catch {}
+}
 let popupPickHideTimer = null; // 浮层里的动作先转外壳执行，外壳自己不收时兜底关
 let popupHideHandoff = "";     // 最近一次浮层收回走的路径："ack" | "timeout"（探针断言用）
 let flyoutHoldTimer = null; // 兜底放行：拖拽中指针被抢走时"放行"可能收不到
@@ -2500,7 +2555,7 @@ function applyPopupRect(w, h) {
      浮层不是"按内容收的卡片"，是那条侧栏本身；宽高都由主进程裁定（文档量出来
      的尺寸只喂普通菜单）。窗口缩放时 syncPopupBounds 会重调这里，高度跟着重算。 */
   const cw = popupFit.fullH
-    ? Math.max(1, Math.min(vtabExpandedW(), Math.max(1, winW - pad.l - pad.r)))
+    ? Math.max(1, Math.min(Math.round(vtabExpandedW() * uiScaleNow()), Math.max(1, winW - pad.l - pad.r)))
     : Math.max(1, Math.min(Math.round(w) || 1, Math.max(1, winW - pad.l - pad.r)));
   const ch = popupFit.fullH
     ? Math.max(1, winH - Math.max(0, Math.round(popupFit.ay) || 0) - pad.b)
@@ -2540,7 +2595,11 @@ function showPopup(payload) {
      和窄条背后的真壁纸对不上）。尺寸随 payload 下发；窗口缩放时 syncPopupBounds 补发。 */
   if (payload && typeof payload === "object") {
     const [w0, h0] = mainWin.getContentSize();
-    payload = { ...payload, win: { w: w0, h: h0 } };
+    /* 外壳锚点是 CSS px（uiscale 缩放后）；主进程视图 bounds 是 DIP。这里统一
+       乘一次，popup/dock 本身不 zoom，避免双重缩放。 */
+    const S = uiScaleNow();
+    const cv = (v) => (v == null || !Number.isFinite(Number(v)) ? v : Math.round(Number(v) * S));
+    payload = { ...payload, al: cv(payload.al), ay: cv(payload.ay), ar: cv(payload.ar), win: { w: w0, h: h0 } };
   }
   if (payload && payload.fit === "rect") {
     // 先占住锚点附近 1px，等 popup:fit 回报尺寸后落定（避免全窗白闪一下）
@@ -2569,6 +2628,12 @@ function showPopup(payload) {
     popupQueue.push(payload);
   }
   try { v.setVisible(true); } catch {}
+  /* 打开就聚焦覆盖层：Ctrl+L/命令面板/菜单的键盘事件必须落到这里；
+     toast 没有 focus 字段，不抢页面焦点。 */
+  if (payload && (payload.focus === "input" || payload.focus === "view")) {
+    popupFocusWanted = true;
+    focusPopup();
+  }
   // 悬停浮层才需要光标轮询收回；普通菜单靠点空白/Esc，轮询反而会误关
   if (payload && payload.flyout) startFlyoutWatch();
   else stopFlyoutWatch();
@@ -2578,6 +2643,13 @@ function showPopup(payload) {
    菜单开着，下一次点账号芯片会被当成"关闭菜单"而空转，用户得点两次。
    所以关闭时回报一声，让外壳把"当前打开的菜单"清掉。 */
 function hidePopup() {
+  /* 焦点在弹层里（或弹层主动要过焦点）才归还，避免光标裁判收浮层时把键盘
+     焦点从页面抢走 */
+  const hadPopupFocus = !!(
+    popupFocusWanted ||
+    (popupView && !popupView.webContents.isDestroyed() && popupView.webContents.isFocused())
+  );
+  popupFocusWanted = false;
   stopFlyoutWatch();
   flyoutHold = false; // 拖拽中被打断（点空白/Esc）时别把挂起状态留下
   /* 兜底定时器一起作废：它若留到下一次弹层显示之后再响，会关掉一个跟它
@@ -2592,6 +2664,10 @@ function hidePopup() {
   if (popupShown) {
     popupShown = false;
     try { mainWin.webContents.send("chrome:popup-hidden", true); } catch {}
+  }
+  if (hadPopupFocus) {
+    clearTimeout(focusRestoreTimer);
+    focusRestoreTimer = setTimeout(() => { focusRestoreTimer = null; focusActiveTab(); }, 80);
   }
   if (!wasFlyout) {
     try { popupView.setVisible(false); } catch {}
@@ -2648,7 +2724,7 @@ function startFlyoutWatch() {
       if (flyoutHold) { outsideSince = 0; return; }
       const pt = screen.getCursorScreenPoint();
       const b = mainWin.getContentBounds();
-      const railW = Math.max(VTAB_EDGE, vtabW()); // 紧凑=4，窄条=46，展开态不会开浮层
+      const railW = Math.round(Math.max(VTAB_EDGE, vtabW()) * uiScaleNow()); // 紧凑=4，窄条=46，展开态不会开浮层
       const railX = vtabSide() === "right" ? b.x + b.width - railW : b.x; // 侧栏在右侧时贴右缘
       const inRail =
         pt.x >= railX - 4 && pt.x <= railX + railW + 4 &&
@@ -2815,13 +2891,18 @@ function pushTabsSoon() {
 //   · 非洛谷页面探不到 → 沿用缓存（切页不再掉登录态）
 //   · 确实是洛谷页面但探不到用户区 → 说明真的登出了，才清空缓存
 let lastUser = null;
+/* 登录过期 ≠ 未登录：网络兜底确认站点已登出时保留账号记录与头像，只打过期标记。
+   否则芯片直接变"未登录"，用户看不出是"这个账号掉线了"还是"从来没登录过"。 */
+let loginExpired = false;
 const LUOGU_HOST_RE = /(^|\.)luogu\.(com\.cn|org|com)$/i;
 function hostOf(u) {
   try { return new URL(String(u || "")).hostname || ""; } catch { return ""; }
 }
 
 function sendUser(u) {
-  try { mainWin.webContents.send("chrome:user", u); } catch {}
+  let payload = u;
+  if (loginExpired) payload = u ? { ...u, expired: true } : { uid: "", name: "", avatar: "", expired: true };
+  try { mainWin.webContents.send("chrome:user", payload); } catch {}
 }
 
 /* 用户态的网络兜底：页面刮取只在洛谷标签上成立，头像却要在每个页面都显示
@@ -2859,9 +2940,13 @@ function refreshUserNet(force) {
     userProbe = null;
     if (!u || acctId !== cfg.activeAccountId) return; // 失败/期间又切了账号：保持现状
     if (u.loggedOut) {
-      if (lastUser) { lastUser = null; sendUser(null); }
+      /* 站点明确给的是"未登录"：不删缓存用户（头像/昵称还认得出来），打过期标记
+         让外壳提示重新登录；下一轮探测仍登出就继续显示过期。 */
+      loginExpired = true;
+      sendUser(lastUser);
       return;
     }
+    loginExpired = false;
     // 网络通道与页面刮取同权：拿到就更新缓存并立刻重涂右上角芯片
     if (!lastUser || lastUser.uid !== u.uid || lastUser.name !== u.name || !lastUser.avatar) {
       lastUser = u;
@@ -2964,6 +3049,7 @@ function pushUser() {  if (!mainWin || mainWin.isDestroyed()) return;
       if (site) {
         const scraped = r.uid || r.name ? { uid: r.uid || "", name: r.name || "", avatar: r.avatar || "" } : null;
         if (scraped) {
+          loginExpired = false;
           lastUser = scraped;
         } else {
           /* 洛谷页没扫到用户态（首帧未注入/页面未加载完/真登出）：不再直接
@@ -3033,7 +3119,12 @@ function wirePageView(id, view) {
     if (!isMainFrame || code === -3) return;
     if (id !== activeTabId) return; // 后台标签的失败不打扰
     if (process.argv.some((a) => /^--lg-[a-z0-9]*test$/.test(a))) return;
-    try { mainWin.webContents.send("chrome:toast", "无法加载页面（" + (desc || code) + "）"); } catch {}
+    try {
+      mainWin.webContents.send("chrome:toast", {
+        msg: "无法加载页面（" + (desc || code) + "）",
+        action: "retry-load",
+      });
+    } catch {}
   });
 
   wc.on("did-finish-load", () => {
@@ -3962,7 +4053,7 @@ const SHORTCUT_ACTIONS = [
     mainWin.setFullScreen(!mainWin.isFullScreen());
     setTimeout(repaintSiteViews, 320);
   }],
-  ["focus-omni", "聚焦地址栏", "CmdOrCtrl+L", () => { try { mainWin.webContents.send("chrome:focus-omni"); } catch {} }],
+  ["focus-omni", "聚焦地址栏", "CmdOrCtrl+L", () => focusOmnibox()],
   ["palette", "命令面板", "CmdOrCtrl+Shift+P", () => { try { mainWin.webContents.send("chrome:palette"); } catch {} }],
   ["tab-search", "搜索标签页", "CmdOrCtrl+Shift+A", () => { try { mainWin.webContents.send("chrome:tab-search"); } catch {} }],
   ["shortcut-help", "键盘快捷键总览", "F1", () => { try { mainWin.webContents.send("chrome:shortcuts"); } catch {} }],
@@ -4900,10 +4991,11 @@ const LOGIN_FAIL_TEXT = {
   "captcha-failed": "验证码错误次数过多",
   "cancelled": "已取消",
 };
-ipcMain.handle("lg-account:switch", async (_e, id) => {
+ipcMain.handle("lg-account:switch", async (_e, id, opts) => {
+  const force = !!(opts && opts.force); // 「登录已过期 · 重新登录」：跳过会话探测，强制重登
   const target = id && accounts.some((a) => a.id === id) ? id : "";
   const prev = cfg.activeAccountId;
-  if (target && target === prev) {
+  if (target && target === prev && !force) {
     // 同账号 = 设置页的「重新加载」入口：把洛谷标签刷一遍，兑现按钮文案。
     // 站外标签（shared 分区）与洛谷账号无关，不动。
     for (const t of tabs.values()) {
@@ -4916,8 +5008,8 @@ ipcMain.handle("lg-account:switch", async (_e, id) => {
   const acc = accounts.find((a) => a.id === target);
   if (acc) {
     const sess = acctSession(target);
-    let user = await probeSessionUser(sess);
-    if (!user || !user.uid) {
+    let user = force ? null : await probeSessionUser(sess);
+    if (!force && (!user || !user.uid)) {
       // 探测假阴性会把"已经登录着"的账号拖去重新登录（要过验证码），代价太高；
       // 这里再确认一次，真失效的账号不会因为多探一次就变好。
       user = await probeSessionUser(sess);
@@ -4948,6 +5040,7 @@ ipcMain.handle("lg-account:switch", async (_e, id) => {
   // 和昵称（"切换后右上角还是原账号"的观感就是这么来的）。清掉后先显示
   // "未登录"，新页面 did-finish-load 的 pushUser 会立刻补上新账号。
   lastUser = null;
+  loginExpired = false;
   sendUser(null);
   // 新账号的登录态上面已经写进会话分区：直接走网络兜底把新头像/昵称取回来，
   // 不用等第一个洛谷标签加载完（否则切换后右上角要空到下次打开洛谷页）。
@@ -4987,9 +5080,31 @@ ipcMain.handle("lg-account:switch", async (_e, id) => {
   return { ok: true, activeId: cfg.activeAccountId, tabs: keep.length || 1 };
 });
 
-ipcMain.handle("lg-app:open-settings", () => {
-  openSettingsTab();
+ipcMain.handle("lg-app:open-settings", (_e, section) => {
+  openSettingsTab(typeof section === "string" && section ? section : undefined);
   return { ok: true };
+});
+
+/* 危险操作统一确认：原生对话框是窗口模态的，键盘可操作、不会被网页视图盖住。
+   默认按钮永远是「取消」，防止连按回车误删。 */
+ipcMain.handle("lg-app:confirm", async (_e, p) => {
+  const o = p && typeof p === "object" ? p : {};
+  if (!mainWin || mainWin.isDestroyed()) return { ok: false, confirmed: false };
+  try {
+    const r = await dialog.showMessageBox(mainWin, {
+      type: o.danger === false ? "question" : "warning",
+      buttons: [String(o.cancelText || "取消"), String(o.okText || "确定")],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: String(o.title || "确认操作"),
+      message: String(o.message || "确定继续？"),
+      detail: String(o.detail || ""),
+    });
+    return { ok: true, confirmed: r.response === 1 };
+  } catch (e) {
+    return { ok: false, confirmed: false, message: String((e && e.message) || e) };
+  }
 });
 
 /* 应用首页（本地起始页）：已开着就激活，没有就新开 */
@@ -5006,6 +5121,34 @@ ipcMain.handle("lg-app:open-home", () => {
 ipcMain.handle("lg-app:open-history", () => {
   openHistoryTab();
   return { ok: true };
+});
+
+/* 探针只读快照（隐藏实例里页面视图的 innerWidth 不随 setBounds 更新，
+   几何/焦点断言一律以主进程为准）。不含任何用户数据。 */
+ipcMain.handle("lg-probe:ux", (_e, req) => {
+  if (!mainWin || mainWin.isDestroyed()) return { ok: false };
+  if (req && req.act === "focus-omni") focusOmnibox(); // 走与 Ctrl+L 完全同一条实现
+  const t = activeTabId != null ? tabs.get(activeTabId) : null;
+  return {
+    ok: true,
+    win: mainWin.getContentSize(),
+    uiScale: uiScaleNow(),
+    inset: inset(),
+    tabs: tabOrder.map((id) => {
+      const x = tabs.get(id);
+      let bounds = null;
+      try { bounds = x && x.view ? x.view.getBounds() : null; } catch {}
+      return { id, url: x ? x.url : "", bounds };
+    }),
+    popup: popupShown && popupView ? { bounds: popupView.getBounds(), fit: popupFit } : null,
+    dock: dockView ? { bounds: dockView.getBounds(), visible: !!dockShown } : null,
+    focus: {
+      last: lastFocusTarget,
+      shell: mainWin.webContents.isFocused(),
+      popup: popupView && !popupView.webContents.isDestroyed() ? popupView.webContents.isFocused() : false,
+      tab: t && t.view && !t.view.webContents.isDestroyed() ? t.view.webContents.isFocused() : false,
+    },
+  };
 });
 
 /* 本地页（历史/设置）点条目 → 走当前站点标签，没有就新开 */
@@ -5087,7 +5230,7 @@ ipcMain.handle("lg-app:zoom", (_e, dir) => {
    不用 findInPage：它要求目标 webContents 持有焦点，而焦点在查找条输入框里
    （实测站点视图无焦点时 findInPage 静默不干活，连 found-in-page 都不发）。
    页面内 window.find() 没有焦点要求，选中高亮走浏览器默认选区样式。 */
-ipcMain.handle("lg-app:find", (_e, payload) => {
+function findInActivePage(payload) {
   const t = tabs.get(activeTabId);
   if (!t || !t.view) return Promise.resolve({ ok: false });
   const text = String((payload && payload.text) || "");
@@ -5165,8 +5308,8 @@ ipcMain.handle("lg-app:find", (_e, payload) => {
       try { return { ok: true, ...JSON.parse(r) }; } catch { return { ok: true, found: false, count: 0 }; }
     })
     .catch((e) => ({ ok: false, message: String(e) }));
-});
-ipcMain.handle("lg-app:find-stop", () => {
+}
+function stopFindInActivePage() {
   const t = tabs.get(activeTabId);
   if (t && t.view) {
     try { t.view.webContents.executeJavaScript("window.getSelection().removeAllRanges()", true); } catch {}
@@ -5174,7 +5317,11 @@ ipcMain.handle("lg-app:find-stop", () => {
     try { t.view.webContents.executeJavaScript("try{CSS.highlights&&CSS.highlights.delete('lg-find')}catch(e){}", true); } catch {}
   }
   return Promise.resolve({ ok: true });
-});
+}
+ipcMain.handle("lg-app:find", (_e, payload) => findInActivePage(payload));
+ipcMain.handle("lg-app:find-stop", () => stopFindInActivePage());
+ipcMain.handle("popup:find", (_e, payload) => findInActivePage(payload));
+ipcMain.handle("popup:find-stop", () => stopFindInActivePage());
 /* Ctrl+Shift+T 恢复最近关闭的标签 */
 ipcMain.handle("tab:reopen", () => {
   const id = reopenClosedTab();
@@ -5486,6 +5633,10 @@ ipcMain.handle("lg-app:relaunch", () => {
 });
 
 /* ---------- 弹出层覆盖视图 ---------- */
+ipcMain.handle("lg-app:focus-shell", () => {
+  focusShell();
+  return { ok: true };
+});
 ipcMain.handle("popup:show", (_e, p) => {
   showPopup(p || {});
   return { ok: true };
@@ -6594,6 +6745,10 @@ function wireDownloads(sess) {
       dbg("download " + state + ": " + rec.savePath);
       /* 只在真正 completed 时通知：interrupted / cancelled 都不是"下好了" */
       if (state === "completed") notifyDownloadDone(rec);
+      else if (state === "interrupted") {
+        const nm = path.basename(rec.savePath || rec.filename || "下载");
+        try { mainWin.webContents.send("chrome:toast", { msg: "下载中断：" + nm + "（可在下载面板重试）", action: "downloads" }); } catch {}
+      }
     });
     sync(null);
     saveDownloads();
@@ -7481,31 +7636,28 @@ async function selftest() {
         : { error: "no-history-tab" };
       if (histTab) closeTab(histTab.id);
 
-      /* I7 命令面板 + 快捷键总览（外壳函数直接驱动，读真实 DOM） */
-      const pal = JSON.parse(
-        await mainWin.webContents.executeJavaScript(
-          `(function(){
-            var out = {};
-            openPalette();
-            out.open = !document.getElementById('palette').hidden;
-            out.total = document.querySelectorAll('#pal-list .pal-item').length;
-            var inp = document.getElementById('pal-input');
-            inp.value = '缩放';
-            renderPalette('缩放');
-            out.filtered = document.querySelectorAll('#pal-list .pal-item').length;
-            out.filteredTitles = Array.prototype.map.call(
-              document.querySelectorAll('#pal-list .pal-item > span:first-child'),
-              function(s){ return s.textContent; });
-            closePalette();
-            out.closed = document.getElementById('palette').hidden;
-            showShortcuts();
-            out.shortcutRows = document.querySelectorAll('#pal-list .pal-item').length;
-            closePalette();
-            return JSON.stringify(out);
-          })()`,
-          true
-        )
-      );
+      /* I7 命令面板 + 快捷键总览（实体在覆盖层：驱动外壳函数，读 popup 的 DOM） */
+      await mainWin.webContents.executeJavaScript(`openPalette(), "ok"`, true);
+      for (let i = 0; i < 30; i++) {
+        if (popupView && !popupView.webContents.isDestroyed()) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      const palPopupJs = (code) => popupView.webContents.executeJavaScript(code, true);
+      const pal = {
+        open: !!(popupView && popupShown),
+        total: await palPopupJs(`document.querySelectorAll('#pal-list .pal-item').length`),
+      };
+      await palPopupJs(`(function(){ var i=document.getElementById('pal-input'); i.value='缩放'; i.dispatchEvent(new Event('input',{bubbles:true})); return 'ok'; })()`);
+      pal.filtered = await palPopupJs(`Array.prototype.filter.call(document.querySelectorAll('#pal-list .pal-item'), function(e){ return !e.hidden; }).length`);
+      pal.filteredTitles = await palPopupJs(`Array.prototype.map.call(Array.prototype.filter.call(document.querySelectorAll('#pal-list .pal-item'), function(e){ return !e.hidden; }), function(e){ var t=e.querySelector('.pal-title'); return t ? t.textContent : ''; })`);
+      await mainWin.webContents.executeJavaScript(`closePalette(), "ok"`, true);
+      await new Promise((r) => setTimeout(r, 250));
+      pal.closed = !(await mainWin.webContents.executeJavaScript(`paletteOpen()`, true));
+      await mainWin.webContents.executeJavaScript(`showShortcuts(), "ok"`, true);
+      await new Promise((r) => setTimeout(r, 450));
+      pal.shortcutRows = await palPopupJs(`document.querySelectorAll('#pal-list .pal-item').length`);
+      await mainWin.webContents.executeJavaScript(`closePalette(), "ok"`, true);
 
       const roundTrip = { flipped, flippedShell, flippedPage, restoredShell, restoredPage, presetPaper, presetBack, browser, library, palette: pal };
       let ipc = "no-settings-tab";
@@ -7996,8 +8148,11 @@ async function selftest() {
       }
       await mainWin.webContents.executeJavaScript(`openPalette()`, true);
       await new Promise((r) => setTimeout(r, 800));
-      const im3 = await safeCapture(mainWin.webContents);
-      if (im3) fsx.writeFileSync(base + "-palette.png", im3.toPNG());
+      // 命令面板实体在覆盖层：截弹层视图，不是外壳
+      if (popupView && popupShown) {
+        const im3 = await safeCapture(popupView.webContents);
+        if (im3) fsx.writeFileSync(base + "-palette.png", im3.toPNG());
+      }
       await mainWin.webContents.executeJavaScript(`closePalette()`, true);
       openHistoryTab();
       await new Promise((r) => setTimeout(r, 3000));
@@ -8831,24 +8986,22 @@ async function selftest() {
       await new Promise((res) => { try { siteTab.view.webContents.once("did-finish-load", res); } catch {} setTimeout(res, 25000); });
       await sleep(2000);
 
-      /* 4) 页内查找（window.find 实现）：查找条 → 输入 → 同步计数 */
+      /* 4) 页内查找（window.find 实现）：查找条在覆盖层 → 输入 → 同步计数 */
       try {
         await mainWin.webContents.executeJavaScript(`window.lgChrome.findStart()`, true);
-        await sleep(500);
-        out.findbarShown = await mainWin.webContents.executeJavaScript(
-          `!document.getElementById("findbar").hidden`, true);
-        await mainWin.webContents.executeJavaScript(
-          `document.getElementById("find-input").value = "洛谷"; document.getElementById("find-input").dispatchEvent(new Event("input", { bubbles: true })); "ok"`, true);
+        await sleep(700);
+        out.findbarShown = !!(popupShown && popupView && !popupView.webContents.isDestroyed());
+        const findJs = (code) => popupView.webContents.executeJavaScript(code, true);
+        await findJs(
+          `document.getElementById("find-input").value = "洛谷"; document.getElementById("find-input").dispatchEvent(new Event("input", { bubbles: true })); "ok"`);
         await sleep(1200);
-        out.findCount = await mainWin.webContents.executeJavaScript(
-          `document.getElementById("find-count").textContent`, true);
+        out.findCount = await findJs(`document.getElementById("find-count").textContent`);
         // Enter 走下一个
-        await mainWin.webContents.executeJavaScript(
-          `document.getElementById("find-input").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); "ok"`, true);
+        await findJs(
+          `document.getElementById("find-input").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); "ok"`);
         await sleep(600);
-        out.findCountNext = await mainWin.webContents.executeJavaScript(
-          `document.getElementById("find-count").textContent`, true);
-        await mainWin.webContents.executeJavaScript(`window.lgChrome.findStop()`, true);
+        out.findCountNext = await findJs(`document.getElementById("find-count").textContent`);
+        await mainWin.webContents.executeJavaScript(`closeFindbar()`, true);
       } catch (e) { out.findErr = String(e); }
 
 
@@ -9018,7 +9171,7 @@ async function selftest() {
            })()`, true);
         out.chromeControls = await mainWin.webContents.executeJavaScript(
           // v3.5.1 起右上角静音钮撤掉（全局静音留在命令面板），探针反向断言它不在
-          `JSON.stringify({ muteBtnGone: !document.getElementById("btn-mute"), logoGone: !document.getElementById("logo"), findbar: !!document.getElementById("findbar") })`, true);
+          `JSON.stringify({ muteBtnGone: !document.getElementById("btn-mute"), logoGone: !document.getElementById("logo"), findbarGone: !document.getElementById("findbar") })`, true);
         // 倒计时写入 → 重载首页 → 等加载完成再读
         await ht.view.webContents.executeJavaScript(
           `(async function(){ await window.lgConfig.set({ countdowns: [{ name: "NOIP", date: "2026-11-28" }] }); return "saved"; })()`, true);
@@ -10836,9 +10989,9 @@ async function selftest() {
       /* ---------- 7) 搜索标签页大列表（图标 + 标题 + 网址 + 计数） ---------- */
       try {
         await js("openTabSearch()");
-        await sleep(350);
+        await sleep(700);
         const pal = JSON.parse(
-          await js(`(function(){var p=document.getElementById("palette");var rows=document.querySelectorAll("#pal-list .pal-item");var f=rows[0];return JSON.stringify({open:!p.hidden,tabs:p.classList.contains("pal-tabs"),rows:rows.length,head:(document.querySelector("#pal-list .pal-head")||{}).textContent||"",hasIcon:!!(f&&f.querySelector(".t-icon")),hasSub:!!(f&&f.querySelector(".pal-hint")),ph:document.getElementById("pal-input").placeholder});})()`)
+          await popupView.webContents.executeJavaScript(`(function(){var p=document.getElementById("palette");var rows=document.querySelectorAll("#pal-list .pal-item");var f=rows[0];return JSON.stringify({open:!!p&&getComputedStyle(p).display!=="none",tabs:p.classList.contains("pal-tabs"),rows:rows.length,head:(document.querySelector("#pal-list .pal-head")||{}).textContent||"",hasIcon:!!(f&&f.querySelector(".t-icon")),hasSub:!!(f&&f.querySelector(".pal-hint")),ph:document.getElementById("pal-input").placeholder});})()`, true)
         );
         await js("closePalette()");
         out.search = pal;

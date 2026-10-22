@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld("lgConfig", {
   wallNext: () => ipcRenderer.invoke("lg-wall:next"),
   wallDedupe: () => ipcRenderer.invoke("lg-wall:dedupe"),
   reset: () => ipcRenderer.invoke("lg-config:reset"),
+  /* 危险操作确认：原生窗口模态框，默认按钮是「取消」 */
+  confirm: (opts) => ipcRenderer.invoke("lg-app:confirm", opts),
   relaunch: () => ipcRenderer.invoke("lg-app:relaunch"),
   /* 历史 / 下载 */
   historyList: (query) => ipcRenderer.invoke("lg-history:list", query),
