@@ -28,7 +28,9 @@ node scripts/lint-silent-catch.cjs || fail=1
 
 step "5/8 JavaScript 语法"
 bad=0
-for f in main.js preload-*.js src/*.js src/chrome/*.js src/settings/*.js src/home/*.js \
+# src/inject/ 是注入层的能力模块（内核 src/inject.js 之外的第二层目录），
+# 漏掉它等于新模块从此不受语法门禁管——加进 glob。
+for f in main.js preload-*.js src/*.js src/inject/*.js src/chrome/*.js src/settings/*.js src/home/*.js \
          src/popup/*.js src/history/*.js src/dock/*.js scripts/*.js scripts/*.cjs; do
   [ -f "$f" ] || continue
   node --check "$f" >/dev/null 2>&1 || { echo "  语法错误: $f"; node --check "$f" 2>&1 | head -3; bad=1; }

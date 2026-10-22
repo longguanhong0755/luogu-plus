@@ -4,7 +4,8 @@
    跳转统一走 openUrl：首页是本地标签，主进程会自动开新站点标签。
    ============================================================ */
 (function () {
-  const $ = (id) => document.getElementById(id);
+  /** @type {(id: string) => any} */
+const $ = (id) => document.getElementById(id);
   let mappings = {};
 
   /* ---------- 首页板块偏好（设置页「应用首页」卡片可改） ----------

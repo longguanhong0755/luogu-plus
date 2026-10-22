@@ -1,5 +1,6 @@
 /* Luogu++ — 历史 / 下载 页逻辑。
    桥接走 preload-config.js（与设置页同一个 lgConfig 对象）。 */
+/** @type {(id: string) => any} */
 const $ = (id) => document.getElementById(id);
 let pane = "history";
 

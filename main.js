@@ -1169,14 +1169,27 @@ let INJECT_CSS = readAsset("inject.css");
 let EXT_CSS = readAsset("ext.css");
 let MATERIAL_CSS = readAsset("material.css");
 let COMMON_CSS = readAsset("common.css");
-let INJECT_JS = readAsset("inject.js");
+/* ---------- 注入层 JS：内核 + 能力模块 ----------
+   src/inject.js 是内核（共享状态 window.__lgInjectCtx、apply() 主干、巡检、
+   观察器、启动时序）；各项能力拆在 src/inject/<模块>.js，按下面这份清单拼成
+   **一段**脚本一次 executeJavaScript 注入。拼装而不是逐个注入，是为了保住
+   原来的时序：内核先建好 ctx，模块按序登记，最后一个登记完才启动
+   （内核 bootInject）——等于旧文件一次执行到底，中间没有 await 让页面先跑一拍。
+   清单顺序 = 依赖顺序（viewrect 被 wallpaper 调、selection 被 luogu-list 调）；
+   内核的 EXPECTED 也是这同一份清单，少一个模块就永远等不到启动，宁可整层不注入
+   也不在半装载状态下跑页面。清单与 src/inject/ 目录同处一地，加模块时两处一起改。 */
+const INJECT_MODULES = ["viewrect.js", "wallpaper.js", "material.js", "reader.js", "translate.js", "selection.js", "luogu-list.js", "luogu-page.js"];
+function injectBundle() {
+  return [readAsset("inject.js")].concat(INJECT_MODULES.map((m) => readAsset("inject/" + m))).join("\n;\n");
+}
+let INJECT_JS = injectBundle();
 function reloadInjectAssets() {
   try {
     INJECT_CSS = fs.readFileSync(path.join(__dirname, "src", "inject.css"), "utf8");
     EXT_CSS = fs.readFileSync(path.join(__dirname, "src", "ext.css"), "utf8");
     MATERIAL_CSS = fs.readFileSync(path.join(__dirname, "src", "material.css"), "utf8");
     COMMON_CSS = fs.readFileSync(path.join(__dirname, "src", "common.css"), "utf8");
-    INJECT_JS = fs.readFileSync(path.join(__dirname, "src", "inject.js"), "utf8");
+    INJECT_JS = injectBundle();
     return true;
   } catch (e) {
     dbg("reloadInjectAssets failed: " + e);
@@ -1317,6 +1330,9 @@ function startDevWatch() {
       else if (/^inject\.js$/i.test(name)) kick("pages", reloadPages);
     });
   } catch (e) { dbg("[dev] watch src root failed: " + e); }
+  /* 注入层能力模块（src/inject/*.js）：与 inject.js 同档——改的是运行时，必须
+     重灌全部页面（reloadPages 内部会先 reloadInjectAssets 重读整份素材）。 */
+  watchDir(path.join(SRC, "inject"), "pages", reloadPages);
   if (ROOT !== __dirname) {
     try {
       fs.watch(ROOT, (_ev, name) => {

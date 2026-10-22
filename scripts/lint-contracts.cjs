@@ -200,9 +200,16 @@ const defined = new Set();
 }
 /* 4b. 消费点：cfg.x / cfgState.x（rawCfg.x 也算） */
 const consumed = new Map(); // key -> [文件]
+/* 注入层能力模块（src/inject/*.js）：配置消费点如今分散在这些文件里，
+   不并进来就等于"模块里的配置键不再被对账"，删配置键不会有任何告警。 */
+const injectModuleSrc = fs.existsSync(path.join(ROOT, "src", "inject"))
+  ? fs.readdirSync(path.join(ROOT, "src", "inject")).filter((f) => f.endsWith(".js")).sort()
+      .map((f) => ({ id: "src/inject/" + f, src: read("src/inject/" + f) }))
+  : [];
 const CONSUMERS = {
   "main.js": mainJs,
   "src/inject.js": injectJs,
+  ...Object.fromEntries(injectModuleSrc.map((m) => [m.id, m.src])),
   "src/chrome/chrome.js": chromeJs,
   "src/settings/settings.js": settingsJs,
   "src/home/home.js": homeJs,

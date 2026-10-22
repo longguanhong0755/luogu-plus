@@ -25,7 +25,12 @@ function stripComments(src) {
     .replace(/(^|[^:"'`\\])\/\/[^\n]*/g, (m, p1) => p1 + " ".repeat(Math.max(0, m.length - p1.length)));
 }
 
-const TARGETS = ["main.js", "src/inject.js", "src/chrome/chrome.js", "src/settings/settings.js", "src/home/home.js", "src/popup/popup.js", "src/history/history.js", "src/dock/dock.js"];
+/* src/inject/ 是注入层的能力模块目录（内核 src/inject.js 之外）。拆成模块后
+   这些文件里的顶层函数同样要进门禁，否则新模块天然"免检"。 */
+const injectModules = fs.existsSync(R("src/inject"))
+  ? fs.readdirSync(R("src/inject")).filter((f) => f.endsWith(".js")).sort().map((f) => "src/inject/" + f)
+  : [];
+const TARGETS = ["main.js", "src/inject.js", ...injectModules, "src/chrome/chrome.js", "src/settings/settings.js", "src/home/home.js", "src/popup/popup.js", "src/history/history.js", "src/dock/dock.js"];
 
 /* 全文（去注释）：用于"这个名字在别处出现过吗" */
 const allSrc = TARGETS.map((f) => stripComments(fs.readFileSync(R(f), "utf8"))).join("\n");

@@ -1,6 +1,7 @@
 /* Luogu++ — 设置页逻辑（应用内标签页版）
    结构：左侧按用途分组导航，右侧一次只显示一组卡片。
    配色：中性基色（预设）× 主题色种子，主进程算好派生色下发，这里只贴变量。 */
+/** @type {(id: string) => any} */
 const $ = (id) => document.getElementById(id);
 let cfg = {};
 let saveTimer = null;

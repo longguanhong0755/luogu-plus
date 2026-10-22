@@ -33,9 +33,29 @@ declare global {
     __lgFlipCount?: number;
     __lgDragLog?: unknown[];
     __lgDragDbg?: () => void;
+    /* 注入层共享上下文：内核 src/inject.js 建，各能力模块 src/inject/*.js 取。
+       模块文件靠它拿 cfg/state/isLuoguPage 等共享状态与 ctx.features 上的兄弟能力。 */
+    __lgInjectCtx?: any;
+    /** IDE 模式（R38）判定调试出口 */
+    __lgIdeInPage?: () => { on: boolean; state: boolean; bridge: boolean };
+    __lgIdeSync?: () => void;
 
     /* ---- 站点页：主进程注入的账号态与网络态 ---- */
     __lgUser?: any;
     __lgContests?: any;
+
+    /* ---- 图标库（src/icons.js 在 window 上挂的）---- */
+    LGIcons?: {
+      PATHS: Record<string, string>;
+      svg: (name: string, size?: number) => string;
+    };
+
+    /* ---- 外壳层的地址栏解析（src/chrome/chrome.js 挂的，供输入框调用）---- */
+    resolveOmnibox?: (
+      raw: string,
+      mappings: unknown[],
+      searchTpl: string,
+      searchIsLuogu: boolean
+    ) => { url: string; label?: string; kind?: string } | string;
   }
 }

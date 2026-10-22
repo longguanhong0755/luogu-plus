@@ -1,5 +1,5 @@
 {
- "total": 430,
+ "total": 308,
  "per": {
   "main.js": {
    "count": 70,
@@ -18,65 +18,113 @@
    ]
   },
   "src/chrome/chrome.js": {
-   "count": 98,
+   "count": 95,
    "samples": [
-    "Property 'LGIcons' does not exist on type 'Window & typeof globalThis'.",
-    "Cannot redeclare block-scoped variable 'DOCK_ICONS'.",
-    "Property 'LGIcons' does not exist on type 'Window & typeof globalThis'."
+    "Property 'style' does not exist on type 'Element'.",
+    "Property 'dataset' does not exist on type 'Element'.",
+    "Property 'dataset' does not exist on type 'Element'."
    ]
   },
   "src/dock/dock.js": {
-   "count": 9,
+   "count": 8,
    "samples": [
-    "Cannot redeclare block-scoped variable 'root'.",
     "Property 'style' does not exist on type 'Element'.",
-    "Property 'offsetLeft' does not exist on type 'Element'."
+    "Property 'offsetLeft' does not exist on type 'Element'.",
+    "Property 'style' does not exist on type 'Element'."
    ]
   },
   "src/history/history.js": {
-   "count": 6,
+   "count": 2,
    "samples": [
-    "Cannot redeclare block-scoped variable '$'.",
-    "Property 'value' does not exist on type 'HTMLElement'.",
-    "Property 'value' does not exist on type 'HTMLElement'."
+    "Property 'dataset' does not exist on type 'Element'.",
+    "Property 'dataset' does not exist on type 'Element'."
    ]
   },
   "src/home/home.js": {
-   "count": 12,
+   "count": 4,
    "samples": [
     "Property 'placeholder' does not exist on type 'HTMLElement'.",
-    "Property 'value' does not exist on type 'HTMLElement'.",
-    "Property 'value' does not exist on type 'HTMLElement'."
-   ]
-  },
-  "src/icons.js": {
-   "count": 1,
-   "samples": [
-    "Property 'LGIcons' does not exist on type 'Window & typeof globalThis'."
+    "The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.",
+    "The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type."
    ]
   },
   "src/inject.js": {
-   "count": 75,
+   "count": 9,
    "samples": [
-    "Property '__lgNativeTheme' does not exist on type 'Window & typeof globalThis'.",
-    "Property '__lgNativeTheme' does not exist on type 'Window & typeof globalThis'.",
-    "Property '__lgNativeTheme' does not exist on type 'Window & typeof globalThis'."
+    "The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.",
+    "The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.",
+    "The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type."
+   ]
+  },
+  "src/inject/luogu-list.js": {
+   "count": 14,
+   "samples": [
+    "Type 'ParentNode' is missing the following properties from type 'Element': attributes, classList, className, c",
+    "Property 'value' does not exist on type 'Element'.",
+    "Property 'value' does not exist on type 'Element'."
+   ]
+  },
+  "src/inject/luogu-page.js": {
+   "count": 18,
+   "samples": [
+    "Property 'src' does not exist on type 'Element'.",
+    "Property 'src' does not exist on type 'Element'.",
+    "Property 'src' does not exist on type 'Element'."
+   ]
+  },
+  "src/inject/material.js": {
+   "count": 10,
+   "samples": [
+    "Property '__lgRounded' does not exist on type 'Element'.",
+    "Property '__lgRounded' does not exist on type 'Element'.",
+    "Property 'style' does not exist on type 'Element'."
+   ]
+  },
+  "src/inject/reader.js": {
+   "count": 2,
+   "samples": [
+    "Property 'querySelectorAll' does not exist on type 'Node'.",
+    "Property 'querySelectorAll' does not exist on type 'Node'."
+   ]
+  },
+  "src/inject/selection.js": {
+   "count": 4,
+   "samples": [
+    "Property 'closest' does not exist on type 'EventTarget'.",
+    "Property 'closest' does not exist on type 'EventTarget'.",
+    "Property 'closest' does not exist on type 'EventTarget'."
+   ]
+  },
+  "src/inject/translate.js": {
+   "count": 3,
+   "samples": [
+    "Property 'tagName' does not exist on type 'ParentNode'.",
+    "Property 'closest' does not exist on type 'ParentNode'.",
+    "Property 'closest' does not exist on type 'ParentNode'."
+   ]
+  },
+  "src/inject/wallpaper.js": {
+   "count": 8,
+   "samples": [
+    "Property 'muted' does not exist on type 'Element'.",
+    "Property 'loop' does not exist on type 'Element'.",
+    "Property 'pause' does not exist on type 'Element'."
    ]
   },
   "src/popup/popup.js": {
-   "count": 29,
+   "count": 28,
    "samples": [
-    "Cannot redeclare block-scoped variable 'root'.",
+    "Property 'closest' does not exist on type 'EventTarget'.",
     "Property 'closest' does not exist on type 'EventTarget'.",
     "Property 'closest' does not exist on type 'EventTarget'."
    ]
   },
   "src/settings/settings.js": {
-   "count": 127,
+   "count": 30,
    "samples": [
-    "Cannot redeclare block-scoped variable '$'.",
-    "Property '_h' does not exist on type 'HTMLElement'.",
-    "Property '_h' does not exist on type 'HTMLElement'."
+    "Property 'dataset' does not exist on type 'Element'.",
+    "Property 'dataset' does not exist on type 'Element'.",
+    "Property 'dataset' does not exist on type 'Element'."
    ]
   }
  }

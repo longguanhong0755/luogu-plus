@@ -12,6 +12,7 @@ bad=0
 for f in $(git status --porcelain | awk '{print $2}' | grep -v '^$'); do
   [ -f "$f" ] || continue
   if git cat-file -e "HEAD:$f" 2>/dev/null; then
+    # 已有文件：行尾风格必须与 HEAD 一致
     head_cr=$(git show "HEAD:$f" | tr -cd '\r' | wc -c)
     head_lines=$(git show "HEAD:$f" | wc -l)
   else
@@ -27,6 +28,28 @@ for f in $(git status --porcelain | awk '{print $2}' | grep -v '^$'); do
     elif [ "$head_cr" = "0" ] && [ "$now_cr" != "0" ]; then
       echo "行尾不一致: $f  期望 $want（HEAD 是 LF） 现状 CRLF=$now_cr/$now_lines"
       bad=1
+    fi
+  else
+    # 新增文件：HEAD 里没有可比对，改按**同目录多数**判断（src/ 下是 CRLF，
+    # src/chrome/、src/home/ 等是 LF）。没有同目录参照就不管。
+    d=$(dirname "$f")
+    sib=$(ls "$d"/*.js "$d"/*.css 2>/dev/null | head -20)
+    if [ -n "$sib" ]; then
+      crlf=0; lf=0
+      for g in $sib; do
+        c=$(tr -cd '\r' < "$g" | wc -c)
+        t=$(wc -l < "$g")
+        if [ "$c" -gt 0 ] && [ "$c" = "$t" ]; then crlf=$((crlf+1)); else lf=$((lf+1)); fi
+      done
+      now_cr=$(tr -cd '\r' < "$f" | wc -c)
+      now_t=$(wc -l < "$f")
+      if [ "$crlf" -gt "$lf" ] && [ "$now_cr" != "$now_t" ]; then
+        echo "行尾不一致: $f  新文件应为 CRLF（同目录多数风格） 现状 CRLF=$now_cr/$now_t"
+        bad=1
+      elif [ "$lf" -gt "$crlf" ] && [ "$now_cr" != "0" ]; then
+        echo "行尾不一致: $f  新文件应为 LF（同目录多数风格） 现状 CRLF=$now_cr/$now_t"
+        bad=1
+      fi
     fi
   fi
 done
