@@ -49,9 +49,13 @@ body.lg-flyout #pop-root > * { pointer-events: auto; }
   right: auto !important;
   top: auto !important;
 }
-/* 键盘导航把焦点放在菜单容器上时不要画整块焦点环；菜单项自己的
-   :focus-visible 圆环来自 chrome.css，保持不变。 */
-#pop-root > *:focus { outline: none; }
+/* 键盘导航把焦点放在菜单/下拉容器上时不要画整块焦点环；菜单项自己的
+   :focus-visible 圆环来自 chrome.css，保持不变。
+   必须带 !important：material.css 里那条全局 `:focus-visible` 用了
+   !important（为了压住各处的 outline:none），容器上的 tabindex="-1"
+   会被它命中——地址栏联想/菜单因此多出一圈 2px 墨色描边。 */
+#pop-root > *:focus,
+#pop-root > *:focus-visible { outline: none !important; }
 
 /* ---------- Glance 链接速览壳（Zen 式） ----------
    全屏调光遮罩 + 卡片顶栏；卡片本体是主进程摆的独立 WebContentsView，
@@ -149,7 +153,11 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
 
 /* ---------- 地址栏联想下拉（矩形弹层） ---------- */
 #omni-sug {
-  min-width: 320px;
+  /* 320px 在 1132px 宽的地址栏下面像一枚小贴纸，标题/网址都挤成省略号；
+     480px 是"能看清一行标题 + 左右留白"的下限，同时不遮住网页主体。
+     这里必须是绝对宽度：弹层视图是按内容 scrollWidth 反推尺寸的，
+     用 92vw 会形成"视图窄→92vw 更窄"的死循环（实测塌成 35px）。 */
+  min-width: 480px;
   max-width: min(640px, 90vw);
   padding: var(--lg-space-3);
   border-radius: var(--lg-radius);

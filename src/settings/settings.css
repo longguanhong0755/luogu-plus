@@ -92,17 +92,17 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
 /* 设置搜索：22 张卡 92 个控件纯线性平铺，"找不到"就等于"不存在" */
 .nav-search { position: relative; padding: 0 var(--lg-space-4) var(--lg-space-5); }
 .nav-search input {
-  width: 100%; padding: 6px var(--lg-space-4); font-size: var(--fs-base);
+  width: 100%; height: var(--lg-ctl-md); padding: 0 var(--lg-space-4); font-size: var(--fs-base);
   border: 1px solid var(--hairline); border-radius: var(--lg-radius-sm);
   background: var(--surface); color: var(--ink); outline: none;
   font-family: inherit;
 }
-.nav-search input::placeholder { color: var(--ink-faint); }
+.nav-search input::placeholder { color: var(--ink-dim); }
 .nav-search input:focus-visible { border-color: var(--ink); outline: 2px solid var(--ink); outline-offset: 1px; }
 .nav-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
 .nav-search-count {
   position: absolute; right: 14px; bottom: 14px;
-  font-size: var(--fs-sub); color: var(--ink-faint); pointer-events: none;
+  font-size: var(--fs-sub); color: var(--ink-dim); pointer-events: none;
 }
 /* 搜索命中：左侧一条主线 + 轻微提亮，扫一眼就能定位 */
 .card.search-hit { box-shadow: inset 2px 0 0 var(--ink); }
@@ -119,7 +119,9 @@ button, .nav, select, .key-cap, .pcard, .sw { user-select: none; }
 }
 .pane-head { margin-bottom: var(--lg-space-2); }
 .pane-head h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.01em; }
-.pane-head .sub { font-size: 12px; color: var(--ink-faint); margin-top: var(--lg-space-1); display: block; }
+/* 标题下的说明是直接压在壁纸上的成句文字：faint(34%) 在亮壁纸上几乎消失，
+   这里用 78% 墨档（与首页 --h-ink-text 同一口径），保证换任意壁纸都读得清。 */
+.pane-head .sub { font-size: 12px; color: color-mix(in srgb, var(--ink) 78%, transparent); margin-top: var(--lg-space-1); display: block; }
 .pane-foot { margin-top: var(--lg-space-5); padding-top: var(--lg-space-7); border-top: 1px solid var(--hairline); }
 
 /* 主题色：色板 + 取色器 + 派生预览 */
@@ -196,7 +198,8 @@ kbd {
   display: flex;
   align-items: center;
   gap: var(--lg-space-5);
-  margin: var(--lg-space-5) 0 -var(--lg-space-1);
+  /* 负 var() 不是合法 CSS：旧写法把整条 margin 丢掉，组标题上下各差 2px */
+  margin: var(--lg-space-5) 0 calc(-1 * var(--lg-space-1));
   font-size: var(--fs-sub);
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -228,7 +231,9 @@ body.pre-ready #pane .card { visibility: hidden; }
   font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
   color: var(--ink-dim); margin-bottom: var(--lg-space-5);
 }
-.hint { font-size: var(--lg-fs-caption); color: var(--ink-faint); line-height: 1.5; margin-top: var(--lg-space-4); }
+/* 成句的说明文字（不是装饰）：faint(34%) 对卡片面只有约 2.5:1，
+   低于 WCAG AA；62% 档约 5.6:1，长句读起来才不费劲。 */
+.hint { font-size: var(--lg-fs-caption); color: var(--ink-dim); line-height: 1.5; margin-top: var(--lg-space-4); }
 
 /* 分段选择（Primer 的 Segmented control）
    容器 32px 高 / 8px 圆角，内层按钮 28px / **6px** 圆角 —— 6 = 8 − 2，
@@ -271,12 +276,23 @@ body.pre-ready #pane .card { visibility: hidden; }
 .slider { display: grid; grid-template-columns: 100px 1fr 46px; align-items: center; gap: var(--lg-space-6); padding: var(--lg-space-3) 0; }
 .slider span { font-size: 13px; color: var(--ink); }
 .slider output { font-size: 12px; color: var(--ink-faint); text-align: right; font-variant-numeric: tabular-nums; }
+/* 滑杆：视觉轨道 3px，但输入框本体留 28px 命中区——旧写法把 <input>
+   本身压成 3px，点在轨道上方 10px 完全没反应（实测），必须精确戳那条线。
+   轨道改用 ::-webkit-slider-runnable-track 画，input 只当透明命中盒。 */
 input[type="range"] {
-  -webkit-appearance: none; height: 3px; border-radius: 3px;
-  background: var(--surface-2); border: 1px solid var(--hairline); outline: none;
+  -webkit-appearance: none; width: 100%; height: var(--lg-ctl-sm);
+  margin: 0; padding: 0; background: transparent; border: 0; outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px; border-radius: 3px;
+  background: var(--surface-2); border: 1px solid var(--hairline);
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+  /* 轨道 5px 视觉高（3+上下各 1 border），15px 圆点居中 = -5px；
+     用 token 相加写成 -5，守卫不用为这一个几何值开例外。 */
+  margin-top: calc(-1 * var(--lg-space-2) - var(--lg-space-hair));
   background: var(--ink); cursor: pointer; box-shadow: 0 0 0 1px var(--surface);
 }
 /* 滑杆的键盘焦点：此前 outline:none 且全页无 :focus-visible 规则，

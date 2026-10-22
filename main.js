@@ -4010,16 +4010,35 @@ function createMainWindow() {
   win.once("ready-to-show", () => {
     perfMarks.readyShown = Date.now();
     ensureOnScreen(win);
-    // 这两个探针要自己控制窗口可见性（前台可能在玩游戏），别替它们亮出来；
+    // 这几个探针要自己控制窗口可见性（前台可能在玩游戏），别替它们亮出来；
     // --lg-hidden / LG_HIDDEN=1：后台测试模式，全程不亮窗不抢前台
+    const liveProbe = argv.includes("--lg-livetest");
     const quietProbe =
       argv.includes("--lg-blanktest") ||
       argv.includes("--lg-walltest") ||
       argv.includes("--lg-hidden") ||
+      liveProbe ||
       process.env.LG_HIDDEN === "1";
     // 上次是最大化退出 → 复原最大化（隐藏探针不抢焦点，不做）
     if (winState && winState.maximized && !quietProbe) win.maximize();
-    if (!quietProbe) win.show();
+    /* --lg-livetest：真实鼠标/键盘走查专用的"透明窗口"。
+       --lg-hidden 下窗口从未 show，站点视图的 renderer 恒 1×1，CDP
+       Input.dispatch* 也送不进事件（页面收不到 mousedown/keydown）——
+       交互类 bug 根本走不出来。这里照 --lg-blanktest 的做法亮窗
+       （opacity 0 + showInactive），布局与输入都是真的，屏幕上却看不见；
+       再开鼠标穿透，避免透明窗口挡住用户正常的桌面点击。 */
+    if (liveProbe) {
+      try {
+        const wa = screen.getPrimaryDisplay().workArea;
+        const w = Math.min(1440, wa.width);
+        const h = Math.min(920, wa.height);
+        win.setBounds({ x: wa.x, y: wa.y, width: w, height: h });
+        win.setOpacity(0);
+        win.setIgnoreMouseEvents(true);
+        win.showInactive();
+        console.log("[lg-livetest] visible=" + win.isVisible() + " opacity=" + win.getOpacity() + " bounds=" + JSON.stringify(win.getBounds()));
+      } catch (e) { console.log("[lg-livetest] err " + String(e)); }
+    } else if (!quietProbe) win.show();
     // 站点视图是趁窗口不可见的时候加载完的，补两拍把首帧画出来
     setTimeout(repaintSiteViews, 300);
     setTimeout(repaintSiteViews, 1200);

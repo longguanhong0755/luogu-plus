@@ -58,9 +58,11 @@ body {
   letter-spacing: 0.02em;
 }
 .h-date {
-  margin-top: -var(--lg-space-4);
+  /* 负值必须走 calc：`-var(--x)` 不是合法 CSS，整条声明会被丢弃——
+     之前这块实际吃的是 flex gap，日期比设计稿远 8px。 */
+  margin-top: calc(-1 * var(--lg-space-4));
   font-size: 13px;
-  color: var(--h-ink-dim);
+  color: var(--h-ink-text);
   letter-spacing: 0.12em;
 }
 
@@ -103,7 +105,7 @@ body {
   font: inherit;
   font-size: var(--lg-fs-lead);
 }
-.h-search input::placeholder { color: var(--h-ink-faint); }
+.h-search input::placeholder { color: var(--h-ink-dim); }
 .h-search button {
   flex: none;
   height: 34px;
@@ -122,7 +124,8 @@ body {
 /* 解析预览：输入时提示这条输入会被当成什么 */
 .h-resolve {
   min-height: 18px;
-  margin-top: -var(--lg-space-5);
+  /* 同 .h-date：负 var() 要写 calc，否则整条 margin 被浏览器丢掉 */
+  margin-top: calc(-1 * var(--lg-space-5));
   font-size: 12px;
   color: var(--h-ink-dim);
   font-variant-numeric: tabular-nums;
@@ -176,13 +179,20 @@ body {
   margin-bottom: var(--lg-space-4);
   font-size: 12px;
   letter-spacing: 0.1em;
-  color: var(--h-ink-faint);
+  color: var(--h-ink-dim);
 }
 .h-card-head button {
+  /* 视觉仍是 12px 文本，但可点击区补到 28px（design.md §3.2 最小可点击区）。
+     负外边距把多出来的内边距抵消掉，标题行的排版位置一格不动。 */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--lg-ctl-sm);
+  margin: calc(-1 * var(--lg-space-3)) calc(-1 * var(--lg-space-4));
+  padding: 0 var(--lg-space-4);
   font: inherit;
   font-size: 12px;
   letter-spacing: normal;
-  color: var(--h-ink-dim);
+  color: var(--h-ink-text);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -213,7 +223,7 @@ body {
 .h-recent-list .h {
   flex: none;
   font-size: var(--fs-sub);
-  color: var(--h-ink-faint);
+  color: var(--h-ink-dim);
   font-variant-numeric: tabular-nums;
 }
 .h-empty {
@@ -278,7 +288,7 @@ body {
   flex: none;
   margin-left: auto;
   font-size: var(--fs-sub, 11px);
-  color: var(--h-ink-faint);
+  color: var(--h-ink-dim);
   font-variant-numeric: tabular-nums;
 }
 .h-list .h.soon { color: #b4232a; font-weight: 600; }

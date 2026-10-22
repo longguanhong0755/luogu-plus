@@ -6,6 +6,9 @@
 黑白线条风的 5 套配色预设 + 细粒度外观调校、持久登录。
 v3.16.5 起界面尺寸与间距按 `design.md` 的像素级规范收敛，并有静态 + 运行时双重守卫。
 v3.16.6 起面板类界面（命令面板 / F1 / 标签搜索 / 查找条）改走弹层覆盖层，键盘焦点可跨视图路由。
+v3.16.7 做了一轮"真实鼠标走查"：修掉无效的 CSS 负值、3px 滑杆命中区、弹层容器焦点环、
+窄条关闭钮误触与地址栏联想过窄，并把成句提示、账号邮箱、菜单快捷键等次要文字的对比度
+提到可读档。
 
 ## 目录结构
 
@@ -166,10 +169,10 @@ omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色
 设计令牌运行时探针不占 app 参数，走 CDP：
 `node scripts/probe-design.cjs <CDP端口> [输出json]`（量按钮高度/圆角/字号并断言资源全走 `lgasset://`）。
 
-## 部署状态（2026-10-22）
+## 部署状态（2026-10-23）
 
 - 部署产物：`D:\workspace\luogu++\app\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 **v3.16.6**）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 **v3.16.7**）
 - 源码仓库：`D:\workspace\luogu++\repo`（git 远端 `longguanhong0755/luogu-plus`）；
   开发运行目录 `D:\workspace\luogu++\dev`
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）

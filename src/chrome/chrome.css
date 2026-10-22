@@ -265,7 +265,7 @@ html, body {
   flex: 1;
   min-width: 160px;
   display: flex; align-items: center; gap: var(--lg-space-3);
-  height: 30px;
+  height: var(--lg-ctl-md);
   padding: 0 var(--lg-space-5);
   border-radius: var(--lg-radius);
   background: var(--surface-2);
@@ -288,13 +288,13 @@ html, body {
   font-size: 12px;
   color: var(--ink);
 }
-#omni-input::placeholder { color: var(--ink-faint); font-family: var(--lg-sans); }
+#omni-input::placeholder { color: var(--ink-dim); font-family: var(--lg-sans); }
 
 #actions { display: flex; align-items: center; gap: var(--lg-space-2); margin-left: var(--lg-space-1); flex: none; }
 
 #user-chip {
   display: flex; align-items: center; gap: var(--lg-space-3);
-  height: 30px;
+  height: var(--lg-ctl-md);
   padding: 0 var(--lg-space-5) 0 var(--lg-space-2);
   border-radius: var(--lg-radius-lg);
   color: var(--ink);
@@ -652,7 +652,10 @@ body.rail .vtab .t-close {
   display: grid;
   position: absolute;
   right: 0; top: 0;
-  width: 16px; height: 16px;
+  /* 16→14：16px 圆钮的下沿正好压在 16px 图标的垂直中线上，点图标切标签
+     会有一半概率命中关闭钮（实测误关过两个标签）。14px 让出图标中心点。 */
+  width: 14px; height: 14px;
+  color: var(--ink-dim);
   border-radius: 50%;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
@@ -902,13 +905,13 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 /* Edge 式行：左图标 + 文案 + 右侧快捷键 / 展开箭头 */
 .tm-item .tm-ico { width: 15px; height: 15px; flex: none; display: grid; place-items: center; color: var(--ink-dim); }
 .tm-item .tm-ico svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.tm-item .tm-hint { flex: none; color: var(--ink-faint); font-size: var(--fs-sub); margin-left: var(--lg-space-4); }
+.tm-item .tm-hint { flex: none; color: var(--ink-dim); font-size: var(--fs-sub); margin-left: var(--lg-space-4); }
 .tm-item .tm-arrow { flex: none; color: var(--ink-faint); display: grid; place-items: center; transition: transform 0.12s; }
 .tm-item .tm-arrow svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .tm-item.tm-open .tm-arrow { transform: rotate(90deg); }
 /* 展开区的子行（打开的标签 / 最近关闭） */
 .tm-sub { display: flex; flex-direction: column; gap: var(--lg-space-hair); padding: var(--lg-space-1) 0 var(--lg-space-1) var(--lg-space-6); }
-.tm-subitem { display: flex; align-items: center; gap: var(--lg-space-4); width: 100%; padding: var(--lg-space-2) 8px; border: none; border-radius: var(--lg-radius); background: transparent; color: var(--ink); font-family: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.tm-subitem { display: flex; align-items: center; gap: var(--lg-space-4); width: 100%; min-height: var(--lg-ctl-sm); padding: var(--lg-space-2) 8px; border: none; border-radius: var(--lg-radius); background: transparent; color: var(--ink); font-family: inherit; font-size: 12px; text-align: left; cursor: pointer; }
 .tm-subitem:hover { background: var(--surface-2); }
 .tm-subitem .t-icon { width: 14px; height: 14px; flex: none; display: grid; place-items: center; }
 .tm-subitem .t-icon svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
@@ -982,6 +985,7 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 .am-item {
   display: flex; align-items: center; gap: var(--lg-space-4);
   width: 100%;
+  min-height: var(--lg-ctl-sm);
   padding: var(--lg-space-3) var(--lg-space-4);
   border: none; border-radius: var(--lg-radius);
   background: transparent;
@@ -993,7 +997,7 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 }
 .am-item:hover { background: var(--surface-2); }
 .am-item .am-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.am-item .am-mail { color: var(--ink-faint); font-size: var(--fs-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+.am-item .am-mail { color: var(--ink-dim); font-size: var(--fs-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
 .am-item .am-tick { color: var(--ink); flex: none; font-size: var(--fs-sub); }
 .am-sep { height: 1px; margin: var(--lg-space-3) var(--lg-space-2); background: var(--hairline); }
 .am-manage { color: var(--ink-dim); }
@@ -1110,7 +1114,7 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
   text-align: left;
   cursor: pointer;
 }
-.pal-item .pal-hint { margin-left: auto; font-size: var(--fs-sub); color: var(--ink-faint); font-family: var(--lg-mono); }
+.pal-item .pal-hint { margin-left: auto; font-size: var(--fs-sub); color: var(--ink-dim); font-family: var(--lg-mono); }
 .pal-item.on {
   background: color-mix(in srgb, var(--ink) 10%, var(--surface));
   box-shadow: inset 3px 0 0 var(--accent);
