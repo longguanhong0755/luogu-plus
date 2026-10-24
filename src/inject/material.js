@@ -115,6 +115,10 @@
        enable() 里（见 GLASS_ADAPTERS）——这里只管扫不扫，不再自己判断
        自己该不该跑。这正是注册表要解决的分心：判定散落在各处，越加能力
        越难推理谁在什么条件下动页面。 */
+    /* IDE 原生模式：注册表会 unmount 摘类，但 MutationObserver 的增量扫描
+       可能晚一步又把类贴回来（queueGlass 直接调本函数，绕过了 enable()）。
+       题目页 IDE 模式下面板必须保持洛谷原生不透明——这里再挡一道。 */
+    if (document.documentElement.getAttribute("data-lg-ide") === "1") return;
     var root = rootEl && rootEl.nodeType === 1 ? rootEl : document.body;
     if (!root) return;
     glassifyOne(root);
@@ -318,7 +322,13 @@
      探针看到的是"当前该启用的能力都启用了吗"，而不是"洛谷那套扫没扫"。
      新增能力不必再改探针。 */
   function exposeSweep() {
-    window.__lgGlassSweep = syncAdapters;
+    /* 探针/排障出口：先跑一次注册表同步，再按传入节点做一次增量扫描。 */
+    window.__lgGlassSweep = function (node) {
+      syncAdapters();
+      if (node && node.nodeType === 1) {
+        try { sweepLuoguFaces(node); } catch (e) {}
+      }
+    };
   }
 
   ctx.register("material", {

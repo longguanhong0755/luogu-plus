@@ -54,39 +54,25 @@
      透明等于拆人家 UI（v3.4.2 的教训），没进名单的站外页一律原生渲染。 */
   var glassSite = extHttpPage && /^chat\.deepseek\.com$/i.test(location.hostname || "");
 
-  /* 站外"内容型页面"自动探测 —— 让站外页也有本应用统一的观感，而不是
-     "贴张壁纸就把人家页面染色"。判据只取可解释的结构信号，宁可不判不误判：
-       · 表单密集（登录/后台/交易/在线编辑器）→ 不碰
-       · 正文文本量不足（落地页/列表页/空壳）→ 不碰
-       · 应用型站点（github/notion/vercel/mail…）→ 不碰，它们的布局
-         天然依赖自己的底色
-     判中之后只做两件事：铺**静态**壁纸 + 给我们自己的增强层用同一套玻璃
-     语言。绝不清空人家底色、绝不给人家容器挂 backdrop-filter —— 那是
-     v3.4.2 的教训，会劫持 position:fixed 的包含块。 */
+  /* 站外页玻璃化（R51 用户口径）：只要是一个网站就自动玻璃化，
+     不再按"内容型/应用型"探测挑站；排除名单（cfg.glassExclude）里的
+     域名保持原生。域名匹配包含子域：example.com 同时排除 a.example.com。
+     技术保护仍在 material.js：含 position:fixed 后代的容器不挂 blur，
+     只给半透明底，避免劫持 fixed 包含块。 */
+  function glassExcluded() {
+    var list = state.cfg && Array.isArray(state.cfg.glassExclude) ? state.cfg.glassExclude : [];
+    var host = String(location.hostname || "").toLowerCase();
+    for (var i = 0; i < list.length; i++) {
+      var d = String(list[i] || "").trim().toLowerCase().replace(/^\./, "");
+      if (!d) continue;
+      if (host === d || host.slice(-(d.length + 1)) === "." + d) return true;
+    }
+    return false;
+  }
   function detectAutoGlass() {
     if (!extHttpPage) return false;
-    try {
-      var body = document.body;
-      if (!body) return false;
-      var forms = body.querySelectorAll(
-        "input, select, textarea, [contenteditable=''], [contenteditable='true']"
-      ).length;
-      if (forms > 6) return false; // 表单密集 = 后台/表单/编辑器
-      var ps = body.querySelectorAll("p, article, main, [role='article'], pre, blockquote, li");
-      var chars = 0;
-      for (var i = 0; i < ps.length && i < 80; i++) {
-        chars += (ps[i].textContent || "").replace(/\s+/g, " ").trim().length;
-      }
-      if (chars < 600) return false; // 内容量不足 = 落地页/列表页
-      if (/(^|\.)(github|gitlab|notion|figma|vercel|admin|console|mail|calendar|drive|docs)\./i
-          .test(location.hostname || "")) return false; // 应用型站点不透明化
-      var hasArticle = !!body.querySelector("article, [role='article'], main");
-      /* 有语义容器（article/main）直接算内容型；没有的话看正文体量。
-         门槛 1200 字而不是 1500：不少老站点没有 <article>/<main>（那是
-         HTML5 之后的习惯），但正文长度足够——按 1500 卡会把这类站全判成
-         "非内容型"，等于自动玻璃化对它们永远不生效。 */
-      return hasArticle || chars > 1200;
-    } catch (e) { return false; }
+    if (state.cfg && state.cfg.autoGlass === false) return false;
+    return !glassExcluded();
   }
 
   function clamp01(v) { v = Number(v); if (isNaN(v)) v = 0; return Math.min(1, Math.max(0, v)); }
@@ -121,18 +107,20 @@
      注入层的共享状态只有这一份。内核建 ctx 挂到 window.__lgInjectCtx；各能力
      模块（src/inject/*.js）拿到它，把入口登记进 ctx.features；内核的 apply()、
      巡检与观察者再回头调 ctx.features.*。模块之间不互相 require，也不各自造
-     状态——真正被多处读写的量（autoGlass / inPageIde）一律走 ctx.x，不取局部
+     状态——真正被多处读写的量（autoGlass）一律走 ctx.x，不取局部
      别名，免得各抄一份真值。 */
   var ctx = {
     BG_ID: BG_ID,
     state: state,
+    /* 能力模块要能主动重跑一次 apply（壁纸解码完成）：
+       wallpaper.js 调 ctx.apply，之前只定义了局部 apply 没挂到 ctx，
+       调用会抛 "ctx.apply is not a function"。 */
+    apply: apply,
     isLuoguPage: isLuoguPage,
     extHttpPage: extHttpPage,
     glassSite: glassSite,
     /* 真值在 apply() 里重算（外部站内容异步到达） */
     autoGlass: false,
-    /* 题目页自带 IDE 模式：页面内分屏，URL 仍是 /problem/xxx（R38） */
-    inPageIde: false,
     features: {},
     booted: false,
   };
@@ -218,16 +206,27 @@
     state.cfg = cfg;
     var root = document.documentElement;
     var path = location.pathname;
+    /* 页面类型：圆角/内块策略按它分档（题目、题单、比赛、用户中心、讨论、
+       文章、IDE）。站点改版/未知路由落 other，不猜。 */
+    var pageType = !isLuoguPage ? "ext"
+      : /^\/problem\//.test(path) ? "problem"
+      : /^\/training\//.test(path) ? "training"
+      : /^\/contest\//.test(path) ? "contest"
+      : /^\/user\//.test(path) ? "user"
+      : /^\/discuss\//.test(path) ? "discussion"
+      : /^\/article\//.test(path) ? "article"
+      : /^\/ide(\/|$)/.test(path) ? "ide"
+      : "other";
+    root.setAttribute("data-lg-page-type", pageType);
     /* 站外页是不是"内容型站点"**每次 apply 都重算**：外部站多是异步渲染
        （骨架屏 → 内容），注入那一刻正文可能还没到，判成"内容量不足"就
        再也不会玻璃化了。apply 在换路由、配置变更、巡检发现 URL 变了时
        都会重跑，重算即可跟上。 */
     if (extHttpPage) ctx.autoGlass = detectAutoGlass();
 
-    // IDE 页特殊处理：Monaco 自带完整配色，强行套主题/滤镜会导致色彩错乱。
-    // R38：题目页自带的「进入 IDE 模式」（页面内分屏，URL 还是 /problem/xxx）也算
-    // IDE 页——编辑器面板按原生不透明渲染（不再透出壁纸），应用侧同时进真·全屏。
-    var isIde = /\/ide(\/|$)/.test(path) || ctx.inPageIde;
+    // IDE 页特殊处理：只认 /ide 路由（独立 IDE 页）。洛谷题目页里的
+    // 「进入 IDE 模式」不再触发整窗全屏，也不再强制原生渲染——按玻璃主题走。
+    var isIde = /\/ide(\/|$)/.test(path);
     var ideNative = isIde && cfg.ideNative !== false;
     root.setAttribute("data-lg-ide", ideNative ? "1" : "0");
     // 非洛谷页标记：inject 的外部样式表按它决定给不给玻璃（壁纸层）。
@@ -320,7 +319,7 @@
     s.setProperty("--lg-mono", FONT_VARS.mono);
     s.setProperty("--lg-overlay-w", cfg.frameless === false ? "0px" : "148px");
     s.setProperty("--lg-blur", clampNum(cfg.blur, 0, 40, 26) + "px");
-    s.setProperty("--lg-radius", clampNum(cfg.radius, 0, 24, 8) + "px");
+    s.setProperty("--lg-radius", clampNum(cfg.radius, 0, 28, 8) + "px");
     // 壁纸：只要用户显式选过就铺（否则"设了壁纸却看不到"会被当成 bug）。
     // 原色模式只是不去动颜色，但用户自己挑的壁纸必须兑现。IDE 页除外。
     // 站外 http(s) 页默认不铺：人家的层色是自己画的半透明色（DeepSeek 浅色
@@ -408,9 +407,9 @@
     s.setProperty("--lg-desat", String(desat));
     root.setAttribute("data-lg-desat", desat > 0.01 ? "1" : "0");
 
-    // 壁纸层只给本地页（洛谷页/应用本地页）和白名单玻璃站建；其余站外
-    // http(s) 页不碰人家的层叠（原因见上面 wall 的注释）。
-    if (!extHttpPage || glassSite) {
+    // 壁纸层：本地页、白名单玻璃站，以及 R51 起所有非排除名单的站外页
+    // （全站玻璃化 = 页面透明 + 壁纸层 + 玻璃纱）。
+    if (!extHttpPage || glassSite || ctx.autoGlass) {
       ctx.features.wallpaper.ensureBgLayer();
       // 壁纸视差：鼠标移动壁纸层轻微跟随（外壳层经 IPC 同一公式同步动）。
       // 关掉时把 transform 复位，不然停在上次偏移的位置。
@@ -465,8 +464,23 @@
       ctx.features.luoguList.teardownQuickSearch();
     }
 
-    // 题目页自带 IDE 模式的判定（R38）：apply 后复核一次（DOM 已就绪时立刻生效）
-    ctx.features.luoguPage.ideInPageQueue();
+    /* 首帧主题底色已完成使命：真实主题变量与背景规则都落地了，移除 #lg-boot
+       与 preload 写在 html/body 上的 inline 背景；站点自己的 inline 背景
+       从 data-lg-boot-bg 还原。 */
+    var bootEl = document.getElementById("lg-boot");
+    if (bootEl && bootEl.parentNode) bootEl.parentNode.removeChild(bootEl);
+    var restoreBootBg = function (el) {
+      if (!el || !el.hasAttribute("data-lg-boot-bg")) return;
+      var orig = el.getAttribute("data-lg-boot-bg") || "";
+      try {
+        if (orig) el.style.setProperty("background", orig, "important");
+        else el.style.removeProperty("background");
+        el.style.removeProperty("color-scheme");
+      } catch (e) {}
+      el.removeAttribute("data-lg-boot-bg");
+    };
+    restoreBootBg(root);
+    restoreBootBg(document.body);
   }
 
   /* 巡检：sweep 都是幂等的便宜 DOM 扫描，照常跑；但**不再每 2.5s 无条件
@@ -483,7 +497,6 @@
       if (ctx.features.wallpaper.wallpaperUnhealthy()) ctx.features.wallpaper.healWallpaper();
       else healTries = 0;
       if (isLuoguPage) {
-        ctx.features.luoguPage.ideInPageQueue(); // 题目页自带 IDE 模式的兜底巡检（观察者漏拍时补）
         ctx.features.luoguPage.sweepPromos();
         ctx.features.luoguPage.sweepDeclutter();
         ctx.features.luoguPage.sweepCodeCopy();
@@ -544,7 +557,6 @@
       }
     } catch (e) {}
     ctx.features.luoguPage.queuePromo();
-    ctx.features.luoguPage.ideInPageQueue(); // 编辑器容器是 Vue 异步插进来的：DOM 一变就复核 IDE 模式
   });
 
   /* SPA/动态渲染兜底：背景层若被页面脚本移除则自动补回。只补一个空 div 不够
@@ -577,7 +589,6 @@
        ⑤ 划词题号 + Glance 速览（selection）    —— 拆分前 1697/1707 行
        ⑥ 2.5s 巡检                              —— 拆分前 2083 行
        ⑦ 玻璃站侧栏圆角定时器（material）       —— 拆分前 2172 行
-       ⑧ IDE 判定调试出口（luoguPage）          —— 拆分前 2474 行
        ⑨ __lgGlassSweep 导出（material）        —— 拆分前 2499 行
        ⑩ 壁纸层兜底观察者 + 首屏各扫一遍         —— 拆分前 2510 行
      注入端把内核与模块拼成一段脚本一次执行完，最后一个 register 触发即等价于
@@ -620,7 +631,6 @@
     F.selection.boot();
     startPatrol();
     F.material.boot();
-    F.luoguPage.boot();
     F.material.exposeSweep();
     startObserve();
   }

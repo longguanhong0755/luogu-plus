@@ -20,13 +20,28 @@
      只给"能改底色"的控件用——材质登记表里 .icon-btn:hover 是 !important，
      那类控件的按压反馈走位移（见文件末尾的交互状态一节）。 */
   --lg-press: color-mix(in srgb, var(--ink) 28%, transparent);
-  --header-h: 76px;   /* 标签条 34 + 工具行 42 */
-  --vtab-w: 212px;    /* 垂直标签栏展开宽度（与主进程 VTAB_W 对齐） */
-  --vtab-rail: 46px;  /* 折叠窄条宽度（与主进程 VTAB_RAIL 对齐） */
-  --vtab-edge: 4px;   /* 紧凑模式左缘热区宽度（与主进程 VTAB_EDGE 对齐） */
+  --header-h: 76px;   /* 标签条 34 + 工具行 42（水平模式） */
+  /* 垂直栏几何：数值来自 src/vtab-spec.js（Edge 149 实测），chrome.js 启动时
+     会用同一份 spec 再写一遍；这里是首帧兜底。主进程与外壳不再各写一套。 */
+  --vtab-w: 248px;    /* 展开态（含 1px 右缘线） */
+  --vtab-rail: 41px;  /* 窄条（40 内容 + 1px 线） */
+  --vtab-edge: 4px;   /* 紧凑模式左缘热区 */
+  --vtab-head-h: 40px;
+  --vtab-head-btn: 32px;
+  --vtab-head-pad: 4px;
+  --vtab-tab-h: 32px;
+  --vtab-tab-x: 4px;
+  --vtab-tab-w: 240px;
+  --vtab-close: 16px;
+  --vtab-close-top: 8px;
+  --vtab-close-right: 8px;
+  --vtab-new-offset: 9px;
+  --vtab-resize-w: 4px;
+  --vtab-radius: 4px;
+  --vtab-font: 12px;
   /* 顶栏/底坞/页面共用的实际分界线：applyConfig 写入主进程 layout 的
-     inset().x（紧凑=4 / 窄条=46 / 展开=212）。三个值只可能来自这一处。 */
-  --vtab-cur: 46px;
+     inset().x（紧凑=4 / 窄条=41 / 展开=248）。三个值只可能来自这一处。 */
+  --vtab-cur: 41px;
   /* 图标/文字标尺（R36 统一）：同一视觉角色只有一个尺寸来源。
      交互图标 ≥16、favicon 16、徽标 12、正文 12.5——探针按这张表断言。 */
   --ico-lg: 20px;     /* 坞胶囊里的大图标 */
@@ -143,9 +158,8 @@ html, body {
 .tab .t-close svg, .vtab .t-close svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .t-sleep svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 2; }
 .tab.special .t-icon svg { stroke-width: 2.2; }
-.tab.loading .t-title { opacity: 0.5; }
-.tab.loading .t-icon { animation: lg-spin 1s steps(8) infinite; }
-@keyframes lg-spin { to { transform: rotate(360deg); } }
+/* 加载态只保留顶栏进度线与停止键：标签图标保持静止、标题不做降透明度
+   （用户明确要求打开页面时图标不要旋转）。 */
 
 #tab-new {
   -webkit-app-region: no-drag;
@@ -180,7 +194,6 @@ html, body {
 #vtab-current .vc-icon svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 #vtab-current .vc-icon img { width: var(--ico-md); height: var(--ico-md); border-radius: 3px; }
 #vtab-current .vc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#vtab-current.loading .vc-icon { animation: lg-spin 1s steps(8) infinite; }
 
 /* --- 工具行（浏览器式） --- */
 #navrow {
@@ -275,8 +288,8 @@ html, body {
 /* 地址栏是药丸：焦点环画在药丸上，不画在里面的裸输入框上
    （输入框是 borderless 的，画在它身上会是个方框套在圆角药丸里）。 */
 #omnibox:focus-within {
-  border-color: var(--ink);
-  outline: 2px solid var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 45%, transparent);
+  outline: 2px solid var(--lg-focus-ring);
   outline-offset: 2px;
 }
 #omnibox svg { width: var(--ico-sm); height: var(--ico-sm); fill: none; stroke: var(--ink-faint); stroke-width: 2; flex: none; }
@@ -419,26 +432,26 @@ body[data-dock="bottom"] #dock .sep { width: 1px; height: 20px; margin: 0 var(--
    行中心 y 完全一致，鼠标贴哪一行、点下去还是哪一行。 */
 #vtab, #tab-flyout {
   flex-direction: column;
-  padding: var(--lg-space-4) var(--lg-space-4) var(--lg-space-5);
-  font-size: var(--fs-base);
+  padding: 0;
+  font-size: var(--vtab-font);
 }
 #vtab {
   display: none;
   position: fixed;
-  left: 0; top: 0; bottom: 0;
+  left: 0; top: var(--header-h); bottom: 0;
   width: var(--vtab-w);
   border-right: 1px solid var(--hairline);
   z-index: 11;
 }
 /* 浮层是"展开后的侧栏"：宽度吃同一个 --vtab-w（主进程 inset 的唯一值） */
 #tab-flyout { display: flex; width: var(--vtab-w); }
-/* 右缘拖宽手柄（Edge 能拖宽窄）：只在常驻展开时可用（窄条/紧凑没有可拖的宽度） */
+/* 右缘拖宽手柄（Edge 实测 4px，贴面板内侧右缘）：只在常驻展开时可用 */
 #vtab-resize {
   display: none;
   position: absolute;
   top: 0; bottom: 0;
-  right: -2px;
-  width: 5px;
+  right: 0;
+  width: var(--vtab-resize-w);
   cursor: col-resize;
   z-index: 12;
   -webkit-app-region: no-drag;
@@ -448,56 +461,71 @@ body.rail #vtab-resize,
 body.compact #vtab-resize,
 #tab-flyout #vtab-resize { display: none; }
 #vtab-resize.dragging { background: var(--hairline); }
-/* 头部三种姿态（窄条 / 悬停浮层 / 常驻展开）共用同一份几何：竖排两颗 30×20
-   （上=标签页操作 ⌄，下=钉子/常驻展开开关），都贴侧栏左内边距（x=8），
-   总高 44px（20+4+20）——列表起点 y 三处一致，悬停加宽不重排。
-   R37 为什么必须统一：窄条是竖排、浮层与展开态曾是横排（钉子在右上），
-   鼠标贴上窄条约 80ms 后浮层视图接管点击，按钉子原来那个位置落到的是
-   浮层里的三角/空白——用户报的"钉子按不了"就是这个位移。统一后钉子
-   三处逐像素同点，悬停交接钉子不动，点哪都是它。 */
+/* 头部（Edge 实测）：一行两颗 32×32，左=搜索标签页、右=固定/收起；
+   上/左/右内边距都是 4，总高 40（= 列表起点）。
+   窄条只露左键（见 body.rail 规则）；悬停浮层与常驻展开两颗都在。 */
 #vtab-head {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-start;
-  justify-content: center;
-  gap: var(--lg-space-2);
-  height: 44px;
-  padding-left: 0;
+  justify-content: space-between;
+  gap: 0;
+  height: var(--vtab-head-h);
+  /* 右边比左边少 1px：面板右缘有 1px 发丝线（边框在盒内），
+     补偿后右键才落在 Edge 实测的 x=212（248-4-32）。 */
+  padding: var(--vtab-head-pad) calc(var(--vtab-head-pad) - 1px) var(--vtab-head-pad) var(--vtab-head-pad);
   -webkit-app-region: drag;
   flex: none;
 }
-#vtab-head .icon-btn { -webkit-app-region: no-drag; margin: 0; width: 30px; height: 20px; }
+#vtab-head .icon-btn {
+  -webkit-app-region: no-drag;
+  margin: 0;
+  width: var(--vtab-head-btn);
+  height: var(--vtab-head-btn);
+}
 #vtab-head .icon-btn svg { width: var(--ico-md); height: var(--ico-md); }
 
 #vtabs {
-  /* flex-basis auto：外壳里靠 flex 撑满定高，浮层里按内容收（面板被夹住时
-     再收缩滚动）——两处同一份声明，几何才对得上 */
+  /* 标签列表从面板顶 +40 开始（头部高度），行间不留缝（Edge 实测行距 32）。
+     新建按钮在列表末尾，跟着一起滚（见 #vtab-new）。 */
   flex: 1 1 auto;
   min-height: 0;
-  margin-top: var(--lg-space-3);
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--lg-space-hair);
+  gap: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
 }
 #vtabs::-webkit-scrollbar { display: none; }
 
-/* 钉住标签：与普通标签同一套行（图标 + 标题 + 徽标，没有 ×）——窄条态与
-   展开态的行高/行序完全一致，悬停加宽才不会"点错行"。 */
+/* 钉住标签（Edge 式）：32×32 图标块，4px 缝隙，排在列表上方。
+   不再占整行——钉住区与普通行的行高不同是 Edge 的形态。 */
 #vtab-pins {
   flex: none;
   display: flex;
-  flex-direction: column;
-  gap: var(--lg-space-hair);
-  margin-top: var(--lg-space-3);
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--vtab-tab-x);
+  padding: 0 var(--vtab-tab-x);
+  margin: 0;
   /* 钉很多时不把下面的标签列表挤到 0：封顶自己滚 */
   max-height: 40vh;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
 }
+#vtab-pins .vtab {
+  width: var(--vtab-head-btn);
+  height: var(--vtab-head-btn);
+  margin: 0;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+#vtab-pins .vtab .t-title,
+#vtab-pins .vtab .t-badge { display: none; }
 #vtab-pins::-webkit-scrollbar { display: none; }
 #vtab-pins:empty { display: none; }
 /* 钉住徽标：这行没有 ×，用一枚小钉子说明"已钉住" */
@@ -513,12 +541,17 @@ body.compact #vtab-resize,
 #compact-edge {
   display: none;
   position: fixed;
-  left: 0; top: 0; bottom: 0;
-  width: 4px;
+  left: 0; top: var(--header-h); bottom: 0;
+  width: var(--vtab-edge);
   z-index: 70;
 }
 body.compact #compact-edge { display: block; }
 body.compact #vtab { display: none !important; }
+/* F11 全屏顶部露出：只露顶栏，竖栏/紧凑热区/拖宽手柄仍然隐藏。
+   （坞是独立视图，由主进程 layoutDock 隐藏。） */
+body.fs-peek #vtab,
+body.fs-peek #vtab-resize,
+body.fs-peek #compact-edge { visibility: hidden !important; }
 
 .vtab {
   -webkit-app-region: no-drag;
@@ -526,18 +559,27 @@ body.compact #vtab { display: none !important; }
   display: flex;
   align-items: center;
   gap: var(--lg-space-4);
-  height: 34px;
+  height: var(--vtab-tab-h);
   flex: none;
-  padding: 0 var(--lg-space-3) 0 var(--lg-space-4);
-  border-radius: var(--lg-radius);
-  border-left: 2px solid transparent;
-  font-size: var(--fs-base);
+  /* 行宽 = 面板宽 - 左右 4（右侧少 1px 补偿面板边框，行宽正好 240）；
+     关闭钮绝对定位在 right 8，文字给它让位 */
+  margin: 0 calc(var(--vtab-tab-x) - 1px) 0 var(--vtab-tab-x);
+  padding: 0 28px 0 var(--lg-space-4);
+  border-radius: var(--vtab-radius);
+  border-left: 0;
+  font-size: var(--vtab-font);
   color: var(--ink-dim);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 .vtab:hover { background: var(--surface-2); color: var(--ink); }
-.vtab.active { background: var(--surface-2); color: var(--ink); font-weight: 600; border-left-color: var(--ink); }
+/* 活动标签 = 填充卡片 + 1px 发丝线（Edge 实测），没有左侧墨条 */
+.vtab.active {
+  background: var(--surface-2);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
 /* 拖动落点：插入位置线（落点行的上/下缘）+ 放置区高亮（钉住区 / 分组块） */
 .vtab.drop-before::after,
 .vtab.drop-after::after {
@@ -586,8 +628,12 @@ body.compact #vtab { display: none !important; }
 .vtab .t-icon svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .vtab .t-icon img { width: var(--ico-md); height: var(--ico-md); border-radius: 3px; }
 .vtab .t-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Edge 实测：16×16，距行顶 8、距行右 8；常态隐藏，hover/active 才出现 */
 .vtab .t-close {
-  width: 18px; height: 18px;
+  position: absolute;
+  top: var(--vtab-close-top);
+  right: var(--vtab-close-right);
+  width: var(--vtab-close); height: var(--vtab-close);
   border: none; border-radius: var(--lg-radius-sm);
   background: transparent; color: var(--ink-faint);
   font-size: 12px; line-height: 1; cursor: pointer;
@@ -596,74 +642,59 @@ body.compact #vtab { display: none !important; }
   transition: opacity 0.12s;
 }
 .vtab:hover .t-close, .vtab.active .t-close { opacity: 1; }
+/* 活动行有 1px 边框（material.css 的选中面），绝对定位的关闭钮会跟着下移
+   1px——补回来，活动/非活动的 × 都在行顶 +8 */
+.vtab.active .t-close { top: calc(var(--vtab-close-top) - 1px); }
 .vtab .t-close:hover { background: var(--lg-wash); color: var(--ink); }
-.vtab.loading .t-title { opacity: 0.5; }
-.vtab.loading .t-icon { animation: lg-spin 1s steps(8) infinite; }
 
+/* 新建标签页：紧跟列表最后一行 9px（Edge 实测），展开 240×32；
+   右侧显示 Ctrl+T 提示。放在 #vtabs 里，列表长时随列表滚动。 */
 #vtab-new {
   -webkit-app-region: no-drag;
   display: flex; align-items: center; gap: var(--lg-space-4);
-  height: 34px; flex: none;
-  margin-top: var(--lg-space-2);
+  width: var(--vtab-tab-w); height: var(--vtab-tab-h); flex: none;
+  margin: var(--vtab-new-offset) calc(var(--vtab-tab-x) - 1px) var(--lg-space-3) var(--vtab-tab-x);
   padding: 0 var(--lg-space-4);
-  border: none; border-radius: var(--lg-radius-sm);
+  border: none; border-radius: var(--vtab-radius);
   background: transparent;
   color: var(--ink-dim);
   font-family: inherit;
-  font-size: var(--fs-base);
+  font-size: var(--vtab-font);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 #vtab-new:hover { background: var(--surface-2); color: var(--ink); }
-#vtab-new .plus { width: 14px; text-align: center; font-size: var(--lg-fs-lead); line-height: 1; flex: none; }
-
-/* 设置：垂直模式的常驻入口（水平模式由左侧坞左下角那颗齿轮负责） */
-#vtab-set {
-  -webkit-app-region: no-drag;
-  display: flex; align-items: center; gap: var(--lg-space-4);
-  height: 34px; flex: none;
-  margin-top: var(--lg-space-2);
-  padding: 0 var(--lg-space-4);
-  border: none; border-radius: var(--lg-radius-sm);
-  background: transparent;
-  color: var(--ink-dim);
-  font-family: inherit;
-  font-size: var(--fs-base);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+#vtab-new .plus { width: 16px; text-align: center; font-size: 16px; line-height: 1; flex: none; }
+#vtab-new .vkey { margin-left: auto; font-size: 11px; color: var(--ink-faint); }
+body.rail #vtab #vtab-new {
+  width: var(--vtab-head-btn);
+  margin: var(--vtab-new-offset) var(--vtab-tab-x) var(--lg-space-3);
+  padding: 0;
+  justify-content: center;
+  gap: 0;
 }
-#vtab-set:hover { background: var(--surface-2); color: var(--ink); }
-#vtab-set .vico { width: var(--ico-md); height: var(--ico-md); flex: none; display: grid; place-items: center; }
-#vtab-set .vico svg { width: var(--ico-md); height: var(--ico-md); fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+body.rail #vtab #vtab-new .vkey { display: none; }
+/* 设置入口不再放在面板里（Edge 实测面板没有设置键）：F2 / 命令面板 /
+   坞里的齿轮仍在；垂直模式右键侧栏空白可开「标签页操作」，菜单里也有设置。 */
 
-/* 折叠窄条：行内布局与展开态逐像素一致，只是文字/徽标不显示——用 opacity
-   而不是 display:none：图标位置一动，悬停加宽时就会横跳。侧栏左右内边距也与
-   展开态相同（8px），加宽动画才是"图标原地不动、标题淡入"。 */
+/* 折叠窄条（Edge 实测 41px）：32×32 图标块，x=4；头部只露搜索键，
+   固定键隐藏；关闭钮静止态不显示（中键/右键仍可关）。 */
 body.rail #vtab { width: var(--vtab-rail); }
-body.rail #vtab .vtxt,
-body.rail #vtab .t-title,
-body.rail #vtab .t-badge { opacity: 0; }
-/* 窄条头部：不再单独覆盖——R37 起竖排 30×20 的头部几何写在 #vtab-head 基础
-   规则里，窄条 / 悬停浮层 / 常驻展开三处逐像素同点（钉子不会因悬停加宽而跑）。 */
-/* 窄条里的关闭按钮：悬停时在图标右上角冒出一颗小 ×（原来直接藏掉，
-   窄条上根本关不了标签）。定位在按钮盒内部，不会被列表的滚动裁剪。 */
-body.rail .vtab { position: relative; }
-body.rail .vtab .t-close {
-  display: grid;
-  position: absolute;
-  right: 0; top: 0;
-  /* 16→14：16px 圆钮的下沿正好压在 16px 图标的垂直中线上，点图标切标签
-     会有一半概率命中关闭钮（实测误关过两个标签）。14px 让出图标中心点。 */
-  width: 14px; height: 14px;
-  color: var(--ink-dim);
-  border-radius: 50%;
-  background: var(--surface-2);
-  border: 1px solid var(--hairline);
-  font-size: var(--fs-sub);
-  opacity: 0;
-  z-index: 2;
+body.rail #vtab #btn-vpin { display: none; }
+body.rail #vtab .vtab {
+  width: var(--vtab-head-btn);
+  height: var(--vtab-head-btn);
+  margin: 0 var(--vtab-tab-x);
+  padding: 0;
+  justify-content: center;
+  gap: 0;
 }
-body.rail .vtab:hover .t-close { opacity: 1; }
+body.rail #vtab #vtab-pins .vtab { margin: 0; }
+body.rail #vtab .vtab .t-title,
+body.rail #vtab .vtab .t-badge { display: none; }
+body.rail #vtab .vtxt { display: none; }
+/* 窄条静止态没有关闭钮（Edge 同款）；浮层/常驻展开才有 */
+body.rail #vtab .vtab .t-close { display: none; }
 /* 悬停浮层开着时：外壳窄条整条隐去（visibility 不改布局——菜单锚点、--vtab-cur、
    页面 inset 全按原样算）。浮层就是那条侧栏，两层玻璃叠着会透出窄条的图标与
    按钮、窄条还会在面板之外继续画（"两块拼不上"的根）。 */
@@ -674,24 +705,24 @@ body.compact.flyout-open #compact-edge { visibility: hidden; }
 /* 顶栏两行（用户要求的形态）：38px 标题行 + 42px 工具行 = 80px，
    页面 inset 的 y 由主进程按同一个常数让位（VHEAD_H）。 */
 body[data-layout="vertical"] { --header-h: 80px; }
+/* Edge 结构：顶栏横跨整个窗口宽度（标题行 40 + 工具行 40），
+   垂直面板从顶栏下沿开始——不是面板全高、顶栏让位。 */
+body[data-layout="vertical"] #top { left: 0; right: 0; }
 body[data-layout="vertical"] #titlerow {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 38px;
-  /* 右侧 138px = 三颗 46px 窗口按钮：标题在"侧栏右缘 → 三键左缘"之间居中 */
+  height: 40px;
+  /* 右侧 138px = 三颗 46px 窗口按钮：标题在整窗宽度里居中 */
   padding: 0 138px 0 var(--lg-space-6);
   -webkit-app-region: drag;
 }
 body[data-layout="vertical"] #vtab { display: flex; }
-/* left 一律吃 --vtab-cur（主进程 inset 的唯一值）：紧凑模式的 4px 也走它，
-   不再有"页面 4px、顶栏 46px"的两套账 */
-body[data-layout="vertical"] #top { left: var(--vtab-cur); }
 body[data-layout="vertical"] #tabstrip { display: none; }
-/* 标签条隐藏后工具行升到最顶。窗口三键只占第一行（38px），工具行是第二行、
+/* 标签条隐藏后工具行升到最顶。窗口三键只占第一行（40px），工具行是第二行、
    与三键不重叠——右侧不再替它留 138px（R36：头像芯片顶回窗口右侧） */
-body[data-layout="vertical"] #wctl { height: 38px; }
-body[data-layout="vertical"] #navrow { height: 42px; padding: 0 var(--lg-space-5); }
+body[data-layout="vertical"] #wctl { height: 40px; }
+body[data-layout="vertical"] #navrow { height: 40px; padding: 0 var(--lg-space-5); }
 /* 横条坞的选中指示：贴内缘一道短线（竖列坞是外侧竖线，随方向转） */
 body[data-dock="bottom"] #dock a.active::before {
   left: 8px; right: 8px; top: auto; bottom: -4px;
@@ -712,9 +743,9 @@ body[data-layout="vertical"][data-side="right"] #vtab {
   left: auto; right: 0;
   border-right: none;
   border-left: 1px solid var(--hairline);
-  top: var(--header-h, 44px); /* 让开右上角的窗口三键 */
+  top: var(--header-h); /* 与左侧一样：顶栏全宽，面板在下面 */
 }
-body[data-layout="vertical"][data-side="right"] #top { left: 0; right: var(--vtab-cur); }
+body[data-layout="vertical"][data-side="right"] #top { left: 0; right: 0; }
 body[data-layout="vertical"][data-side="right"] #vtab-resize { right: auto; left: -2px; }
 /* 浮层翻面：贴右缘（与常驻右侧条同矩形）、发丝线在左、展开动画从右往左揭幕。
    圆角与外投影都没有——与外壳那条一致。 */
@@ -786,20 +817,20 @@ body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-
   --gc: #8a8d91;
   display: flex;
   flex-direction: column;
-  gap: var(--lg-space-hair);
-  margin: var(--lg-space-1) 0 2px;
+  gap: 0;
+  margin: 2px var(--vtab-tab-x);
   border-left: 3px solid var(--gc);
-  border-radius: 2px 8px 8px 2px;
-  padding-left: var(--lg-space-1);
+  border-radius: 0 var(--vtab-radius) var(--vtab-radius) 0;
+  padding-left: 0;
 }
 .vghead {
   display: flex;
   align-items: center;
   gap: var(--lg-space-3);
-  height: 26px;
+  height: var(--vtab-tab-h);
   flex: none;
   padding: 0 var(--lg-space-4);
-  border-radius: var(--lg-radius);
+  border-radius: var(--vtab-radius);
   color: var(--ink);
   font-size: 12px;
   cursor: pointer;
@@ -812,11 +843,12 @@ body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-
 .vgroup.collapsed .g-arrow svg { transform: rotate(-90deg); }
 .vghead .g-name { font-size: 12px; color: var(--ink); max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vghead .g-name:empty::after { content: "未命名组"; color: var(--ink-faint); }
-.vghead .g-name[contenteditable="true"] { outline: 1px solid var(--ink); outline-offset: 1px; border-radius: var(--lg-radius-sm); cursor: text; }
+.vghead .g-name[contenteditable="true"] { outline: 1px solid var(--lg-focus-ring); outline-offset: 1px; border-radius: var(--lg-radius-sm); cursor: text; }
 .vghead .g-count { font-size: var(--fs-sub); line-height: 16px; color: var(--ink-faint); background: var(--surface-2); border-radius: var(--lg-radius); padding: 0 var(--lg-space-3); flex: none; }
 .vgroup.collapsed .g-count { color: var(--ink); }
-/* 组内成员：缩进（组色线由 .vgroup 的左缘负责，贯穿整组） */
-.vgroup .vtab { padding-left: var(--lg-space-6); }
+/* 组内成员：缩进（组色线由 .vgroup 的左缘负责，贯穿整组）；
+   行宽跟着组块走，不再额外留 4px 外边距 */
+.vgroup .vtab { margin: 0; padding-left: var(--lg-space-6); }
 .vgroup.drop-zone {
   background: color-mix(in srgb, var(--gc, var(--ink)) 12%, transparent);
   box-shadow: inset 0 0 0 1.5px var(--gc, var(--hairline));
@@ -835,12 +867,18 @@ body[data-side="right"] #pop-root > #tab-flyout.tf-anim { animation-name: lg-tf-
 }
 /* 多选（Edge：Ctrl+点加选 / Shift+点连选 → 右键建组） */
 .vtab.sel, .tab.sel { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--ink-faint); }
-/* 窄条里的组：只留色线 + 色点（组名/计数不可见），缩进压到最小——
-   46px 的栏里 3+3 的组框加 12px 缩进会把图标挤出可视区 */
-body.rail #vtab .vgroup { border-left-width: 2px; padding-left: 0; }
-body.rail #vtab .vgroup .vtab { padding-left: var(--lg-space-4); }
+/* 窄条里的组：只留色点（组名/计数不可见），所有块都对齐到 x=4 的 32px tile */
+body.rail #vtab .vgroup { border-left: 0; margin: 0; padding-left: 0; }
+body.rail #vtab .vgroup .vtab { margin: 0 var(--vtab-tab-x); padding: 0; }
+body.rail #vtab .vghead {
+  width: var(--vtab-head-btn);
+  height: var(--vtab-head-btn);
+  margin: 0 var(--vtab-tab-x);
+  padding: 0;
+  justify-content: center;
+}
 body.rail #vtab .vghead .g-name,
-body.rail #vtab .vghead .g-count { opacity: 0; }
+body.rail #vtab .vghead .g-count { display: none; }
 /* 分组面板（弹出层渲染，结构与账号/下载菜单一致） */
 #group-menu {
   position: fixed;
@@ -920,7 +958,22 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 .tm-empty { padding: var(--lg-space-2) var(--lg-space-4) var(--lg-space-3); color: var(--ink-dim); font-size: var(--lg-fs-caption); }
 /* no-drag 必须有：#tabstrip 整体是窗口拖拽区，按钮不豁免的话点击会被系统
    当成拖动吞掉（"左上角向下箭头点不动"的根因） */
-#tabs-more { flex: none; margin: 4px var(--lg-space-1) 4px 6px; -webkit-app-region: no-drag; }
+/* 28×28 与标签同高（标签 28 + 下边距 4）：此前按钮 32 高再叠 4px 上下边距，
+   flex-end 下整颗被顶高 7px——用户截图里"箭头太偏上"的根因。 */
+#tabs-more { flex: none; width: 28px; height: 28px; margin: 0 var(--lg-space-1) var(--lg-space-1) 6px; -webkit-app-region: no-drag; }
+/* Edge 式垂直/水平切换：水平模式在标签条最左，垂直模式在标题行最左。
+   两处各挂一颗、由布局互斥显示，避免绝对定位跨行带来的命中区问题。 */
+#tabstrip .vtoggle { flex: none; width: 28px; height: 28px; margin: 0 0 var(--lg-space-1); -webkit-app-region: no-drag; }
+body[data-layout="vertical"] #titlerow { position: relative; }
+#titlerow .vtoggle {
+  position: absolute;
+  left: var(--vtab-head-pad);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  -webkit-app-region: no-drag;
+}
 
 /* 垂直栏悬停浮层：弹出层（浮在所有网页视图之上）里渲染的"展开后的侧栏"——
    与 #vtab 同一份结构与同一份 CSS（行高 / 内边距 / 头尾按钮逐像素一致），
@@ -959,6 +1012,17 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 #tab-flyout .vtab .t-close { opacity: 1; }
 
 /* ================= 账号下拉 ================= */
+/* 菜单高度上限：账号/下载/标签页操作/分组菜单都可能被内容撑出窗口，
+   弹层 body 是 overflow:hidden，超出部分会被硬裁。给内部滚动。 */
+#account-menu,
+#download-menu,
+#tabmore-menu,
+#group-menu {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 #account-menu {
   position: fixed;
   z-index: 40;
@@ -974,6 +1038,11 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
   border-radius: var(--lg-radius);
   font-size: var(--fs-base);
 }
+/* 下载行：长文件名/长路径不许把菜单撑出窗口（此前 .dl-* 完全没有样式） */
+.dl-row { align-items: flex-start; }
+.dl-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dl-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-state { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sub); color: var(--ink-dim); }
 .am-head {
   padding: var(--lg-space-2) var(--lg-space-4) 6px;
   font-size: var(--fs-sub);
@@ -1062,15 +1131,17 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 #palette[hidden] { display: none; }
 .pal-box {
   width: min(560px, 88vw);
+  max-height: min(620px, calc(100vh - 12vh - 24px));
+  display: flex;
+  flex-direction: column;
   border-radius: calc(var(--lg-radius, 8px) + 2px);
   overflow: hidden;
 }
-/* 命令面板是卡片：焦点环画在卡片上（输入框在 overflow:hidden 的卡里，
-   画在它身上会被卡裁掉一半） */
-.pal-box:focus-within {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
+/* 命令面板是卡片：焦点环不画在卡片容器上。容器画环会在卡片外圈套一圈
+   硬描边（浅色主题下 --ink 就是近黑色，用户截图里的黑框）；焦点只画在
+   实际可交互的行/按钮上，输入框自己也不画环（卡片内的底部发丝线足够）。 */
+.pal-box:focus-within { outline: none; }
+#pal-input:focus-visible { outline: none !important; }
 #pal-input {
   width: 100%;
   padding: var(--lg-space-6) var(--lg-space-7);
@@ -1082,18 +1153,19 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
   border-bottom: 1px solid var(--hairline);
   outline: none;
 }
-#pal-list { max-height: 46vh; overflow-y: auto; }
+#pal-list { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; }
 /* 搜索标签页（Ctrl+Shift+A）：Edge 那种大列表——更高、每行带图标 + 标题 + 网址 */
-#palette.pal-tabs .pal-box { width: min(640px, 92vw); }
-#palette.pal-tabs #pal-list { max-height: 62vh; }
+#palette.pal-tabs .pal-box { width: min(640px, 92vw); max-height: min(760px, calc(100vh - 12vh - 24px)); }
+#palette.pal-tabs #pal-list { max-height: none; }
 .pal-head {
-  position: sticky;
-  top: 0;
+  /* 不吸顶：面板里可能有两个分组头（“共 N 个标签”和“最近关闭”），都 sticky
+     top:0 会互相压字；列表本身已经是独立滚动区。 */
+  position: static;
   padding: var(--lg-space-3) var(--lg-space-7) 6px;
   font-size: var(--fs-sub);
   letter-spacing: 0.4px;
   color: var(--ink-faint);
-  background: var(--surface);
+  background: transparent;
   border-bottom: 1px solid var(--hairline);
 }
 .pal-item .t-icon { flex: none; width: var(--ico-md); height: var(--ico-md); display: grid; place-items: center; }
@@ -1116,7 +1188,7 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
 }
 .pal-item .pal-hint { margin-left: auto; font-size: var(--fs-sub); color: var(--ink-dim); font-family: var(--lg-mono); }
 .pal-item.on {
-  background: color-mix(in srgb, var(--ink) 10%, var(--surface));
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .pal-item.on .pal-hint { color: var(--ink-dim); }
@@ -1132,6 +1204,14 @@ body.rail #vtab .vghead .g-count { opacity: 0; }
   stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
 }
 .tab.dragging, .vtab.dragging { opacity: 0.5; }
+/* 关闭动画：120ms 淡出 + 轻微收拢，再交给主进程销毁 */
+.tab.closing, .vtab.closing {
+  pointer-events: none;
+  animation: lg-tab-close 120ms ease-in forwards;
+}
+@keyframes lg-tab-close {
+  to { opacity: 0; transform: scale(0.94); }
+}
 body.dragging, body.dragging * { cursor: grabbing !important; }
 
 /* 动效开关：一处关掉，外壳内的过渡与动画全停 */
@@ -1151,8 +1231,9 @@ html[data-lg-bgvideo="1"] #wall { background-image: none; }
 /* ---------- 钉住的标签：水平条里只留图标窄条 ----------
    （垂直栏的钉住标签在 #vtab-pins 图标网格、悬停浮层是普通行——都显示标题，
    所以这条只作用于水平标签条） */
-.tab.pinned .t-title { display: none; }
-.tab.pinned { width: 40px; min-width: 40px; padding: 0 var(--lg-space-2); justify-content: center; gap: var(--lg-space-2); }
+.tab.pinned .t-title,
+.tab.pinned .t-badge { display: none; }
+.tab.pinned { width: 40px; min-width: 40px; padding: 0 var(--lg-space-2); justify-content: center; gap: 0; }
 
 /* ---------- 页内查找条（Ctrl+F） ---------- */
 #findbar {
@@ -1202,26 +1283,24 @@ html[data-lg-bgvideo="1"] #wall { background-image: none; }
    回到 100% 整颗隐去。数字与类由 chrome.js 的 zoomHudSync 按 tabs 快照写；
    面（底色/模糊/高光/投影）走 material.css 的外壳登记表，与其它玻璃面同源。 */
 #zoomhud {
-  position: absolute;
-  right: 146px;              /* 138px 三键 + 8px 缝 */
-  top: 6px;
-  height: 26px;
-  display: flex;
+  position: static;
+  flex: none;
+  height: 24px;
+  display: none;
   align-items: center;
-  padding: 0 var(--lg-space-5);
+  padding: 0 var(--lg-space-4);
   border-radius: var(--lg-radius-lg);
   font-family: var(--lg-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-dim);
   pointer-events: none;
-  z-index: 4;
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.18s, visibility 0.18s;
 }
-#zoomhud.on { visibility: visible; opacity: 0.55; }
-#zoomhud.hot { visibility: visible; opacity: 1; color: var(--ink); }
+#zoomhud.on { display: flex; visibility: visible; opacity: 0.55; }
+#zoomhud.hot { display: flex; visibility: visible; opacity: 1; color: var(--ink); }
 
 /* ============================================================
    交互状态统一口径：焦点 / 按下 / 禁用
@@ -1236,17 +1315,17 @@ html[data-lg-bgvideo="1"] #wall { background-image: none; }
    只有 ID 级的那几条（#omni-input / #pal-input / #find-input）要单独点名，
    前两条的环画在"壳"上（见下），#find-input 的环画在输入框自己身上。 */
 :is(button, input, select, textarea, a, [tabindex], [contenteditable="true"]):focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--lg-focus-ring);
   outline-offset: 2px;
 }
 #find-input:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--lg-focus-ring);
   outline-offset: 2px;
 }
 /* 贴边按钮与面板内的行：环画在内侧——不越出面板的边，也不会被 overflow 裁掉。
    与上面那条同特异性，靠"排在后面"取胜。 */
 :is(.wbtn, .am-item, .tm-subitem, .pal-item):focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--lg-focus-ring);
   outline-offset: -2px;
 }
 

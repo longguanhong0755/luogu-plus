@@ -82,8 +82,8 @@ body {
 /* 大搜索框是一张卡：焦点环画在卡上，不画在里面的裸输入框上
    （输入框是 borderless 的，画在它身上会是个方框套在圆角卡里）。 */
 .h-search:focus-within {
-  border-color: var(--h-ink);
-  outline: 2px solid var(--h-ink);
+  border-color: color-mix(in srgb, var(--h-ink) 45%, transparent);
+  outline: 2px solid var(--lg-focus-ring);
   outline-offset: 2px;
 }
 .h-search svg {

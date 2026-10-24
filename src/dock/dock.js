@@ -48,6 +48,7 @@ function render(p) {
   root.innerHTML = p.html || "";
   // 每颗胶囊都要吃"假壁纸 + 同值上色"的面（与弹层同一条路）
   root.querySelectorAll(".dock-group, .dock-foot").forEach((el) => el.classList.add("lg-fake", "lg-face-b"));
+  de.setAttribute("data-lg-ready", "1");
   applyGeometry(p);
   reportSize();
 }

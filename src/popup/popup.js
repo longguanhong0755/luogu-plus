@@ -107,7 +107,7 @@ async function fitRect(menu) {
   menu.style.visibility = "";
   /* 首开动画：外壳在 HTML 上带了 data-anim（只在悬停展开的第一帧）。
      必须等尺寸量完再打 .tf-anim —— 46px 的起始帧若参与测量，弹层视图会
-     按窄条宽度缩水，面板长到 212 就被裁掉了。 */
+     按窄条宽度缩水，面板长到 248 就被裁掉了。 */
   if (menu.dataset && menu.dataset.anim === "1") {
     menu.removeAttribute("data-anim");
     menu.classList.add("tf-anim");
@@ -174,6 +174,9 @@ function show(p) {
     : menu.id === "glance-wrap" ? menu.querySelector(".gl-bar")
     : menu;
   if (faceEl) faceEl.classList.add("lg-fake", "lg-face-b");
+  /* 主题变量与面都就位后才允许假壁纸/面色显示；CSS 对未就绪状态兜底透明，
+     避免变量缺失时 .lg-fake::after 退回 material.css 的白色兜底。 */
+  document.documentElement.setAttribute("data-lg-ready", "1");
   document.body.classList.toggle("lg-flyout", !!current.flyout);
   /* 两种几何：
      - 矩形模式（fit:"rect"：垂直栏悬停浮层、地址栏联想、查找条）：视图只盖面板
@@ -184,7 +187,7 @@ function show(p) {
   const afterLayout = () => {
     if (current.kind === "palette") setupPalette(menu);
     else if (current.kind === "find") setupFind(menu);
-    else setupMenuKeys(menu);
+    else if (!current.preview) setupMenuKeys(menu);
     /** @type {HTMLElement|null} */
     let focusEl = null;
     if (hadFocus) {

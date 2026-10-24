@@ -27,6 +27,9 @@ const R = (p) => path.join(ROOT, p);
 const settingsJs = fs.readFileSync(R("src/settings/settings.js"), "utf8");
 const settingsHtml = fs.readFileSync(R("src/settings/settings.html"), "utf8");
 const mainJs = fs.readFileSync(R("main.js"), "utf8");
+/* 少数默认值引用共享 spec（如 vtabWidth: VTAB_SPEC.paneW）：按同一模块解析，
+   避免为迁就生成器再抄一份字面量 */
+const VTAB_SPEC = require("../src/vtab-spec.js");
 
 /* DEFAULT_CONFIG 里定义的键（含嵌套对象的顶层键） */
 const cfgBlock = (() => {
@@ -44,12 +47,13 @@ const defaults = {};
 {
   /* 顶层键 + 它的字面量默认值：只取 "key: <字面量>" 这一种形式，
      对象/数组/函数值不在 schema 范围内（它们由各自的代码负责）。 */
-  const re = /^ {2}([a-zA-Z]\w*)\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false)\s*,/gm;
+  const re = /^ {2}([a-zA-Z]\w*)\s*:\s*("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false|VTAB_SPEC\.\w+)\s*,/gm;
   let m;
   while ((m = re.exec(cfgBlock))) {
     let v = m[2];
     if (v === "true") v = true;
     else if (v === "false") v = false;
+    else if (v.indexOf("VTAB_SPEC.") === 0) v = VTAB_SPEC[v.slice(10)];
     else if (/^"/.test(v)) { try { v = JSON.parse(v); } catch (e) { continue; } }
     else v = Number(v);
     defaults[m[1]] = v;

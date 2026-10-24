@@ -3,6 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <title>Luogu++</title>
+  <!-- 首帧硬保护（R51）：配置到达前外壳透明，让 BrowserWindow 的主题底色
+       透出来；不再先画一帧 material.css 的白色兜底。data-lg-ready 由
+       chrome.js 在真实配置落地后设置。 -->
+  <style>
+    html, body { background: transparent !important; }
+    html:not([data-lg-ready]) body #wall,
+    html:not([data-lg-ready]) body #top,
+    html:not([data-lg-ready]) body #vtab { background: transparent !important; }
+    html:not([data-lg-ready]) body #top,
+    html:not([data-lg-ready]) body #vtab { backdrop-filter: none !important; box-shadow: none !important; }
+  </style>
   <!-- 材质唯一文件：面的配方、壁纸层公式、别名全在这里（与页面侧注入的是同一份） -->
   <link rel="stylesheet" href="lgasset://local/material.css" />
   <link rel="stylesheet" href="lgasset://local/chrome/chrome.css" />
@@ -12,18 +23,23 @@
        视频用层内的 <video> 播——两层在同一个滤镜/视差变换里，几何与观感一致。 -->
   <div id="wall" class="lg-wallpaper"><video id="bg-video" muted loop playsinline preload="auto"></video></div>
 
-  <!-- 垂直标签栏（Edge 式）：仅垂直模式显示 -->
+  <!-- 垂直标签栏（Edge 式）：仅垂直模式显示。
+       头部只有两颗（Edge 实测）：左=搜索标签页，右=固定/收起侧栏。
+       「标签页操作」菜单改由侧栏空白处右键打开（面板内不再放第三颗按钮）。 -->
   <aside id="vtab">
     <div id="vtab-head">
-      <!-- 唯一的下拉箭头：点开「标签页操作」菜单（与原右侧那颗同名同效） -->
-      <button class="icon-btn" id="btn-vcollapse" title="标签页操作"></button>
-      <button class="icon-btn" id="btn-vpin" title="钉住侧栏（不自动收回）"></button>
+      <button class="icon-btn" id="btn-vsearch" title="搜索标签页 (Ctrl+Shift+A)"></button>
+      <button class="icon-btn" id="btn-vpin" title="固定侧栏（常驻展开，不自动收回）"></button>
     </div>
-    <!-- 钉住标签（Zen Essentials）：图标网格，不占标签列表 -->
+    <!-- 钉住标签（Zen Essentials）：32×32 图标块，排在列表上方 -->
     <div id="vtab-pins"></div>
-    <div id="vtabs"></div>
-    <button id="vtab-new" title="新建标签页 (Ctrl+T)"><span class="plus">+</span><span class="vtxt">新建标签页</span></button>
-    <button id="vtab-set" title="Luogu++ 设置 (F2)"></button>
+    <!-- 标签列表：新建按钮在列表末尾（Edge 实测：紧跟最后一行 9px，
+         不是钉在面板底部），所以放在滚动容器里一起滚 -->
+    <div id="vtabs">
+      <button id="vtab-new" title="新建标签页 (Ctrl+T)">
+        <span class="plus">+</span><span class="vtxt">新建标签页</span><span class="vkey">Ctrl+T</span>
+      </button>
+    </div>
     <!-- 右缘拖宽手柄（Edge 能拖宽窄）：只在常驻展开时可用 -->
     <div id="vtab-resize" title="拖动调整侧栏宽度"></div>
   </aside>
@@ -34,14 +50,16 @@
   <!-- 顶栏：标签条（水平模式）+ 标题行（垂直模式）+ 浏览器式工具行 -->
   <header id="top">
     <div id="tabstrip">
+      <button class="icon-btn vtoggle" id="btn-vtoggle-h" title="打开垂直标签页 (Ctrl+Shift+,)"></button>
       <button class="icon-btn" id="tabs-more" title="标签页操作"></button>
       <div id="tabs"></div>
       <button id="tab-new" title="新建标签页 (Ctrl+T)">+</button>
-      <div id="strip-pad"></div>
+      <div id="strip-pad" title="双击新建标签页 · 右键换壁纸"></div>
     </div>
     <!-- 垂直模式的标题行（Edge 式）：当前标签图标 + 网页描述，居中；
          右侧是窗口三键（#wctl 绝对定位在右上角）。水平模式整行不显示。 -->
     <div id="titlerow">
+      <button class="icon-btn vtoggle" id="btn-vtoggle-v" title="关闭垂直标签页 (Ctrl+Shift+,)"></button>
       <div id="vtab-current"><span class="vc-icon"></span><span class="vc-title"></span></div>
     </div>
     <div id="navrow">
@@ -66,14 +84,14 @@
                placeholder="网址 / 题号 / UID / 搜索词" />
       </div>
       <div id="actions">
+        <button class="icon-btn" id="btn-site-glass" title="本站玻璃化" hidden></button>
         <button class="icon-btn" id="btn-downloads" title="下载" hidden></button>
+        <!-- 缩放比例：放在 nav 行内（R51），不再绝对定位压住标签条 -->
+        <div id="zoomhud"></div>
         <a id="user-chip" href="#"><span class="uname anon">未登录</span><span class="caret"></span></a>
       </div>
     </div>
     <div id="loadbar"></div>
-    <!-- 缩放比例提示（R36）：窗口右上角、窗口三键左侧；标签上不再写比例。
-         变化时高亮浮出约 1.5 秒，之后 ≠100% 留淡色常驻（chrome.js zoomHudSync） -->
-    <div id="zoomhud"></div>
     <!-- 窗口控制按钮自绘：系统的 titleBarOverlay 会压住账号芯片。
          用户要求"放在最右上角"——所以它绝对定位在顶栏右上角，不属于任何一行，
          水平模式占标签条那 34px，垂直模式占工具行那 44px。 -->
@@ -121,6 +139,7 @@
        chrome:split 推下来，外壳按需创建/隐藏 .sb-bar。 -->
   <div id="splitbars"></div>
 
+  <script src="lgasset://local/vtab-spec.js"></script>
   <script src="lgasset://local/icons.js"></script>
   <script src="lgasset://local/chrome/chrome.js"></script>
 </body>

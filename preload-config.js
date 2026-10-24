@@ -1,5 +1,57 @@
 /* LuoguLab — 本地页（设置 / 首页 / 历史）预加载桥 */
 const { contextBridge, ipcRenderer } = require("electron");
+/* R51：document-start 首帧主题底色（严格防白屏）。sandboxed preload 不能
+   require 本地文件，这段必须在两个 preload 里各留一份。
+   注意：preload 阶段 <html> 已经存在、<head>/<body> 可能还没解析出来；
+   直接往 documentElement 塞 <style> 会被解析器丢掉。所以先给 <html> 设
+   inline !important 背景（元素本身不会被替换），<body>/<head> 出现后再补；
+   inject.js 接管后移除这些 inline 属性，页面自己的背景恢复。 */
+(function bootTheme() {
+  const arg = (prefix) => {
+    const hit = (process.argv || []).find((s) => String(s).startsWith(prefix));
+    return hit ? String(hit).slice(prefix.length) : "";
+  };
+  const bg = arg("--lg-boot-bg=");
+  if (!bg) return;
+  const theme = arg("--lg-boot-theme=") || "light";
+  let style = null;
+  let bodyPatched = false;
+  const install = () => {
+    const root = document.documentElement;
+    if (!root) return false;
+    try {
+      if (!root.hasAttribute("data-lg-boot-bg")) root.setAttribute("data-lg-boot-bg", root.style.getPropertyValue("background") || "");
+      root.style.setProperty("background", bg, "important");
+      root.style.setProperty("color-scheme", theme, "important");
+    } catch (e) {}
+    if (document.body && !bodyPatched) {
+      try {
+        if (!document.body.hasAttribute("data-lg-boot-bg")) document.body.setAttribute("data-lg-boot-bg", document.body.style.getPropertyValue("background") || "");
+        document.body.style.setProperty("background", bg, "important");
+        bodyPatched = true;
+      } catch (e) {}
+    }
+    if (document.head && !style) {
+      try {
+        style = document.createElement("style");
+        style.id = "lg-boot";
+        style.textContent = "html,body{background:" + bg + " !important;color-scheme:" + theme + " !important}";
+        document.head.appendChild(style);
+      } catch (e) {}
+    }
+    return bodyPatched;
+  };
+  if (!install()) {
+    try {
+      const mo = new MutationObserver(() => {
+        if (install()) mo.disconnect();
+      });
+      mo.observe(document, { childList: true, subtree: true });
+      setTimeout(() => mo.disconnect(), 4000);
+    } catch (e) {}
+  }
+})();
+
 
 /* 本地页同样要吃壁纸玻璃：inject.js 的壁纸管线认 window.lgApp.wallImage /
    wallVideo（与站点页的 preload-page.js 同名同协议），这里给一份同款。 */

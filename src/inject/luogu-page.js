@@ -1,5 +1,5 @@
 /* ============================================================
-   Luogu++ — 注入层能力模块：洛谷页增强（清扫 / 用户态 / 欢迎块 / 运势 / 代码复制 / IDE 模式）
+   Luogu++ — 注入层能力模块：洛谷页增强（清扫 / 用户态 / 欢迎块 / 运势 / 代码复制）
    只在洛谷页跑（非洛谷页 DOM 根本不匹配），由内核按路由与开关调起。
    由内核 src/inject.js 装载：模块拿 window.__lgInjectCtx，把入口登记到
    ctx.features[id]，自己不再造共享状态。拆分是纯搬移——逻辑、选择器、时序
@@ -9,7 +9,6 @@
   if (!ctx) return;
 
   var state = ctx.state;
-  var isLuoguPage = ctx.isLuoguPage;
 
   /* ---------- 洁净模式加强：商业推广卡清扫 ----------
      保守策略：仅侧栏/右栏内、文本不长、命中商业关键词、且带商业链接或图片的
@@ -380,61 +379,9 @@
     }, 300);
   }
 
-  /* ---------- 题目页自带 IDE 模式（R38，选择器 R40 实测修正）----------
-     洛谷题目页的「进入 IDE 模式」是页面内的分屏（不是 /ide 路由）：URL 仍是
-     /problem/xxx，DOM 里冒出编辑器容器 + 「退出 IDE 模式」入口。应用侧据此进
-     "真·全屏"（该标签页面视图铺满整窗、外壳与坞让位），编辑器面板也按原生
-     不透明渲染（apply 里 data-lg-ide 定夺，与 /ide 页同一套规则）。
-     R38 的判定用的是三个**猜的**类名（.code-editor-container/.editor-top-bar/
-     .io-editor-container）——真站（2026-10 实测）一个都不存在，判定恒 false，
-     全屏与原生渲染从未生效（用户报"切到 IDE 模式还是不全屏"）。真站的容器是
-     .panel-layout.layout-horizontal.ide-container（内含 .ide-toolbar /
-     .ide-textarea / .cm-editor），退出入口是 .lfe-caption.problem-block-actions
-     里的一个 <a>（文案「退出 IDE 模式」）。判定 = 容器可见 + 退出文案在场。 */
-  function ideInPageDetect() {
-    if (!isLuoguPage || !/^\/problem\//.test(location.pathname || "")) return false;
-    try {
-      /* 退出入口在编辑器容器**外**（题目卡的 .problem-block-actions 里），
-         整页找文案——这是两个方向都权威的信号：进入 IDE 后它出现、退出后
-         又变回「进入 IDE 模式」。 */
-      var exitOn = false;
-      var nodes = document.querySelectorAll("a, button, span");
-      for (var i = 0; i < nodes.length && i < 500; i++) {
-        var s = (nodes[i].textContent || "").trim();
-        if (s.length <= 16 && s.indexOf("退出 IDE") >= 0) { exitOn = true; break; }
-      }
-      /* 已经开着：只看退出入口（编辑器重排/首帧零尺寸的瞬间不许把全屏抖掉） */
-      if (ctx.inPageIde) return exitOn;
-      if (!exitOn) return false;
-      /* 打开方向再加一道容器可见的门，防别的页面元素撞文案误判 */
-      var box = document.querySelector(".ide-container, .panel-layout.ide-container, .ide-toolbar, .code-editor-container, .editor-top-bar, .io-editor-container");
-      if (!box) return false;
-      var r = box.getBoundingClientRect();
-      return !!(r.width > 0 && r.height > 0);
-    } catch (e) { return false; }
-  }
-  var ideQueueTimer = 0;
-  function ideInPageSync() {
-    var on = ideInPageDetect();
-    if (on === ctx.inPageIde) return;
-    ctx.inPageIde = on;
-    try { if (window.lgApp && window.lgApp.ideMode) window.lgApp.ideMode(on); } catch (e) {}
-    ctx.apply(state.cfg); // 面板按原生渲染 / 退出后把玻璃还回来（data-lg-ide 在 apply 里定）
-  }
-  function ideInPageQueue() {
-    clearTimeout(ideQueueTimer);
-    ideQueueTimer = setTimeout(ideInPageSync, 250);
-  }
-
-  /* 启动时序：顶层副作用收进 boot()，由内核按固定顺序调用（见 inject.js
-     的 bootInject）——顺序与这些语句在拆分前的先后完全一致。 */
-  function boot() {
-    /* 调试出口（探针/实测用）：直接看判定与桥，不用等防抖 */
-    window.__lgIdeInPage = function () {
-      return { on: ideInPageDetect(), state: inPageIde, bridge: !!(window.lgApp && window.lgApp.ideMode) };
-    };
-    window.__lgIdeSync = ideInPageSync;
-  }
+  /* 题目页/洛谷自带 IDE 不再自动全屏（R51 用户要求）：打开题目保持普通页面，
+     手动进入 IDE 也不整窗全屏；IDE 页面按玻璃主题渲染（不再强制原生）。
+     原 R38/R40 的页面内 IDE 判定与 lg-app:ide-mode 上报整支删除。 */
 
   ctx.register("luoguPage", {
     sweepPromos: sweepPromos,
@@ -443,8 +390,6 @@
     sweepLucky: sweepLucky,
     sweepCodeCopy: sweepCodeCopy,
     userInfo: userInfo,
-    ideInPageQueue: ideInPageQueue,
     queuePromo: queuePromo,
-    boot: boot,
   });
 })(window.__lgInjectCtx);

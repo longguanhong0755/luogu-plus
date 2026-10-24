@@ -180,8 +180,13 @@ function check(name, pass, detail) {
   check("查找条只盖自己（rect）且输入框聚焦", !!f1.bar && f1.focused === "find-input" && !!fFit && fFit.ar === arExpect,
     JSON.stringify({ bar: f1.bar, focused: f1.focused, fit: fFit && { ar: fFit.ar, originX: fFit.originX, contentW: fFit.contentW } }));
   await popup.eval(`(() => { const i = document.getElementById("find-input"); i.value = "浏览历史"; i.dispatchEvent(new Event("input", { bubbles: true })); return "ok"; })()`);
-  await sleep(800);
-  const f2 = JSON.parse(await popup.eval(`JSON.stringify({ count: (document.getElementById("find-count") || {}).textContent || "", value: document.getElementById("find-input").value })`));
+  /* 查找是异步 CDP findInPage：固定 800ms 在慢机上会读到空计数（假红）。 */
+  let f2 = { count: "", value: "" };
+  for (let i = 0; i < 16; i++) {
+    await sleep(250);
+    f2 = JSON.parse(await popup.eval(`JSON.stringify({ count: (document.getElementById("find-count") || {}).textContent || "", value: document.getElementById("find-input").value })`));
+    if (/\d/.test(f2.count)) break;
+  }
   check("查找有命中计数", /\d/.test(f2.count) && f2.value === "浏览历史", JSON.stringify(f2));
   await popup.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })), "ok"`);
   await sleep(450);
@@ -281,9 +286,14 @@ function check(name, pass, detail) {
     window.__uxRow = row;
     return JSON.stringify({ focused: document.activeElement === u, k: k.value, u: u.value });
   })()`));
-  await sleep(700);
   const stillFocused = await settings.eval(`document.activeElement === document.querySelector("#map-list .map-row:last-child input:last-of-type")`);
-  const saved = JSON.parse(await settings.eval(`window.lgConfig.get().then(c=>JSON.stringify(c.mappings || {}))`));
+  /* 配置保存是 300ms 防抖 + IPC：轮询到映射真正落库，别用固定 sleep。 */
+  let saved = {};
+  for (let i = 0; i < 16; i++) {
+    await sleep(250);
+    saved = JSON.parse(await settings.eval(`window.lgConfig.get().then(c=>JSON.stringify(c.mappings || {}))`));
+    if (saved.uxprobe) break;
+  }
   check("映射连打不丢焦点且完整行入库", typing.focused && stillFocused && saved.uxprobe === "https://example.com/ux",
     JSON.stringify({ typing, stillFocused, saved: saved.uxprobe }));
   // 清掉探针写入的行，避免污染隔离 profile
@@ -323,6 +333,54 @@ function check(name, pass, detail) {
   })()`));
   check("设置页首帧卡片先隐藏、ready 后可见", !ready.pre && ready.hiddenWhenPre === "hidden" && ready.visible === "visible",
     JSON.stringify(ready));
+
+  // ---------- 12 R51：切换按钮 / F11 / 焦点环 / 遮挡 / 参数 / 复制 ----------
+  try {
+    const icon = JSON.parse(await chrome.eval(`(()=>{const h=document.getElementById("btn-vtoggle-h");const v=document.getElementById("btn-vtoggle-v");return JSON.stringify({h:h?h.innerHTML:"",v:v?v.innerHTML:""})})()`));
+    check("垂直/水平切换按钮有专用图标", /M9 4v16/.test(icon.h) && /M9 4v16/.test(icon.v),
+      JSON.stringify({ h: icon.h.slice(0, 46), v: icon.v.slice(0, 46) }));
+
+    await chrome.eval(`window.lgChrome.setConfig({verticalTabs:false, vtabCollapsed:false, vtabCompact:false}), "ok"`);
+    await sleep(900);
+    await chrome.eval(`window.lgChrome.toggleFullscreen(), "ok"`);
+    await sleep(900);
+    const fs1 = await probe();
+    const fsActiveId = JSON.parse(await chrome.eval(`JSON.stringify(tabsState.activeId)`));
+    const fsTab = fs1.tabs.find((t) => t.id === fsActiveId);
+    check("F11：窗口全屏，页面铺满整窗",
+      !!(fs1.fullscreen && fs1.fullscreen.on && fsTab && fsTab.bounds.x === 0 && fsTab.bounds.y === 0 &&
+        fsTab.bounds.width === fs1.win[0] && fsTab.bounds.height === fs1.win[1] && !(fs1.dock && fs1.dock.visible)),
+      JSON.stringify({ fs: fs1.fullscreen, bounds: fsTab && fsTab.bounds, win: fs1.win, dock: fs1.dock }));
+    await chrome.eval(`window.lgChrome.toggleFullscreen(), "ok"`);
+    await sleep(900);
+    const fs2 = await probe();
+    const fsTab2 = fs2.tabs.find((t) => t.id === fsActiveId);
+    check("F11 退出后恢复 inset", !!(fs2.fullscreen && !fs2.fullscreen.on && fsTab2 && fsTab2.bounds.x === fs2.inset.x),
+      JSON.stringify({ fs: fs2.fullscreen, inset: fs2.inset, bounds: fsTab2 && fsTab2.bounds }));
+
+    await chrome.eval(`openPalette(), "ok"`); await sleep(350); await getPopup();
+    const palRing = JSON.parse(await popup.eval(`(()=>{const b=getComputedStyle(document.querySelector(".pal-box"));const i=getComputedStyle(document.getElementById("pal-input"));return JSON.stringify({box:b.outlineStyle+" "+b.outlineWidth,input:i.outlineStyle+" "+i.outlineWidth})})()`));
+    check("命令面板不再有黑色焦点框", palRing.box.startsWith("none") && palRing.input.startsWith("none"), JSON.stringify(palRing));
+    await chrome.eval(`closePalette(), "ok"`); await sleep(250);
+
+    const badge = await chrome.eval(`(()=>{const d=document.createElement("div");d.className="tab pinned";d.innerHTML='<span class="t-badge">x</span>';document.body.appendChild(d);const v=getComputedStyle(d.querySelector(".t-badge")).display;d.remove();return v})()`);
+    const zh = JSON.parse(await chrome.eval(`(()=>{const z=document.getElementById("zoomhud");return JSON.stringify({parent:z?z.parentElement.id:"",pos:z?getComputedStyle(z).position:""})})()`));
+    check("钉住标签徽标隐藏 + 缩放提示在 nav 行内", badge === "none" && zh.parent === "actions" && zh.pos !== "absolute",
+      JSON.stringify({ badge, zh }));
+
+    const line1 = await chrome.eval(`getComputedStyle(document.documentElement).getPropertyValue("--lg-glass-line").trim()`);
+    await settings.eval(`window.lgConfig.set({radius:20,borderStrength:2})`); await sleep(900);
+    const rb = JSON.parse(await chrome.eval(`(()=>{const cs=getComputedStyle(document.documentElement);return JSON.stringify({radius:cs.getPropertyValue("--lg-radius").trim(),line:cs.getPropertyValue("--lg-glass-line").trim()})})()`));
+    check("圆角 R 与边框强度参数生效", rb.radius === "20px" && rb.line !== line1, JSON.stringify({ before: line1, after: rb }));
+    await settings.eval(`window.lgConfig.set({radius:8,borderStrength:1})`); await sleep(700);
+
+    const n0 = JSON.parse(await chrome.eval(`JSON.stringify(tabsState.tabs.length)`));
+    const dup = JSON.parse(await chrome.eval(`window.lgChrome.duplicateTab(tabsState.activeId).then(r=>JSON.stringify(r))`));
+    const n1 = JSON.parse(await chrome.eval(`JSON.stringify(tabsState.tabs.length)`));
+    check("复制标签页（保留位置/身份）", dup.ok === true && n1 === n0 + 1, JSON.stringify({ dup, n0, n1 }));
+    if (dup.ok) { await chrome.eval(`window.lgChrome.closeTab(${dup.id}), "ok"`); await sleep(450); }
+
+  } catch (e) { check("R51 交互回归段未抛错", false, String((e && e.message) || e)); }
 
   const failed = results.filter((r) => !r.pass);
   console.log(`\n探针结果：${results.length - failed.length}/${results.length} 通过`);

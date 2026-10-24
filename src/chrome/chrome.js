@@ -9,6 +9,36 @@ const ICONS = window.LGIcons.PATHS;
 /* 工具行不再放站点快捷钮（题库/题单等入口移到侧坞，可自定义） */
 const DOCK_ICONS = ["home", "list", "book", "trophy", "chat", "clock", "code", "sliders", "star", "download", "page"];
 
+/* 垂直栏几何唯一来源（src/vtab-spec.js，Edge 149 实测）。启动时把同一份值写成
+   CSS 变量——CSS 里的字面量只是首帧兜底，运行时以这份为准。 */
+const VTAB_SPEC = window.LG_VTAB_SPEC || {
+  paneW: 248, railW: 41, edgeW: 4, topBarH: 80, headerH: 40, headerBtn: 32,
+  headerPad: 4, tabH: 32, tabInsetX: 4, tabW: 240, closeSize: 16, closeTop: 8,
+  closeRight: 8, newTabGap: 9, resizeW: 4, radius: 4, font: 12, minW: 160, maxW: 400,
+};
+(function applyVtabSpecVars() {
+  const vars = {
+    "--vtab-w": VTAB_SPEC.paneW,
+    "--vtab-rail": VTAB_SPEC.railW,
+    "--vtab-edge": VTAB_SPEC.edgeW,
+    "--vtab-head-h": VTAB_SPEC.headerH,
+    "--vtab-head-btn": VTAB_SPEC.headerBtn,
+    "--vtab-head-pad": VTAB_SPEC.headerPad,
+    "--vtab-tab-h": VTAB_SPEC.tabH,
+    "--vtab-tab-x": VTAB_SPEC.tabInsetX,
+    "--vtab-tab-w": VTAB_SPEC.tabW,
+    "--vtab-close": VTAB_SPEC.closeSize,
+    "--vtab-close-top": VTAB_SPEC.closeTop,
+    "--vtab-close-right": VTAB_SPEC.closeRight,
+    "--vtab-new-offset": VTAB_SPEC.newTabGap,
+    "--vtab-resize-w": VTAB_SPEC.resizeW,
+    "--vtab-radius": VTAB_SPEC.radius,
+    "--vtab-font": VTAB_SPEC.font,
+  };
+  const s = document.documentElement.style;
+  for (const k of Object.keys(vars)) s.setProperty(k, vars[k] + "px");
+})();
+
 function svg(name, attrs) {
   return window.LGIcons.svg(name, attrs);
 }
@@ -64,6 +94,19 @@ function resolveOmnibox(raw, mappings, searchTpl, searchIsLuogu) {
 window.resolveOmnibox = resolveOmnibox;
 
 /* ---------- 标签：同一份数据渲染两套容器（顶部条 / 垂直栏） ---------- */
+function tabTitleOf(t) {
+  if (!t) return "";
+  return t.title || (t.url || "").replace(/^https?:\/\/[^/]+/, "") || "新标签页";
+}
+/* 图标来源指纹：增量更新只在来源变了时替换 .t-icon，避免标题/加载态更新
+   把正在悬停的 favicon 重新插一遍（会闪，也会重置图片解码）。 */
+function tabIconKey(t) {
+  if (!t) return "";
+  if (t.kind === "settings") return "settings";
+  if (t.kind === "home") return "home";
+  if (!t.special && t.favicon) return "fav:" + t.favicon;
+  return "glyph:" + (t.special ? "code" : "page");
+}
 function tabIcon(t) {
   const icon = document.createElement("span");
   icon.className = "t-icon";
@@ -119,6 +162,15 @@ function selRange(id) {
   selPaint();
 }
 
+/* 关闭动画：先让行淡出/收拢 120ms，再真正销毁（主进程侧仍是立即关）。
+   拖拽/重渲期间元素可能已被替换，找不到就直接关。 */
+function closeTabAnimated(id) {
+  const el = document.querySelector('#tabs .tab[data-id="' + id + '"], #vtabs .vtab[data-id="' + id + '"]');
+  if (!el) { window.lgChrome.closeTab(id); return; }
+  el.classList.add("closing");
+  setTimeout(() => window.lgChrome.closeTab(id), 120);
+}
+
 function buildTabEl(t, cls) {
   const el = document.createElement("div");
   el.dataset.id = String(t.id);
@@ -134,6 +186,7 @@ function buildTabEl(t, cls) {
   }
   el.title = (t.title || t.url) + (t.pinned ? "（已钉住）" : "");
   el.appendChild(tabIcon(t));
+  el.dataset.iconKey = tabIconKey(t);
   // 钉住徽标：钉住行没有 ×（Edge 同款），用一枚小钉子说明身份
   if (t.pinned) {
     const pn = document.createElement("span");
@@ -171,7 +224,7 @@ function buildTabEl(t, cls) {
   // 窗口右上角的 #zoomhud 实时显示（见 zoomHudSync）
   const title = document.createElement("span");
   title.className = "t-title";
-  title.textContent = t.title || t.url.replace(/^https?:\/\/[^/]+/, "") || "新标签页";
+  title.textContent = tabTitleOf(t);
   el.appendChild(title);
   const close = document.createElement("button");
   close.className = "t-close";
@@ -179,7 +232,7 @@ function buildTabEl(t, cls) {
   close.title = "关闭标签页 (Ctrl+W)";
   close.addEventListener("click", (e) => {
     e.stopPropagation();
-    window.lgChrome.closeTab(t.id);
+    closeTabAnimated(t.id);
   });
   if (!t.pinned) el.appendChild(close);
   el.addEventListener("click", (e) => {
@@ -196,7 +249,7 @@ function buildTabEl(t, cls) {
       e.preventDefault();
       // 必须截住冒泡：#tabstrip 上有"中键点空白新建标签"，不拦会关一个又开一个
       e.stopPropagation();
-      window.lgChrome.closeTab(t.id);
+      closeTabAnimated(t.id);
     }
   });
   el.addEventListener("contextmenu", (e) => {
@@ -327,8 +380,12 @@ function dragTip(text, x, y, color) {
   }
   dragTipEl.textContent = text;
   dragTipEl.style.setProperty("--gc", color || "var(--ink)");
-  dragTipEl.style.left = Math.round(x + 14) + "px";
-  dragTipEl.style.top = Math.round(y + 16) + "px";
+  const tw = dragTipEl.offsetWidth || 160;
+  const th = dragTipEl.offsetHeight || 24;
+  const x0 = Math.max(8, Math.min(Math.round(x + 14), window.innerWidth - tw - 8));
+  const y0 = Math.max(8, Math.min(Math.round(y + 16), window.innerHeight - th - 8));
+  dragTipEl.style.left = x0 + "px";
+  dragTipEl.style.top = y0 + "px";
 }
 /* 新建组会用的颜色（主进程下发下一个调色板色，和 makeGroup 同一份游标） */
 function nextGroupColor() {
@@ -671,12 +728,13 @@ function fitTabs() {
   }
 }
 window.addEventListener("resize", fitTabs);
-// 横滚态下滚轮纵转横：标签条上滚轮子，自然是想左右看标签
+// 标签条滚轮纵转横：只要实际有横向溢出就生效（不再要求 .scroll 类；
+// Edge/Chrome 在标签多时滚轮直接横滚，不需要先"进入某个模式"）。
 document.getElementById("tabs").addEventListener(
   "wheel",
   (e) => {
     const box = e.currentTarget;
-    if (!box.classList.contains("scroll")) return;
+    if (box.scrollWidth <= box.clientWidth) return;
     box.scrollLeft += e.deltaY || e.deltaX;
     e.preventDefault();
   },
@@ -693,81 +751,87 @@ document.getElementById("tabs").addEventListener(
 const THUMB_DELAY = 320;   // 悬停多久才弹：太短会误触发（鼠标路过）
 let thumbTimer = null;
 let thumbHideTimer = null;
-let thumbCardEl = null;
-let thumbCardId = 0;
+let thumbToken = 0;
+let thumbShownId = 0;
 
-function ensureThumbCard() {
-  if (thumbCardEl) return thumbCardEl;
-  const el = document.createElement("div");
-  el.id = "thumb-card";
-  el.hidden = true;
-  el.innerHTML =
-    '<img class="tc-img" alt=""><div class="tc-meta">' +
-    '<div class="tc-title"></div><div class="tc-url"></div></div>';
-  document.body.appendChild(el);
-  el.addEventListener("mouseenter", () => { clearTimeout(thumbHideTimer); thumbHideTimer = null; });
-  el.addEventListener("mouseleave", () => {
-    clearTimeout(thumbHideTimer);
-    thumbHideTimer = setTimeout(() => hideThumbCard(), 160);
-  });
-  thumbCardEl = el;
-  return el;
-}
-
+/* 标签悬停预览：卡片实体放**弹层覆盖视图**（R51）。以前画在外壳层，网页
+   WebContentsView 永远盖在外壳之上，卡片只剩顶部几十像素可见；搬到弹层后
+   它天然压过网页。缩略图仍走主进程 capturePage（20s 缓存）。 */
 function hideThumbCard() {
   clearTimeout(thumbTimer);
   thumbTimer = null;
   clearTimeout(thumbHideTimer);
   thumbHideTimer = null;
-  if (!thumbCardEl) return;
-  thumbCardEl.hidden = true;
-  thumbCardId = 0;
+  thumbToken++;
+  if (thumbShownId) {
+    thumbShownId = 0;
+    /* 预览还开着时用户可能已经点开了菜单/浮层：这时 popup 里装的已经是
+       菜单，不能再 popupHide 把菜单一起关掉。 */
+    if (!menuOpenId && !flyoutOpen) {
+      try { window.lgChrome.popupHide(); } catch (e) {}
+    }
+  }
 }
 
 async function showThumbCard(tabId, anchorEl) {
+  if (menuOpenId || flyoutOpen) return;
   const t = tabsState.tabs.find((x) => x.id === tabId);
-  if (!t) return;
-  const card = ensureThumbCard();
-  card.querySelector(".tc-title").textContent = t.title || "（无标题）";
-  card.querySelector(".tc-url").textContent = t.url || "";
-  const img = card.querySelector(".tc-img");
-  img.removeAttribute("src");
-  card.hidden = false;
-  thumbCardId = tabId;
-  const r = anchorEl.getBoundingClientRect();
-  const w = card.offsetWidth || 320;
-  card.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left)) + "px";
-  card.style.top = r.bottom + 8 + "px";
-  /* 缩略图：主进程按 tabId 出图并带 20 秒缓存。没有该能力（老 preload）
-     或出图失败时，只留标题与网址——卡片本身仍然有用。 */
-  if (typeof window.lgChrome.tabThumb !== "function") return;
+  if (!t || !anchorEl) return;
+  const token = ++thumbToken;
+  let thumb = null;
   try {
-    const res = await window.lgChrome.tabThumb(tabId);
-    if (!res || !res.ok || thumbCardId !== tabId || !thumbCardEl || thumbCardEl.hidden) return;
-    img.src = res.dataUrl;
-  } catch (e) { /* 出图失败就算了，不影响元信息 */ }
+    if (typeof window.lgChrome.tabThumb === "function") thumb = await window.lgChrome.tabThumb(tabId);
+  } catch (e) {}
+  if (token !== thumbToken) return;
+  const r = anchorEl.getBoundingClientRect();
+  const img = thumb && thumb.ok && thumb.dataUrl
+    ? `<img class="tc-img" alt="" src="${thumb.dataUrl}">`
+    : '<div class="tc-img tc-empty"></div>';
+  const html =
+    `<div id="thumb-card">${img}<div class="tc-meta">` +
+    `<div class="tc-title">${escHtml(t.title || "（无标题）")}</div>` +
+    `<div class="tc-url">${escHtml(t.url || "")}</div></div></div>`;
+  thumbShownId = tabId;
+  try {
+    await window.lgChrome.popupShow({
+      html,
+      fit: "rect",
+      preview: true,
+      al: Math.max(8, Math.round(r.left)),
+      ay: Math.round(r.bottom + 8),
+      fitPad: { l: 8, t: 8, r: 8, b: 8 },
+      ...popupThemePayload(),
+    });
+  } catch (e) {
+    thumbShownId = 0;
+  }
 }
 
-document.getElementById("tabs").addEventListener("mouseover", (e) => {
-  const el = e.target.closest(".tab[data-id]");
-  if (!el) return;
-  const id = Number(el.dataset.id);
-  if (id === thumbCardId) return;
-  clearTimeout(thumbHideTimer);
-  thumbHideTimer = null;
-  clearTimeout(thumbTimer);
-  thumbTimer = setTimeout(() => showThumbCard(id, el), THUMB_DELAY);
-});
-document.getElementById("tabs").addEventListener("mouseout", (e) => {
-  const el = e.target.closest(".tab[data-id]");
-  if (!el) return;
-  const to = e.relatedTarget;
-  if (to && (el.contains(to) || (thumbCardEl && thumbCardEl.contains(to)))) return;
-  clearTimeout(thumbTimer);
-  thumbTimer = null;
-  clearTimeout(thumbHideTimer);
-  thumbHideTimer = setTimeout(() => hideThumbCard(), 160);
-});
+function bindTabPreview(root) {
+  if (!root) return;
+  root.addEventListener("mouseover", (e) => {
+    const el = e.target.closest(".tab[data-id], .vtab[data-id]");
+    if (!el) return;
+    const id = Number(el.dataset.id);
+    if (id === thumbShownId) return;
+    clearTimeout(thumbHideTimer);
+    thumbHideTimer = null;
+    clearTimeout(thumbTimer);
+    thumbTimer = setTimeout(() => showThumbCard(id, el), THUMB_DELAY);
+  });
+  root.addEventListener("mouseout", (e) => {
+    const el = e.target.closest(".tab[data-id], .vtab[data-id]");
+    if (!el) return;
+    const to = e.relatedTarget;
+    if (to && el.contains(to)) return;
+    clearTimeout(thumbTimer);
+    thumbTimer = null;
+    clearTimeout(thumbHideTimer);
+    thumbHideTimer = setTimeout(() => hideThumbCard(), 160);
+  });
+}
+bindTabPreview(document.getElementById("tabs"));
+bindTabPreview(document.getElementById("vtabs"));
 /* 标签条重渲（开/关/移动标签）后旧卡片锚点已失效 */
 const _origRenderTabs = renderTabs;
 renderTabs = function () {
@@ -920,40 +984,124 @@ function tabRuns() {
   return runs;
 }
 
+/* 结构签名：决定“必须整条重画”的那部分数据。标题/图标/加载态/激活态都不在内
+   ——它们只 patch 现有行，加载期不再把鼠标下的 DOM 拆掉重建。 */
+function tabsStructSig() {
+  const tabsPart = tabsState.tabs
+    .map((t) =>
+      [
+        t.id,
+        t.pinned ? 1 : 0,
+        t.group == null ? "" : t.group,
+        t.splitPeer == null ? "" : t.splitPeer,
+        t.splitSide || "",
+        t.sleeping ? 1 : 0,
+      ].join(":")
+    )
+    .join(",");
+  const groupsPart = (tabsState.groups || [])
+    .map((g) => [g.id, g.name || "", g.color || "", g.collapsed ? 1 : 0].join(":"))
+    .join(",");
+  return tabsPart + "||" + groupsPart;
+}
+
+/* 只翻转由 tabs 数据决定的类名；sel / dragging / drop-* / tiny 属于交互状态，
+   必须原样保留——增量更新就是为了不打断它们。 */
+function patchTabEl(el, t) {
+  if (!el || !t) return;
+  const g = t.group != null ? groupById(t.group) : null;
+  const split = t.splitPeer != null;
+  el.classList.toggle("active", t.id === tabsState.activeId);
+  el.classList.toggle("loading", !!t.loading);
+  el.classList.toggle("special", !!t.special);
+  el.classList.toggle("pinned", !!t.pinned);
+  el.classList.toggle("sleeping", !!t.sleeping);
+  el.classList.toggle("grouped", !!g);
+  el.classList.toggle("split-pair", split);
+  el.classList.toggle("split-first", split && t.splitSide === "left");
+  el.classList.toggle("split-last", split && t.splitSide === "right");
+  if (g) {
+    el.style.setProperty("--gc", GROUP_COLORS[g.color] || GROUP_COLORS.gray);
+    if (g.name) el.dataset.gname = g.name;
+    else delete el.dataset.gname;
+  } else {
+    el.style.removeProperty("--gc");
+    delete el.dataset.gname;
+  }
+  el.title = (t.title || t.url || "") + (t.pinned ? "（已钉住）" : "");
+  const titleEl = el.querySelector(".t-title");
+  if (titleEl) titleEl.textContent = tabTitleOf(t);
+  const key = tabIconKey(t);
+  if (el.dataset.iconKey !== key) {
+    const old = el.querySelector(".t-icon");
+    const fresh = tabIcon(t);
+    if (old) el.replaceChild(fresh, old);
+    else el.insertBefore(fresh, el.firstChild);
+    el.dataset.iconKey = key;
+  }
+}
+
+let tabStructSigLast = null;
 function renderTabs() {
   if (drag && drag.moved) return; // 拖拽进行中：重建 DOM 会打断手势
   if (renaming) return; // 就地改名中：重建 DOM 会把输入框吞掉
   const strip = document.getElementById("tabs");
   const rail = document.getElementById("vtabs");
   const pins = document.getElementById("vtab-pins");
-  /* FLIP 快照：整份重建后让位移过的行从旧位置滑过去（分组/重排不再瞬间跳） */
-  const snapStrip = flipSnapIn(strip);
-  const snapRail = flipSnapIn(rail);
-  const snapPins = flipSnapIn(pins);
-  strip.textContent = "";
-  fillVtab(pins, rail);
-  /* 水平条：钉住的照旧排在最前（条内纯图标小标签） */
-  for (const t of tabsState.tabs) if (t.pinned) strip.appendChild(buildTabEl(t, "tab"));
-  for (const run of tabRuns()) {
-    const g = run.gid != null ? groupById(run.gid) : null;
-    if (g) {
-      strip.appendChild(buildGroupChip(g, run.tabs.length, "gchip"));
-      if (g.collapsed) continue;
+  const sig = tabsStructSig();
+  const rebuild = sig !== tabStructSigLast;
+  if (rebuild) {
+    /* FLIP 快照：结构变化（开/关/重排/分组）后让位移过的行从旧位置滑过去 */
+    const snapStrip = flipSnapIn(strip);
+    const snapRail = flipSnapIn(rail);
+    const snapPins = flipSnapIn(pins);
+    strip.textContent = "";
+    fillVtab(pins, rail);
+    /* 水平条：钉住的照旧排在最前（条内纯图标小标签） */
+    for (const t of tabsState.tabs) if (t.pinned) strip.appendChild(buildTabEl(t, "tab"));
+    for (const run of tabRuns()) {
+      const g = run.gid != null ? groupById(run.gid) : null;
+      if (g) {
+        strip.appendChild(buildGroupChip(g, run.tabs.length, "gchip"));
+        if (g.collapsed) continue;
+      }
+      for (const t of run.tabs) strip.appendChild(buildTabEl(t, "tab"));
     }
-    for (const t of run.tabs) strip.appendChild(buildTabEl(t, "tab"));
+    flipPlayIn(strip, snapStrip);
+    flipPlayIn(rail, snapRail);
+    flipPlayIn(pins, snapPins);
+    tabStructSigLast = sig;
+  } else {
+    /* meta 类更新（标题/favicon/loading/激活）走原地 patch：不删节点、不跑
+       FLIP，悬停与点击目标在加载期间保持同一个元素。 */
+    const byId = new Map(tabsState.tabs.map((t) => [t.id, t]));
+    for (const el of document.querySelectorAll('#tabs .tab[data-id], #vtabs .vtab[data-id], #vtab-pins .vtab[data-id]')) {
+      patchTabEl(el, byId.get(Number(el.dataset.id)));
+    }
   }
-  flipPlayIn(strip, snapStrip);
-  flipPlayIn(rail, snapRail);
-  flipPlayIn(pins, snapPins);
   document.body.classList.toggle("loading", tabsState.tabs.some((t) => t.loading));
   renderNavBtns();
   renderVtabCurrent();
   renderDock();
   syncOmni();
   fitTabs();
+  scrollActiveTabIntoView();
   // 悬停浮层开着时标签变了要同步（签名没变就不重发——避免鼠标下的元素
   // 被重建触发浮层的 mouseleave 误关闭）
   if (flyoutOpen) renderTabFlyout();
+}
+/* 水平条：切标签/新建/恢复后把活动标签滚进视野（否则它可能完全在滚动区外，
+   用户看到的是"切了但不知道切到哪"）。用 scrollLeft 微调，不触发 scrollIntoView
+   把外层容器一起滚。 */
+function scrollActiveTabIntoView() {
+  const strip = document.getElementById("tabs");
+  if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
+  const el = strip.querySelector('.tab.active[data-id="' + tabsState.activeId + '"]');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const br = strip.getBoundingClientRect();
+  if (r.left < br.left) strip.scrollLeft -= Math.ceil(br.left - r.left) + 8;
+  else if (r.right > br.right) strip.scrollLeft += Math.ceil(r.right - br.right) + 8;
 }
 
 /* 垂直侧栏的内容（钉住区 + 分组块 + 普通标签行）——外壳与悬停浮层共用这一份：
@@ -963,6 +1111,9 @@ function renderTabs() {
    分组按 Edge 式包成 .vgroup（组头一行 + 成员缩进 + 左缘连续组色线）。 */
 function fillVtab(pins, list) {
   if (pins) pins.textContent = "";
+  /* 新建按钮在列表末尾（Edge：紧跟最后一行 9px）：整份重建时先摘出来，
+     行都插完再放回去——否则 textContent="" 会把它一起清掉 */
+  const newBtn = list.querySelector("#vtab-new");
   list.textContent = "";
   if (pins) for (const t of tabsState.tabs) if (t.pinned) pins.appendChild(buildTabEl(t, "vtab"));
   for (const run of tabRuns()) {
@@ -979,6 +1130,7 @@ function fillVtab(pins, list) {
     if (!g.collapsed) for (const t of run.tabs) box.appendChild(buildTabEl(t, "vtab"));
     list.appendChild(box);
   }
+  if (newBtn) list.appendChild(newBtn);
 }
 
 /* ---------- 工具行：前进后退可用态 / omnibox ---------- */
@@ -995,18 +1147,53 @@ function renderNavBtns() {
   const stop = document.getElementById("btn-stop");
   if (reload) reload.hidden = loading;
   if (stop) stop.hidden = !loading;
+  syncSiteGlassBtn();
 }
-/* 垂直模式的窗口标题牌：跟着活动标签走（图标/标题/加载圈），
+/* 当前站点的可玻璃化 host（只对站外 http(s) 页面出现按钮；洛谷走自己的
+   登记表，不需要"本站关闭"）。 */
+function currentExternalHost() {
+  const t = currentTab();
+  if (!t || !/^https?:/i.test(t.url || "")) return "";
+  let host = "";
+  try { host = new URL(t.url).hostname.toLowerCase(); } catch (e) { return ""; }
+  if (!host || /(^|\.)luogu\.(com\.cn|org|com)$/i.test(host)) return "";
+  return host;
+}
+function hostInList(host, list) {
+  return (Array.isArray(list) ? list : []).some((d) => {
+    const x = String(d || "").trim().toLowerCase().replace(/^\.+/, "");
+    return x && (host === x || host.endsWith("." + x));
+  });
+}
+function syncSiteGlassBtn() {
+  const btn = document.getElementById("btn-site-glass");
+  if (!btn) return;
+  const host = currentExternalHost();
+  if (!host) { btn.hidden = true; return; }
+  const off = hostInList(host, cfgState.glassExclude);
+  btn.hidden = false;
+  btn.innerHTML = svg(off ? "glassOff" : "glassOn");
+  btn.title = off ? "本站已关闭玻璃（点击恢复）" : "本站玻璃化（点击关闭）";
+  btn.setAttribute("aria-label", btn.title);
+  btn.classList.toggle("on", !off);
+}
+/* 垂直模式的窗口标题牌：跟着活动标签走（图标/标题/加载态），
    水平模式不渲染也没人看（CSS 藏着） */
 function renderVtabCurrent() {
   const box = document.getElementById("vtab-current");
   if (!box) return;
   const t = activeSnapshot();
-  const ic = box.querySelector(".vc-icon");
-  ic.textContent = "";
-  if (t) ic.appendChild(tabIcon(t));
-  box.querySelector(".vc-title").textContent = t ? t.title || t.url.replace(/^https?:\/\/[^/]+/, "") || "新标签页" : "";
-  box.title = t ? t.title || t.url : "";
+  const key = tabIconKey(t);
+  if (box.dataset.iconKey !== key) {
+    const ic = box.querySelector(".vc-icon");
+    if (ic) {
+      ic.textContent = "";
+      if (t) ic.appendChild(tabIcon(t));
+    }
+    box.dataset.iconKey = key;
+  }
+  box.querySelector(".vc-title").textContent = tabTitleOf(t);
+  box.title = t ? t.title || t.url || "" : "";
   box.classList.toggle("loading", !!(t && t.loading));
 }
 function omniDisplayUrl(u, kind) {
@@ -1698,6 +1885,7 @@ function renderTabMoreMenu() {
   m.appendChild(
     tmRow(cfgState.verticalTabs ? "关闭垂直标签页" : "打开垂直标签页", {
       icon: cfgState.verticalTabs ? "railClose" : "railOpen",
+      hint: keyHint("vtab-layout"),
       run: () => {
         hideAllMenus();
         window.lgChrome.setConfig({ verticalTabs: !cfgState.verticalTabs });
@@ -1776,6 +1964,31 @@ function renderTabMoreMenu() {
       },
     })
   );
+  /* 4b. 设置：面板里的设置键已按 Edge 移除，菜单补一个入口 */
+  m.appendChild(
+    tmRow("Luogu++ 设置", {
+      icon: "sliders",
+      hint: keyHint("settings", "F2"),
+      run: () => {
+        hideAllMenus();
+        window.lgChrome.openSettings();
+      },
+    })
+  );
+  /* 4c. 关闭类操作：Edge 的标签操作菜单里最常用的三项，不再只藏在
+     标签右键原生菜单里。 */
+  m.appendChild(
+    tmRow("关闭其他标签页", {
+      icon: "winClose",
+      run: () => { hideAllMenus(); window.lgChrome.closeOthers(); },
+    })
+  );
+  m.appendChild(
+    tmRow("关闭右侧标签页", {
+      icon: "winClose",
+      run: () => { hideAllMenus(); window.lgChrome.closeRight(); },
+    })
+  );
   /* 5. 打开标签页 */
   m.appendChild(tmRow("打开标签页", { icon: "page", expandable: "tabs", open: !!tmExpanded.tabs }));
   if (tmExpanded.tabs) {
@@ -1791,6 +2004,13 @@ function renderTabMoreMenu() {
     m.appendChild(sub);
   }
   /* 6. 最近关闭 */
+  m.appendChild(
+    tmRow("重新打开关闭的标签页", {
+      icon: "historyClock",
+      hint: keyHint("reopen-tab", "Ctrl+Shift+T"),
+      run: () => { hideAllMenus(); window.lgChrome.reopenTab(); },
+    })
+  );
   m.appendChild(tmRow("最近关闭", { icon: "historyClock", expandable: "closed", open: !!tmExpanded.closed }));
   if (tmExpanded.closed) {
     const sub = tmSub();
@@ -1815,7 +2035,9 @@ async function openTabMoreMenu(anchor) {
     hideAllMenus();
     return;
   }
-  closeTabFlyout();
+  /* 菜单接管弹层：先摘掉浮层的视觉状态（窄条画回来），再让 popupShow 换内容。
+     不先 popupHide——那会在菜单出现前空一帧，看起来像闪一下。 */
+  handoffFlyout();
   /* 最近关闭在主进程手里：开菜单时现拉（失败就给空表，菜单照常能用） */
   try {
     const r = await window.lgChrome.closedList();
@@ -1898,7 +2120,7 @@ function showGroupMenu(gid, anchor) {
     hideAllMenus();
     return;
   }
-  closeTabFlyout();
+  handoffFlyout();
   renderGroupMenu(gid);
   menuAt("group-menu", anchor);
 }
@@ -1924,16 +2146,18 @@ function syncPinUI() {
   // 紧凑模式下侧栏收没（只留热区），视作"未展开"——点一下就是常驻展开
   const expanded = !document.body.classList.contains("rail") && !document.body.classList.contains("compact");
   pin.classList.toggle("on", expanded);
-  /* 图标是一枚钉子：钉住（常驻展开）= 竖直实心；没钉住（窄条/悬停浮层里）= 斜着。
-     三种姿态都在同一坐标（R37：头部几何统一），点哪都是它。 */
+  /* 图标是一枚钉子：固定（常驻展开）= 竖直实心；未固定（窄条/悬停浮层里）= 斜着。
+     Edge 实测：这颗是 pin 开关（固定/自动收起），不是"点一下立即折叠"。 */
   pin.innerHTML = svg(expanded ? "nailOn" : "nailOff");
-  pin.title = expanded ? "收起侧栏（回到窄条，悬停自动展开）" : "钉住侧栏（常驻展开，不自动收回）";
+  pin.title = expanded ? "取消固定（回到窄条，悬停自动展开）" : "固定侧栏（常驻展开，不自动收回）";
 }
 function togglePin() {
   /* 乐观落定（R36）：本帧就把姿态翻到目标值，主进程的配置回程只做校正。
      等 IPC 回来才动类名的话，悬停浮层先收、常驻侧栏后长——中间会闪一条
-     46px 窄条，点钉子也像"没反应"。判据与主进程 toggleVtabPin 完全一致：
+     窄条，点钉子也像"没反应"。判据与主进程 toggleVtabPin 完全一致：
      rail / compact 都不算展开。 */
+  // 菜单开着时点固定键：先把菜单收掉，别让两层弹层抢同一个视图
+  if (menuOpenId) hideAllMenus();
   const expandedNow = !document.body.classList.contains("rail") && !document.body.classList.contains("compact");
   const wantExpanded = !expandedNow;
   document.body.classList.toggle("rail", !wantExpanded);
@@ -1957,11 +2181,11 @@ function togglePin() {
 
 function renderTabFlyout(force, anim) {
   /* 内容签名：没变就不重发（重发会重建鼠标下的 DOM，浮层闪烁）。钉住/休眠/
-     分组折叠/缩放/加载这些状态都算进签名——浮层与侧栏是同一份数据的两个
-     视图，少一项就会出现"侧栏变了、浮层还是旧的"。 */
+     分组折叠/激活这些结构状态算进签名。loading 不算：它每次加载翻两次，
+     重发只会把鼠标下的行换掉；加载态本身已经没有转圈动画，浮层不需要跟着刷。 */
   const sig =
     tabsState.tabs
-      .map((t) => [t.id, t.title || "", t.id === tabsState.activeId ? "a" : "", t.loading ? "l" : "", t.pinned ? "p" : "", t.sleeping ? "s" : "", t.group != null ? "g" + t.group : ""].join(":"))
+      .map((t) => [t.id, t.title || "", t.id === tabsState.activeId ? "a" : "", t.pinned ? "p" : "", t.sleeping ? "s" : "", t.group != null ? "g" + t.group : ""].join(":"))
       .join("|") +
     "||" +
     (tabsState.groups || []).map((g) => g.id + ":" + (g.collapsed ? "c" : "") + ":" + (g.name || "")).join(",");
@@ -1984,7 +2208,13 @@ function renderTabFlyout(force, anim) {
     const t = tabsState.tabs.find((x) => x.id === id);
     if (t) el.dataset.url = t.url || ""; // 悬停卡片要网址
     const closeEl = el.querySelector(".t-close");
-    if (closeEl) popBind(closeEl, () => { window.lgChrome.closeTab(id); closeTabFlyout(); });
+    if (closeEl) {
+      /* 关闭叉只关标签，不关浮层：浮层是整条侧栏，用户正在里面连着关几个
+         标签时不该每关一个就缩回窄条。data-pop-stay 让弹层走"执行但不 hide"
+         的通道；标签快照回来后 renderTabs 会重发浮层内容。 */
+      closeEl.setAttribute("data-pop-stay", "");
+      popBind(closeEl, () => window.lgChrome.closeTab(id));
+    }
     popBind(el, () => { window.lgChrome.activateTab(id); closeTabFlyout(); });
   }
   /* 组头：点一下折叠/展开该组（与侧栏同一个动作）；右键开组面板——面板是外壳
@@ -2006,19 +2236,18 @@ function renderTabFlyout(force, anim) {
   });
   /* 头部两颗（⌄ 标签页操作 / 箭头 常驻展开）+ 底部 +、设置：与外壳同一套动作。
      浮层盖住了窄条，这些按钮必须在浮层里点得到——盖住 ≠ 点不到。 */
-  const menuBtn = box.querySelector("#btn-vcollapse");
-  if (menuBtn) {
-    popBind(menuBtn, () => {
-      dismissFlyoutState();
-      openTabMoreMenu(document.getElementById("btn-vcollapse"));
+  /* 头部左键 = 搜索标签页（Edge 实测；不再是「标签页操作」下拉） */
+  const searchBtn = box.querySelector("#btn-vsearch");
+  if (searchBtn) {
+    popBind(searchBtn, () => {
+      handoffFlyout(); // 浮层让位给搜索面板（同一视图替换，不先 hide）
+      openTabSearch();
     });
   }
   const pinBtn = box.querySelector("#btn-vpin");
   if (pinBtn) popBind(pinBtn, togglePin);
   const newBtn = box.querySelector("#vtab-new");
   if (newBtn) popBind(newBtn, () => { window.lgChrome.newTab(); closeTabFlyout(); });
-  const setBtn = box.querySelector("#vtab-set");
-  if (setBtn) popBind(setBtn, () => { window.lgChrome.openSettings(); closeTabFlyout(); });
   /* 矩形弹层（fit:"rect"）：视图只盖住面板本身，面板外的点击直接落到网页/
      外壳上。锚点：左侧模式 = 窗口左上角（al/ay = 0）；右侧模式 = 窗口右缘
      （ar = 0、ay 让开右上角的窗口三键）——两种模式下面板与外壳侧栏同起点，
@@ -2035,7 +2264,9 @@ function renderTabFlyout(force, anim) {
     /* 新建分组的预览色（浮层里的"新建分组"小签用它上色）：主进程的调色板
        游标在外壳这边只知道下一个色键，映射成色值一起下发 */
     nextColorHex: GROUP_COLORS[tabsState.nextGroupColor] || GROUP_COLORS.blue,
-    ...(rightSide ? { ar: 0, ay: headerH() } : { al: 0, ay: 0 }),
+    /* 两种侧别都从顶栏下沿开始（Edge 结构）：浮层顶边 = 80，
+       与外壳 #vtab 的 top:var(--header-h) 完全同矩形 */
+    ...(rightSide ? { ar: 0, ay: headerH() } : { al: 0, ay: headerH() }),
     flyout: true,
     ...popupThemePayload(),
   });
@@ -2069,21 +2300,29 @@ function openTabFlyout() {
   }, 320);
   renderTabFlyout(true, true); // anim：首次打开播"整条长出来"
 }
-/* 只复位状态、不关弹层：给"浮层要换成菜单"这类接管场景用 */
+/* 复位浮层状态，并把窄条立刻画回来。
+   旧实现故意保留 flyout-open 等菜单接管，但 closeTabFlyout 在 flyoutOpen
+   已经为 false 时早退 → flyout-open 永远留着 → 菜单浮在壁纸上、侧栏整条
+   hidden（用户报的"窄条点箭头"bug）。现在任何非浮层弹层接管前都走这里，
+   状态与类名不会再分叉。 */
 function dismissFlyoutState() {
   flyoutOpen = false;
   flyoutSig = "";
   clearTimeout(flyoutTimer);
   clearTimeout(flyoutGuard);
-  /* 这里不动 flyout-open：浮层被菜单接管时窄条要继续隐着（菜单就锚在窄条的
-     按钮上），等弹层整个收起（onPopupHidden）或回到窄条（closeTabFlyout）
-     再露脸 */
+  setFlyoutOpen(false);
 }
 function closeTabFlyout() {
-  if (!flyoutOpen) return;
+  if (!flyoutOpen && !document.body.classList.contains("flyout-open")) return;
   dismissFlyoutState();
-  setFlyoutOpen(false);
   window.lgChrome.popupHide();
+}
+/* 浮层要把弹层让给菜单/搜索：只复位状态与视觉，不 popupHide——
+   下一条 popupShow 会整块替换内容，少一次 hide/show 就没有中间空帧 */
+function handoffFlyout() {
+  if (!flyoutOpen && !document.body.classList.contains("flyout-open")) return;
+  dismissFlyoutState();
+  document.body.dataset.flyoutHandoff = "handoff";
 }
 function anyMenuOpen() {
   return !!menuOpenId;
@@ -2260,6 +2499,9 @@ function commands() {
         if (t) window.lgChrome.closeTab(t.id);
       },
     },
+    { title: "复制当前标签页", run: () => { const t = currentTab(); if (t) window.lgChrome.duplicateTab(t.id); } },
+    { title: "关闭其他标签页", run: () => window.lgChrome.closeOthers() },
+    { title: "关闭右侧标签页", run: () => window.lgChrome.closeRight() },
     { title: "重新加载", hint: keyHint("reload", "Ctrl+R"), run: () => window.lgChrome.reload() },
     { title: "打开 IDE 标签页", hint: keyHint("ide", "Ctrl+I"), run: () => window.lgChrome.toggleIde() },
     /* 题目页工具条已删（R36 用户要求）：分屏编辑器改从命令面板进 */
@@ -2310,6 +2552,7 @@ function commands() {
     },
     {
       title: "切换标签栏形态（垂直 / 水平）",
+      hint: keyHint("vtab-layout"),
       run: async () => {
         // 名实相符：切换垂直/水平布局（以前误接成折叠开关）
         await window.lgChrome.setConfig({ verticalTabs: !cfgState.verticalTabs });
@@ -2505,6 +2748,8 @@ function openPalette() {
 }
 /* 搜索标签页（Ctrl+Shift+A，Edge 同款）：面板只列标签，标题/网址都能筛 */
 function openTabSearch() {
+  /* 从悬停浮层点搜索键时，浮层要让位给搜索面板（同一视图替换） */
+  handoffFlyout();
   palMode = "tabs";
   palIndex = 0;
   pushPalette();
@@ -2560,11 +2805,31 @@ function keyHint(id, fallback) {
   return r && r.accel ? r.text : fallback || "";
 }
 
+/* 水平/垂直切换键：两种布局各挂一颗，图标与提示跟 cfg 走。
+   Edge 的入口固定在窗口左上角——水平时是标签条最左，垂直时是标题行最左。 */
+function syncVtabToggleUI() {
+  const vertical = !!cfgState.verticalTabs;
+  const hint = keyHint("vtab-layout");
+  for (const btn of document.querySelectorAll(".vtoggle")) {
+    btn.innerHTML = svg(vertical ? "railClose" : "railOpen");
+    btn.title = (vertical ? "关闭垂直标签页" : "打开垂直标签页") + (hint ? " (" + hint + ")" : "");
+    btn.setAttribute("aria-label", vertical ? "关闭垂直标签页" : "打开垂直标签页");
+    btn.classList.toggle("on", vertical);
+  }
+}
+
 /* ---------- 主题 / 布局 ---------- */
 function applyConfig(cfg) {
   cfgState = cfg || {};
   const s = document.documentElement.style;
-  const dark = cfg.theme === "dark" || (cfg.theme === "auto" && cfg.resolvedTheme === "dark");
+  /* 启动占位（applyConfig({})）不能把主题强制成 light：真实配置到达前先用
+     preload 从 additionalArguments 读到的 bootTheme（chrome.html 已透明，
+     窗口底色也是主题色）。真实配置到达后仍以 cfg 为准。 */
+  const hasCfg = !!(cfg && Object.keys(cfg).length);
+  const bootDark = document.documentElement.getAttribute("data-theme") === "dark";
+  const dark = hasCfg
+    ? (cfg.theme === "dark" || (cfg.theme === "auto" && cfg.resolvedTheme === "dark"))
+    : bootDark;
   document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
   /* 「映射词」是内部术语：默认 mappings 是空的，写进 placeholder 等于承诺
      一种开箱用不了的输入方式。只有真配了映射才把它显示出来。 */
@@ -2695,20 +2960,27 @@ function applyConfig(cfg) {
   s.setProperty("--lg-wall-image", !isVideo && wp.url ? 'url("' + wp.url + '")' : "none");
   s.setProperty("--lg-wall-blur", (wp.blurPx || 0) + "px");
   s.setProperty("--lg-wall-dim", String(wp.dim != null ? wp.dim : 0));
-  // 设置入口只留两处：左侧坞左下角（水平模式）+ 垂直标签栏底部（垂直模式）。
-  // 工具行那个齿轮按用户要求撤掉，顶栏不再重复放设置。
-  document.getElementById("vtab-set").innerHTML =
-    '<span class="vico">' + svg("sliders") + '</span><span class="vtxt">设置</span>';
+  // 面板里不再放设置入口（Edge 实测没有）：F2 / 命令面板 / 坞齿轮仍在，
+  // 「标签页操作」菜单里也补了一行设置。
   // 折叠状态以配置为准（持久化，重启不丢）；展开态下悬停浮层没有存在意义
   document.body.classList.toggle("rail", cfg.vtabCollapsed !== false);
   if (!document.body.classList.contains("rail")) closeTabFlyout();
   renderDownloadBtn();
-  /* 唯一一颗 ⌄：点开「标签页操作」菜单（与原右侧那颗合并，保留左侧位置）。
-     右侧那颗改成 Edge 的展开/收起箭头（图标与提示随姿态变，见 syncPinUI）。 */
-  document.getElementById("btn-vcollapse").innerHTML = svg("tabMore");
+  /* 头部两颗按 Edge 实测：左=搜索标签页（放大镜），右=固定/自动收起（钉子）。
+     「标签页操作」菜单改由侧栏空白处右键打开。 */
+  document.getElementById("btn-vsearch").innerHTML = svg("searchTab");
   syncPinUI();
   // 布局：垂直（Edge 式左侧标签栏）/ 水平（顶部标签条）
-  document.body.dataset.layout = cfg.verticalTabs ? "vertical" : "horizontal";
+  const nextLayout = cfg.verticalTabs ? "vertical" : "horizontal";
+  /* 布局换了就把浮层/菜单收掉：它们锚在竖栏坐标系里，切到水平后还挂着
+     会变成一块浮在壁纸上的旧侧栏。快捷键与按钮两条路径都在这里收口。 */
+  if (document.body.dataset.layout && document.body.dataset.layout !== nextLayout) {
+    closeTabFlyout();
+    if (menuOpenId) hideAllMenus();
+  }
+  document.body.dataset.layout = nextLayout;
+  syncVtabToggleUI();
+  syncSiteGlassBtn();
   /* 紧凑模式（Zen Compact）：垂直栏整个收没只留 4px 热区，悬停浮出。
      body.compact 控制 #vtab 隐藏与 #compact-edge 显示（CSS）；页面让位
      由主进程 vtabW()=4 负责（同一份 cfg）。独立一轴：只改宽度，不动钉住态。 */
@@ -2717,8 +2989,8 @@ function applyConfig(cfg) {
      必须摘掉——否则 #vtab 被 flyout-open 一直隐着，界面看着像侧栏没了 */
   if (!document.body.classList.contains("rail") && !document.body.classList.contains("compact")) setFlyoutOpen(false);
   /* 顶栏/底坞/页面共用同一条分界线：--vtab-cur 直接吃主进程 layout 的
-     inset().x（紧凑=4 / 窄条=46 / 展开=212）。早先只有页面按 4px 让位、
-     顶栏与底坞还按 46px 硬编码，紧凑模式左上角就留一条 42px 空档。 */
+     inset().x（紧凑=4 / 窄条=41 / 展开=248）。顶栏现在横跨全宽，
+     --vtab-cur 只用于底部坞与旧锚点计算。 */
   document.documentElement.style.setProperty("--vtab-cur", (Number(cfg.vtabCur != null ? cfg.vtabCur : cfg.insetX) || 0) + "px");
   /* 坞的位置（设置页「侧坞」卡片）：left/right 竖列、top/bottom 横条；
      "auto" = 跟随布局（水平左侧 / 垂直底部）。R36：坞是独立覆盖视图——
@@ -2734,8 +3006,16 @@ function applyConfig(cfg) {
      悬停浮层在弹层文档里，靠 cssText 拿到同一个值（两处永远同宽）。
      这里跟主进程 vtabExpandedW() 用同一组夹取（160~400）：外壳那条、浮层那条、
      页面 inset 三者同宽，超出范围的配置值不许在外壳里漏出去 */
-  document.documentElement.style.setProperty("--vtab-w", Math.min(400, Math.max(160, Math.round(Number(cfg.vtabWidth) || 212))) + "px");
+  document.documentElement.style.setProperty(
+    "--vtab-w",
+    Math.min(VTAB_SPEC.maxW, Math.max(VTAB_SPEC.minW, Math.round(Number(cfg.vtabWidth) || VTAB_SPEC.paneW))) + "px"
+  );
   renderDock();
+  /* 真实配置落地后才解除首帧透明保护（chrome.html 的内联样式按它判断）；
+     applyConfig({}) 的启动占位不能解锁，否则又回到白色兜底。 */
+  if (cfg && Object.keys(cfg).length) {
+    document.documentElement.setAttribute("data-lg-ready", "1");
+  }
 }
 
 /* ---------- 缩放比例提示（窗口右上角 #zoomhud） ----------
@@ -2767,6 +3047,36 @@ function zoomHudSync() {
 function bind() {
   document.getElementById("tab-new").addEventListener("click", () => window.lgChrome.newTab());
   document.getElementById("vtab-new").addEventListener("click", () => window.lgChrome.newTab());
+  /* Edge 式布局切换：水平条最左 / 标题行最左各一颗（CSS 按布局互斥显示）。
+     点击只写配置，主进程统一落 layout/inset，配置回程再校正图标。 */
+  for (const btn of document.querySelectorAll(".vtoggle")) {
+    btn.addEventListener("click", () => {
+      if (menuOpenId) hideAllMenus();
+      closeTabFlyout();
+      /* 乐观翻本地值：连点两次不会两次都读到旧的 verticalTabs 而发同一个值 */
+      const next = !cfgState.verticalTabs;
+      cfgState.verticalTabs = next;
+      window.lgChrome.setConfig({ verticalTabs: next });
+    });
+  }
+  const siteGlassBtn = document.getElementById("btn-site-glass");
+  if (siteGlassBtn) {
+    siteGlassBtn.addEventListener("click", () => {
+      const host = currentExternalHost();
+      if (!host) return;
+      const list = Array.isArray(cfgState.glassExclude) ? cfgState.glassExclude.slice() : [];
+      const i = list.findIndex((d) => {
+        const x = String(d || "").trim().toLowerCase().replace(/^\.+/, "");
+        return x && (host === x || host.endsWith("." + x));
+      });
+      if (i >= 0) list.splice(i, 1);
+      else list.push(host);
+      /* 乐观切换按钮态；主进程配置回程会再校正一次 */
+      cfgState.glassExclude = list;
+      syncSiteGlassBtn();
+      window.lgChrome.setConfig({ glassExclude: list });
+    });
+  }
   initDrag(document.getElementById("tabs"), false);
   /* 垂直拖拽绑在整个侧栏上（不只是标签列表）：钉住区与标签列表之间的拖进/
      拖出也是合法落点（Edge 的拖进钉住区=钉住、拖出=取消钉住）。 */
@@ -2881,25 +3191,33 @@ function bind() {
   bindNavHoldButton(document.getElementById("btn-back"), -1);
   bindNavHoldButton(document.getElementById("btn-fwd"), 1);
   document.getElementById("btn-reload").addEventListener("click", () => window.lgChrome.reload());
-  document.getElementById("vtab-set").addEventListener("click", () => window.lgChrome.openSettings());
-  /* 唯一一颗 ⌄（左侧保留）：点开「标签页操作」菜单——原右侧那颗的内容
-     并到它身上。收起/展开交给钉子，头上不再放第二颗同类箭头。 */
-  document.getElementById("btn-vcollapse").addEventListener("click", (e) => {
+  /* 头部左键 = 搜索标签页（Edge 实测） */
+  document.getElementById("btn-vsearch").addEventListener("click", (e) => {
     e.stopPropagation();
-    openTabMoreMenu(e.currentTarget);
+    openTabSearch();
   });
   document.getElementById("btn-vpin").addEventListener("click", togglePin);
+  /* 「标签页操作」菜单：面板里不再放第三颗按钮，右键侧栏空白处打开
+     （Edge 的竖栏头也只有搜索 + 固定两颗） */
+  document.getElementById("vtab").addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".vtab, .vghead, #vtab-head, #vtab-new, #vtab-resize")) return;
+    e.preventDefault();
+    const anchor = document.createElement("span");
+    anchor.style.cssText = "position:fixed;left:" + e.clientX + "px;top:" + e.clientY + "px;width:1px;height:1px;pointer-events:none";
+    document.body.appendChild(anchor);
+    Promise.resolve(openTabMoreMenu(anchor)).finally(() => anchor.remove());
+  });
   /* 拖侧栏右缘改宽度（Edge）：拖动中本地改 --vtab-w（跟手、不闪烁），
      40ms 节流把宽度报给主进程（页面 inset 由它重算）；松手再落定一次。 */
   const rz = document.getElementById("vtab-resize");
   if (rz) {
     let rzOn = false;
     let rzLast = 0;
-    let rzW = Number(cfgState.vtabWidth) || 212;
+    let rzW = Number(cfgState.vtabWidth) || VTAB_SPEC.paneW;
     rz.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       rzOn = true;
-      rzW = Number(cfgState.vtabWidth) || 212;
+      rzW = Number(cfgState.vtabWidth) || VTAB_SPEC.paneW;
       rz.classList.add("dragging");
       try { rz.setPointerCapture(e.pointerId); } catch (err) {}
       e.preventDefault();
@@ -2909,7 +3227,7 @@ function bind() {
       /* 侧栏在右侧时，宽度 = 窗口右缘到光标的距离（手柄贴在左缘） */
       const rightSide = document.body.dataset.side === "right";
       const raw = rightSide ? window.innerWidth - e.clientX : e.clientX;
-      rzW = Math.max(160, Math.min(400, Math.round(raw)));
+      rzW = Math.max(VTAB_SPEC.minW, Math.min(VTAB_SPEC.maxW, Math.round(raw)));
       document.documentElement.style.setProperty("--vtab-w", rzW + "px");
       const now = Date.now();
       if (now - rzLast > 40) {
@@ -3037,10 +3355,18 @@ function bind() {
     s2.setProperty("--par-x", (p && p.px) || "0px");
     s2.setProperty("--par-y", (p && p.py) || "0px");
   });
-  /* 双击外壳空白区换一张壁纸（背景互动） */
-  document.getElementById("strip-pad").addEventListener("dblclick", () => window.lgChrome.wallNext());
+  /* 双击标签条空白 = 新建标签页（Edge/Chrome 肌肉记忆）；换壁纸挪到右键，
+     避免两个高频手势抢同一个双击。 */
+  const stripPad = document.getElementById("strip-pad");
+  if (stripPad) {
+    stripPad.addEventListener("dblclick", () => window.lgChrome.newTab());
+    stripPad.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      window.lgChrome.wallNext();
+    });
+  }
   document.getElementById("vtabs").addEventListener("dblclick", (e) => {
-    if (e.target === e.currentTarget) window.lgChrome.wallNext();
+    if (e.target === e.currentTarget) window.lgChrome.newTab();
   });
   // 窗口控制按钮
   document.getElementById("w-min").innerHTML = svg("winMin");
@@ -3213,6 +3539,13 @@ if (!window.lgChrome) {
     b.innerHTML = svg(mx ? "winRestore" : "winMax");
     b.title = mx ? "还原" : "最大化";
   });
+  /* F11 全屏：鼠标贴到屏幕顶边时主进程把顶栏让出来，侧栏/坞仍然隐藏。
+     外壳只负责在 peek 时把竖栏收掉（顶栏本身由主进程的视图几何露出）。 */
+  if (window.lgChrome.onFsPeek) {
+    window.lgChrome.onFsPeek((on) => {
+      document.body.classList.toggle("fs-peek", !!on);
+    });
+  }
   window.lgChrome.onPalette(() => (paletteOpen() ? closePalette() : openPalette()));
   window.lgChrome.onTabSearch(() => (paletteOpen() && palMode === "tabs" ? closePalette() : openTabSearch()));
   window.lgChrome.onShortcuts(() => showShortcuts());
@@ -3322,6 +3655,12 @@ if (!window.lgChrome) {
   });
 
   bind();
+  /* 真实配置到达前先用主进程传来的首帧主题（preload 从 additionalArguments
+     读）。外壳此前的 applyConfig({}) 会强制 light，深色用户会先看到一帧浅色。 */
+  const bootTheme = window.lgChrome && window.lgChrome.bootTheme;
+  if (bootTheme === "dark" || bootTheme === "light") {
+    document.documentElement.setAttribute("data-theme", bootTheme);
+  }
   applyConfig({});
   renderDock();
   renderUser();

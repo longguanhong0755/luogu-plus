@@ -159,6 +159,7 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
      用 92vw 会形成"视图窄→92vw 更窄"的死循环（实测塌成 35px）。 */
   min-width: 480px;
   max-width: min(640px, 90vw);
+  max-height: calc(100vh - 16px);
   padding: var(--lg-space-3);
   border-radius: var(--lg-radius);
   font-size: var(--fs-base);
@@ -177,7 +178,7 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
   cursor: pointer;
   min-width: 0;
 }
-#omni-sug .sug-row.on { background: var(--surface-2); }
+#omni-sug .sug-row.on { background: color-mix(in srgb, var(--ink) 10%, transparent); }
 #omni-sug .sug-ic { flex: none; width: 14px; height: 14px; display: grid; place-items: center; color: var(--ink-dim); }
 #omni-sug .sug-ic svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #omni-sug .sug-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -186,3 +187,43 @@ html[data-theme="light"] #glance-wrap .gl-dim { background: rgba(40, 40, 46, 0.2
    的按压反馈（下沉 1px）。焦点/禁用的统一口径在 chrome.css——本文件与它同链
    加载，那一份直接生效。 */
 #omni-sug .sug-row:active { transform: translateY(1px); }
+
+/* ---------- 标签悬停预览卡片（R51：实体在弹层覆盖视图） ----------
+   以前画在外壳层，网页视图永远盖在上面；搬到弹层后天然压在网页之上。
+   面由 popup.js 统一打 .lg-fake .lg-face-b（与菜单/浮层同一配方），这里只留
+   布局与文字，不再自己写不透明底。 */
+#thumb-card {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--lg-radius-lg);
+  background: transparent;
+  pointer-events: auto;
+}
+#thumb-card .tc-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: transparent;
+  border-bottom: 1px solid var(--hairline);
+}
+#thumb-card .tc-img:not([src]) { visibility: hidden; }
+#thumb-card .tc-empty { width: 100%; aspect-ratio: 16 / 10; background: transparent; }
+#thumb-card .tc-meta { padding: 8px 10px var(--lg-space-4); min-width: 0; }
+#thumb-card .tc-title {
+  font-size: var(--fs-base);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#thumb-card .tc-url {
+  margin-top: var(--lg-space-1);
+  font-size: var(--fs-sub);
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -199,6 +199,8 @@ const BLACKLIST = {
   "lgChrome.userNudge": "催主进程刷新用户态：会触发一次出网抓昵称头像",
   "lgChrome.downloadReveal": "在文件管理器里定位下载文件：拉起外部进程",
   "lgConfig.downloadReveal": "在文件管理器里定位下载文件：拉起外部进程",
+  "lgChrome.closeOthers": "关闭其他标签页，会清掉后续探针依赖的设置/首页视图",
+  "lgChrome.closeRight": "关闭右侧标签页，会清掉后续探针依赖的视图",
 };
 
 /* 订阅方法（on*）：不是 invoke，是 ipcRenderer.on 注册监听。
@@ -447,7 +449,14 @@ const TYPE_ERROR_RE = /TypeError|Cannot read propert|is not a function|of undefi
         const r = await send("Runtime.evaluate", { expression: `typeof window[${JSON.stringify(g)}]`, returnByValue: true });
         has = r && r.result && r.result.value === "object";
       } catch (e) { has = false; }
-      if (has) { viewOf.set(g, { ws, send, url: t.url }); break; }
+      if (has) {
+        /* 页面可能有多个同类型 target（设置页被反复打开/切后台），其中个别
+           renderer 已卡死；先做一个 2s 的 ping，只接受真的能跑 JS 的视图。
+           否则后面每条调用都要等 30s，整组假红。 */
+        const ping = send("Runtime.evaluate", { expression: "1+1", returnByValue: true }).catch(() => null);
+        const okPing = await Promise.race([ping, new Promise((res) => setTimeout(() => res(null), 2000))]);
+        if (okPing && okPing.result && okPing.result.value === 2) { viewOf.set(g, { ws, send, url: t.url }); break; }
+      }
       try { ws.close(); } catch (e) {}
     }
   }

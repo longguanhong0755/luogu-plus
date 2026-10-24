@@ -58,15 +58,22 @@ html[data-lg-host="chat.deepseek.com"] body {
   --dsw-alias-button-elevated-fill: var(--lg-glass-solid) !important;
 }
 
-/* ---------- 站外内容型页面（自动探测命中，data-lg-glassauto="1"） ----------
-   站外页默认原生渲染（v3.4.2 教训：乱透明 = 拆人家 UI）。但"站外页和
-   应用观感完全割裂"本身也是问题——所以对**探测判定为内容型**的页面
-   （有阅读内容、表单不密集、非应用型站点），铺一张静态壁纸，并把底色
-   换成**淡**玻璃：壁纸隐约可辨，正文承载面依然可读。
-   仍然不做：清空人家底色、给人家容器挂 backdrop-filter、动人家的类名。 */
+/* ---------- 站外页玻璃化（R51：全站，排除名单由 inject.js 判定） ----------
+   用户口径：只要是一个网站就自动玻璃化；排除名单里的域名保持原生。
+   壁纸层铺满整个窗口，html/body/一级容器透明；壁纸层上再叠一层低透明度
+   玻璃纱，保证正文在花纹壁纸上仍然可读。卡片/面板的玻璃面由 material.css
+   的 .lg-gx 配方和 material.js 的 sweepExtGlass 负责；含 fixed 后代的容器
+   只给半透明底、不挂 blur（避免劫持 fixed 包含块）。 */
 html[data-lg-ext="1"][data-lg-local="0"][data-lg-glassauto="1"],
-html[data-lg-ext="1"][data-lg-local="0"][data-lg-glassauto="1"] body {
-  background-color: var(--lg-glass-bg) !important;
+html[data-lg-ext="1"][data-lg-local="0"][data-lg-glassauto="1"] body,
+html[data-lg-ext="1"][data-lg-local="0"][data-lg-glassauto="1"] body > :not(#lg-glass-bg) {
+  background: transparent !important;
+}
+html[data-lg-ext="1"][data-lg-local="0"][data-lg-glassauto="1"] #lg-glass-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 /* 壁纸层 / 视频壁纸：与洛谷页、外壳、弹层同一个 .lg-wallpaper 公式

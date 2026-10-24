@@ -97,6 +97,11 @@ function paint() {
   $("ck-anim").checked = cfg.animations !== false;
   /* 站外页自动玻璃（默认开）：把外部网站上的卡片自动换成我们的玻璃面 */
   $("ck-autoglass").checked = cfg.autoGlass !== false;
+  const geEl = $("ta-glass-exclude");
+  if (geEl && document.activeElement !== geEl) {
+    const geText = Array.isArray(cfg.glassExclude) ? cfg.glassExclude.join("\n") : "";
+    if (geEl.value !== geText) geEl.value = geText;
+  }
 
   // 玻璃皮肤
   const gl = cfg.glass === "liquid" ? "liquid" : "flat";
@@ -1041,6 +1046,18 @@ function bind() {
   ck("ck-diffmono", "diffMono");
   ck("ck-anim", "animations");
   ck("ck-autoglass", "autoGlass");
+  {
+    const ge = $("ta-glass-exclude");
+    if (ge) {
+      ge.addEventListener("input", () => {
+        const list = ge.value
+          .split(/\r?\n/)
+          .map((s) => s.trim().toLowerCase().replace(/^\.+/, ""))
+          .filter(Boolean);
+        set({ glassExclude: list }, false, true);
+      });
+    }
+  }
   ck("ck-wpmute", "wallpaperMute");
   ck("ck-wppar", "wallpaperParallax");
   ck("ck-hello", "homeHello");

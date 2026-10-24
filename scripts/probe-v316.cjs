@@ -22,6 +22,7 @@
    ============================================================ */
 const http = require("http");
 const fs = require("fs");
+const path = require("path");
 
 const PORT = Number(process.argv[2] || 9309);
 const OUT = process.argv[3] || "";
@@ -185,13 +186,13 @@ function check(name, pass, detail) {
     tab.dispatchEvent(new MouseEvent("mouseover", { bubbles:true, clientX: tab.getBoundingClientRect().left+10, clientY: tab.getBoundingClientRect().top+8 }));
     return { ok:true };
   })()`);
-  await sleep(900);
-  const cardShown = await evalIn(chromeWs, `(()=>{
-    const el = document.getElementById("thumb-card");
-    return { exists: !!el, hidden: el ? el.hidden : null, title: el ? (el.querySelector(".tc-title")||{}).textContent : "" };
-  })()`);
-  check("标签悬停预览卡片出现", card.ok && cardShown.exists && cardShown.hidden === false,
-    `hidden=${cardShown.hidden} 标题="${cardShown.title || ""}"`);
+  await sleep(1200);
+  /* R51：预览卡实体搬到弹层覆盖视图（外壳层会被网页 WebContentsView 盖住）。
+     用主进程 probeUx 的 popup.preview 断言，不另开 WebSocket（避免 libuv 退出断言）。 */
+  const ux = await evalIn(chromeWs, `window.lgChrome.probeUx()`);
+  const shellCard = await evalIn(chromeWs, `!!document.getElementById("thumb-card")`);
+  check("标签悬停预览卡片出现在弹层（压过网页）", card.ok && ux && ux.popup && ux.popup.preview && !shellCard,
+    `popup=${JSON.stringify(ux && ux.popup)} shell=${shellCard}`);
 
   // 9 站外页通用增强样式已注入（common.css）
   const common = await evalIn(chromeWs, `(()=>{
@@ -200,7 +201,7 @@ function check(name, pass, detail) {
   })()`);
   const fsCheck = (() => {
     try {
-      const css = fs.readFileSync("D:/workspace/luogu++/repo/src/common.css", "utf8");
+      const css = fs.readFileSync(path.join(__dirname, "..", "src", "common.css"), "utf8");
       const m = css.match(/#lg-reader|#lg-tr-bubble|#lg-glass-clip|\\.lg-code-copy/g) || [];
       return { count: m.length, size: css.length };
     } catch (e) { return { count: 0, size: 0 }; }

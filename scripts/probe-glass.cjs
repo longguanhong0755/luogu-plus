@@ -5,7 +5,7 @@
    前提: 有一个实例在跑（scripts/run-probe.sh 起），且测试页可达。
 
    测什么（每条都是"该发生/不该发生"的二元判定，不看主观观感）：
-     1 页面被判定为"内容型站点"（data-lg-glassauto="1"）
+     1 全站默认玻璃化（data-lg-glassauto="1"）
      2 普通白卡片上了真毛玻璃（.lg-gx 且 backdrop-filter 非 none）
      3 内含 position:fixed 的卡片**只给半透明底、不给模糊**
        （.lg-gx-noblur 且 backdrop-filter 为 none）——这是 v3.4.2 那个
@@ -101,12 +101,19 @@ function check(name, pass, detail) {
       skin: document.documentElement.getAttribute('data-lg-glass'),
       plain: info(q('plain')), hasfixed: info(q('hasfixed')), colored: info(q('colored')),
       transparent: info(q('transparent')), form: info(q('form')), prose: info(q('prose')),
+      bodyBg: getComputedStyle(document.body).backgroundColor,
+      wall: !!document.getElementById('lg-glass-bg'),
+      veil: (()=>{var el=document.getElementById('lg-glass-bg');return el?getComputedStyle(el,'::after').backgroundColor:'';})(),
       vp: innerWidth+'x'+innerHeight
     });
   })()`;
   const r = JSON.parse(await evalIn(pageWs, probe));
 
-  check("判定为内容型站点（data-lg-glassauto=1）", r.auto === "1", "auto=" + r.auto + " 视口=" + r.vp);
+  check("全站默认玻璃化（data-lg-glassauto=1）", r.auto === "1", "auto=" + r.auto + " 视口=" + r.vp);
+  check("壁纸层存在且页面背景透明", r.wall && r.bodyBg === "rgba(0, 0, 0, 0)", `wall=${r.wall} bodyBg=${r.bodyBg}`);
+  check("壁纸层有玻璃纱（正文可读）", !!r.veil && r.veil !== "rgba(0, 0, 0, 0)", "veil=" + r.veil);
+  const siteBtn = JSON.parse(await evalIn(chromeWs, `(()=>{const b=document.getElementById('btn-site-glass');return JSON.stringify({hidden:b?b.hidden:null,title:b?b.title:'',on:b?b.classList.contains('on'):null})})()`));
+  check("地址栏有本站玻璃开关且当前站可见", siteBtn.hidden === false && /玻璃/.test(siteBtn.title), JSON.stringify(siteBtn));
   /* 玻璃分两种皮肤：**液态**才有毛玻璃，**素面**是纯色 + 细线
      （--lg-glass-blur 就是 none，这是素面的设计，不是失效）。所以这条按
      当前皮肤给期望，否则新装的实例（默认素面）永远判 FAIL。 */
@@ -139,6 +146,16 @@ function check(name, pass, detail) {
   })()`);
   const im = JSON.parse(idem);
   check("注册表同步幂等（重复调不改变已贴的面）", im.same, im.err || `${im.before} → ${im.after}`);
+
+  /* 9) 排除名单：当前 host 加入 -> 恢复原生；移出 -> 重新玻璃化 */
+  await evalIn(chromeWs, `window.lgChrome.setConfig({ glassExclude: ["127.0.0.1"] })`);
+  await sleep(1800);
+  const ex = JSON.parse(await evalIn(pageWs, `(()=>{var b=document.body;return JSON.stringify({auto:document.documentElement.getAttribute('data-lg-glassauto'),wall:document.documentElement.getAttribute('data-lg-wall'),gx:document.querySelectorAll('.lg-gx,.lg-gx-noblur').length})})()`));
+  check("排除名单生效：当前站恢复原生", ex.auto === "0" && ex.gx === 0, JSON.stringify(ex));
+  await evalIn(chromeWs, `window.lgChrome.setConfig({ glassExclude: [] })`);
+  await sleep(1800);
+  const back = JSON.parse(await evalIn(pageWs, `(()=>{return JSON.stringify({auto:document.documentElement.getAttribute('data-lg-glassauto'),gx:document.querySelectorAll('.lg-gx,.lg-gx-noblur').length})})()`));
+  check("移出名单后重新玻璃化", back.auto === "1" && back.gx > 0, JSON.stringify(back));
 
   const failed = results.filter((x) => !x.pass);
   console.log(`\n探针结果：${results.length - failed.length}/${results.length} 通过`);

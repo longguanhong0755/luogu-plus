@@ -36,9 +36,6 @@ declare global {
     /* 注入层共享上下文：内核 src/inject.js 建，各能力模块 src/inject/*.js 取。
        模块文件靠它拿 cfg/state/isLuoguPage 等共享状态与 ctx.features 上的兄弟能力。 */
     __lgInjectCtx?: any;
-    /** IDE 模式（R38）判定调试出口 */
-    __lgIdeInPage?: () => { on: boolean; state: boolean; bridge: boolean };
-    __lgIdeSync?: () => void;
 
     /* ---- 站点页：主进程注入的账号态与网络态 ---- */
     __lgUser?: any;

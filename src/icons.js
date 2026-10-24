@@ -49,6 +49,13 @@
     article: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 12h6M9 16h6"/>',
     split: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/>',
     splitOff: '<path d="M4 5h16v14H4z"/><path d="m8 8 8 8M16 8l-8 8"/>',
+    /* 垂直/水平标签栏切换（Edge 左上角那颗）：
+       面板 + 左缘分隔线，箭头朝外=打开垂直栏，朝内=收起垂直栏。 */
+    railOpen: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m6 9-2 3 2 3"/>',
+    railClose: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m4 9 2 3-2 3"/>',
+    /* 当前站点玻璃开关（地址栏右侧）：水滴 = 已玻璃化，斜杠 = 本站已排除 */
+    glassOn: '<path d="M12 3c3.6 4.3 6 7.5 6 10.2A6 6 0 0 1 6 13.2C6 10.5 8.4 7.3 12 3z"/><path d="M9.4 13.4a2.6 2.6 0 0 0 5.2 0"/>',
+    glassOff: '<path d="M12 3c3.6 4.3 6 7.5 6 10.2A6 6 0 0 1 6 13.2C6 10.5 8.4 7.3 12 3z"/><path d="m4 4 16 16"/>',
     /* R41 新增：设置页行内"上移/下移"按钮（此前是文本 ↑/↓ 字形） */
     arrowUp: '<path d="M12 19V5"/><path d="m5.5 11.5 6.5-6.5 6.5 6.5"/>',
     arrowDown: '<path d="M12 5v14"/><path d="m5.5 12.5 6.5 6.5 6.5-6.5"/>',

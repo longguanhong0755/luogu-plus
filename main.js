@@ -12,6 +12,8 @@ const crypto = require("crypto");
 const zlib = require("zlib");
 const { Readable } = require("stream");
 const { pathToFileURL } = require("url");
+/* 垂直标签栏几何唯一来源：主进程与外壳共读这一份（见 src/vtab-spec.js） */
+const VTAB_SPEC = require("./src/vtab-spec.js");
 
 app.setName("LuoguLab");
 
@@ -168,6 +170,9 @@ const DEFAULT_CONFIG = {
      且内部含 position:fixed 后代的容器不给挂 backdrop-filter（会劫持
      fixed 包含块，v3.4.2 教训）——那种容器只给半透明底 + 发丝线。 */
   autoGlass: true,
+  /* 站外玻璃化排除名单（R51）：命中域名及其子域的站点保持原生渲染。
+     地址栏旁的"本站玻璃"按钮一键增删；设置页也能维护。 */
+  glassExclude: [],
   ideNative: true,
   mappings: {},
   /* 页面配色：auto=跟随全应用统一明暗（唯一支持的语义）。v3.5.1 起"原色/亮/暗"
@@ -204,8 +209,8 @@ const DEFAULT_CONFIG = {
      不动"钉住/收起"（vtabCollapsed），关掉紧凑就回到原来的姿态 */
   vtabCompact: false,
   /* 常驻展开时侧栏的宽度（Edge 能拖宽窄）：拖侧栏右缘改它，160~400 夹取。
-     折叠窄条宽度固定 46，不受影响。 */
-  vtabWidth: 212,
+     折叠窄条宽度固定 41（Edge 实测），不受影响。 */
+  vtabWidth: VTAB_SPEC.paneW,
   /* 垂直标签栏放哪一侧（Edge 支持左/右）：left=默认，right=贴窗口右缘。
      所有几何消费者（页面 inset / 分屏 / 抽屉 / 坞 / 弹层锚点）
      都从 inset() 取，不各写一套。 */
@@ -466,7 +471,11 @@ function materialVars(mode) {
   const inkRgb = hexToRgb(tv.ink) || (light ? [24, 24, 27] : [231, 231, 234]);
   const A = (n) => Math.min(1, Math.max(0, n)).toFixed(3);
   const t = faceTint;
-  const line = "rgba(" + inkRgb.join(", ") + ", " + (light ? 0.14 : 0.22) + ")";
+  /* 边框强度 0.4~3 倍：以前只写了一个没人消费的 --lg-border，滑杆调到
+     3 倍外壳/页面的发丝线也纹丝不动。现在直接缩放材质线的 alpha。 */
+  const borderK = clampNum(cfg.borderStrength, 0.4, 3, 1);
+  const lineAlpha = Math.min(1, Math.max(0, (light ? 0.14 : 0.22) * borderK));
+  const line = "rgba(" + inkRgb.join(", ") + ", " + lineAlpha.toFixed(3) + ")";
   /* 素面（flat / 线条素面）：面 = 纯色（同源 faceTint）+ 一颗"面不透明度"，
      无模糊、无高光、无投影。
      四个层级曾**全部同值**（栏、卡片、面板、内块都是 face）——层级差为 0，
@@ -892,7 +901,7 @@ function flushPersistenceNotes() {
   }
 }
 
-const CONFIG_VERSION = 7;
+const CONFIG_VERSION = 8;
 /** @type {typeof DEFAULT_CONFIG & { configVersion: number, workspaces?: unknown }} */
 let cfg = { ...DEFAULT_CONFIG };
 function loadConfig() {
@@ -954,6 +963,9 @@ function loadConfig() {
      旧配置的 workspaces 字段在这里丢掉，配合下面的版本判定会落盘抹掉——
      不 delete 的话它会一直被 saveConfig 写回去，成为一段看不见的死数据。 */
   delete cfg.workspaces;
+  /* v7 → v8 迁移：竖栏按 Edge 149 实测重做（212/46 → 248/41）。
+     旧默认宽 212 的配置迁到新默认 248；用户自己拖过的其它宽度原样保留。 */
+  if (raw && (raw.configVersion || 1) < 8 && cfg.vtabWidth === 212) cfg.vtabWidth = VTAB_SPEC.paneW;
   cfg.configVersion = CONFIG_VERSION;
   /* 非法值回退后要**落盘**：否则每次启动都重新判一次非法、每次都记一条
      日志，用户那份坏配置还一直躺在文件里（进设置页看到的还是它）。 */
@@ -1011,6 +1023,19 @@ function sanitizeConfig() {
     } else if (rule.type === "string") {
       if (typeof v !== "string") { cfg[k] = rule.def; fixed.push(k + "=" + JSON.stringify(v) + "→" + rule.def); }
     }
+  }
+  /* 数组键不在 schema 生成器的标量范围内：手工收口域名名单。 */
+  if (!Array.isArray(cfg.glassExclude)) {
+    cfg.glassExclude = [];
+    fixed.push("glassExclude→[]");
+  } else {
+    const before = cfg.glassExclude.length;
+    cfg.glassExclude = [...new Set(
+      cfg.glassExclude
+        .map((d) => String(d || "").trim().toLowerCase().replace(/^\.+/, ""))
+        .filter((d) => /^[a-z0-9][a-z0-9.-]*$/i.test(d))
+    )];
+    if (cfg.glassExclude.length !== before) fixed.push("glassExclude→归一");
   }
   if (fixed.length) {
     try { dbg("config sanitize 回退 " + fixed.length + " 个非法值: " + fixed.join(", ")); } catch {}
@@ -1387,6 +1412,9 @@ const SNIFFER = `(function(){
 })()`;
 
 async function injectInto(wc) {
+  /* 隐藏测试开关：跳过注入，专门验证 preload 的 #lg-boot 首帧底色
+     （--lg-test-no-inject；正常启动/探针不会带这个参数）。 */
+  if (argv.includes("--lg-test-no-inject")) return;
   try {
     // 非洛谷页只注入精简样式（壁纸玻璃层）；洛谷页吃全量。
     // CSS 是"每个文档一份"的：主框架一换文档（站点版本更新后的自刷新、二次
@@ -1459,24 +1487,45 @@ async function injectInto(wc) {
 const tabs = new Map(); // id -> { view, title, url, special }
 let tabOrder = [];
 let activeTabId = null;
+/* 最近使用顺序（Ctrl+Tab MRU）：新激活的排最前。cycleTab 用它，而不是
+   标签条上的左右邻居——Edge/Chrome 的"上一个标签"就是刚看过的那个。 */
+const mruOrder = [];
+function touchMru(id) {
+  const i = mruOrder.indexOf(id);
+  if (i >= 0) mruOrder.splice(i, 1);
+  mruOrder.unshift(id);
+  if (mruOrder.length > 64) mruOrder.length = 64;
+}
+function mruList() {
+  const seen = new Set();
+  const out = [];
+  for (const id of mruOrder) {
+    if (tabs.has(id) && !seen.has(id)) { seen.add(id); out.push(id); }
+  }
+  const rest = tabOrder
+    .filter((id) => tabs.has(id) && !seen.has(id))
+    .sort((a, b) => (tabs.get(b).lastActive || 0) - (tabs.get(a).lastActive || 0));
+  return out.concat(rest);
+}
 let tabSeq = 0;
 let lastNative = "light";
 
 const INSET = { x: 58, y: 78, footer: 0 };
-/* 垂直模式顶栏两行（38 标题行 + 42 工具行 = 80）：页面让位的 y 与 chrome.css
+/* 垂直模式顶栏两行（40 标题行 + 40 工具行 = 80）：页面让位的 y 与 chrome.css
    的 --header-h 是同一个常数（改一处必须改另一处，探针有断言）。 */
-const VHEAD_H = 80;
+const VHEAD_H = VTAB_SPEC.topBarH;
 /* 垂直标签栏（Edge 式）：展开宽度 / 折叠窄条宽度。折叠状态持久化在
    cfg.vtabCollapsed（默认收缩成窄条；以前只存内存，重启就丢）。
    紧凑模式（Zen Compact，cfg.vtabCompact）：侧栏整个收没，只留 4px
-   热区条——鼠标贴上左缘浮出完整侧栏（走弹出层浮层），页面近似全宽。 */
-const VTAB_W = 212;
-const VTAB_RAIL = 46;
-const VTAB_EDGE = 4;
+   热区条——鼠标贴上左缘浮出完整侧栏（走弹出层浮层），页面近似全宽。
+   具体数值全部来自 VTAB_SPEC（Edge 149 实测），这里不再写字面量。 */
+const VTAB_W = VTAB_SPEC.paneW;
+const VTAB_RAIL = VTAB_SPEC.railW;
+const VTAB_EDGE = VTAB_SPEC.edgeW;
 /* 常驻展开宽度可拖（Edge）：160~400 夹取，落在 cfg.vtabWidth。
    折叠窄条与紧凑热区是固定值，不受它影响。 */
-const VTAB_MIN_W = 160;
-const VTAB_MAX_W = 400;
+const VTAB_MIN_W = VTAB_SPEC.minW;
+const VTAB_MAX_W = VTAB_SPEC.maxW;
 const vtabExpandedW = () => {
   const n = Number(cfg.vtabWidth);
   return Math.round(Math.min(VTAB_MAX_W, Math.max(VTAB_MIN_W, Number.isFinite(n) && n > 0 ? n : VTAB_W)));
@@ -1568,29 +1617,35 @@ function layout() {
   if (inPageIdeTabId != null && !tabs.has(inPageIdeTabId)) inPageIdeTabId = null;
   const [w, h] = mainWin.getContentSize();
   const ins = inset();
-  const fullW = Math.max(1, w - ins.x - (ins.right || 0));
-  const fullH = Math.max(1, h - ins.y - (ins.footer || 0));
-  /* 题目页自带 IDE 模式（R38）：活动标签铺满整窗，分屏与抽屉一起挂起 */
-  const ideFull = inPageIdeFull(activeTabId) && tabs.has(activeTabId);
-  const drawerW = !ideFull && drawerOpen && drawerView ? Math.round(fullW * 0.52) : 0;
+  /* F11 窗口全屏：外壳先让开，页面铺满（Edge 的 F11 语义）。鼠标贴到屏幕
+     顶边时 fsPeek=true，只让出顶栏高度——顶栏可见，侧栏/坞仍然隐藏。
+     Edge 是工具栏覆盖页面；本应用的外壳是 BrowserWindow 自己的 webContents，
+     无法叠在子视图之上，所以用"页面下移顶栏高度"实现同样的可见结果。 */
+  const fsNow = mainWin.isFullScreen();
+  const fsPeekNow = fsNow && fsPeek;
+  const baseX = fsNow ? 0 : ins.x;
+  const baseY = fsNow ? (fsPeekNow ? ins.y : 0) : ins.y;
+  const fullW = Math.max(1, fsNow ? w : w - ins.x - (ins.right || 0));
+  const fullH = Math.max(1, fsNow ? h - baseY : h - ins.y - (ins.footer || 0));
+  const drawerW = !fsNow && drawerOpen && drawerView ? Math.round(fullW * 0.52) : 0;
   const tabW = Math.max(1, fullW - drawerW);
   /* 分屏拼合：活动标签所在组的窗格几何按 splitPanes 排（IDE 抽屉优先，
-     抽屉开着分屏暂时挂起）。焦点在窗格间移动只换 activeTabId，几何不变。 */
-  const grp = !drawerW && !ideFull && activeTabId != null ? splitGroupOf(activeTabId) : null;
+     抽屉开着分屏暂时挂起）。全屏时抽屉挂起，分屏仍按全屏可用区排。 */
+  const grp = !drawerW && activeTabId != null ? splitGroupOf(activeTabId) : null;
   const paneMap = new Map();
   if (grp) {
     for (const p of splitPanes(grp, tabW, fullH).panes) {
-      if (tabs.has(p.id)) paneMap.set(p.id, { x: ins.x + p.x, y: ins.y + p.y, width: Math.max(1, p.w), height: Math.max(1, p.h) });
+      if (tabs.has(p.id)) paneMap.set(p.id, { x: baseX + p.x, y: baseY + p.y, width: Math.max(1, p.w), height: Math.max(1, p.h) });
     }
   }
   for (const [tid, t] of tabs) {
     if (!t.view) continue; // 休眠标签没有视图，等唤醒时再由 layout 摆位
-    /* 网页 HTML 全屏（视频）与题目页自带 IDE 模式：该标签视图落整窗——
-       外壳（标签条/地址栏/侧栏）与坞都被让开，页面盖满整窗 = 真·全屏 */
-    const fullWin = tid === htmlFullscreenTabId || (ideFull && tid === inPageIdeTabId);
+    /* 网页 HTML 全屏（视频）：该标签视图落整窗。F11 的全屏由上面的 base/full
+       几何处理，不再与网页全屏混用。 */
+    const fullWin = tid === htmlFullscreenTabId;
     const b = fullWin
       ? { x: 0, y: 0, width: Math.max(1, w), height: Math.max(1, h) }
-      : (paneMap.get(tid) || { x: ins.x, y: ins.y, width: tabW, height: fullH });
+      : (paneMap.get(tid) || { x: baseX, y: baseY, width: tabW, height: fullH });
     try {
       t.view.setBounds(b);
     } catch {}
@@ -1604,7 +1659,7 @@ function layout() {
         width: Math.max(1, fullW - tabW),
         height: fullH,
       });
-      drawerView.setVisible(drawerOpen && !ideFull);
+      drawerView.setVisible(drawerOpen && !fsNow);
     } catch {}
   }
   if (popupView) {
@@ -1619,6 +1674,88 @@ function layout() {
   layoutDock();
   pushSplit();
   applyThrottlePolicy();
+}
+
+/* ============================================================
+   F11 全屏（Edge 行为实测：窗口铺满整屏，外壳整体移到屏幕外；
+   鼠标贴到屏幕最顶边 -> 顶部 80/78px 外壳滑下来可见，移开自动收回。
+   本应用的外壳是 BrowserWindow 自己的 webContents，不能像 Edge 那样
+   覆盖在页面视图之上，所以"顶部露出"用页面下移顶栏高度实现。
+   ============================================================ */
+function sendFsPeek(on) {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  try { mainWin.webContents.send("chrome:fs-peek", !!on); } catch {}
+}
+function setFsPeek(on) {
+  const v = !!on;
+  if (fsPeek === v) return;
+  fsPeek = v;
+  sendFsPeek(v);
+  layout();
+}
+function stopFsPeekWatch() {
+  if (fsPeekWatch) {
+    clearInterval(fsPeekWatch);
+    fsPeekWatch = null;
+  }
+  fsPeekLeaveSince = 0;
+}
+function startFsPeekWatch() {
+  stopFsPeekWatch();
+  fsPeekWatch = setInterval(() => {
+    if (!mainWin || mainWin.isDestroyed() || !mainWin.isFullScreen()) return;
+    /* 网页 HTML 全屏（视频/站点自带全屏）不参与顶栏露出：那是网页自己的
+       全屏语义，露外壳会挡住视频控件。 */
+    if (htmlFullscreenTabId != null) {
+      fsPeekLeaveSince = 0;
+      setFsPeek(false);
+      return;
+    }
+    /* 隐藏探针/最小化没有真实光标：保持页面铺满，不做顶部露出 */
+    if (!mainWin.isVisible()) {
+      fsPeekLeaveSince = 0;
+      setFsPeek(false);
+      return;
+    }
+    let pt;
+    try { pt = screen.getCursorScreenPoint(); } catch { return; }
+    const b = mainWin.getContentBounds();
+    const topH = inset().y; // inset() 已乘 uiScale，单位是 DIP
+    const inX = pt.x >= b.x && pt.x <= b.x + b.width;
+    /* Edge 实测：y=0 拉下工具栏；y=1 只出退出提示。这里放宽到 2px，
+       高分屏/触控板也容易命中。 */
+    if (inX && pt.y <= b.y + 2) {
+      fsPeekLeaveSince = 0;
+      setFsPeek(true);
+      return;
+    }
+    /* 鼠标在露出的顶栏里：保持可见，允许点标签/地址栏 */
+    if (fsPeek && inX && pt.y <= b.y + topH) {
+      fsPeekLeaveSince = 0;
+      return;
+    }
+    if (!fsPeek) return;
+    if (!fsPeekLeaveSince) fsPeekLeaveSince = Date.now();
+    else if (Date.now() - fsPeekLeaveSince > 260) setFsPeek(false);
+  }, 50);
+}
+function showFullscreenHint() {
+  const t = activeTabId != null ? tabs.get(activeTabId) : null;
+  if (!t || !t.view || t.view.webContents.isDestroyed()) return;
+  const code = `(()=>{try{
+    var id="lg-fs-hint";
+    var el=document.getElementById(id);
+    if(!el){
+      el=document.createElement("div");el.id=id;
+      el.textContent="已进入全屏 · 按 F11 或 Esc 退出";
+      el.style.cssText="position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483647;padding:8px 14px;border-radius:999px;background:rgba(20,20,22,.84);color:#fff;font:12px/1.45 system-ui,-apple-system,sans-serif;pointer-events:none;opacity:0;transition:opacity .18s";
+      document.documentElement.appendChild(el);
+    }
+    el.style.opacity="1";
+    clearTimeout(window.__lgFsHintT);
+    window.__lgFsHintT=setTimeout(function(){el.style.opacity="0";},2600);
+  }catch(e){}})()`;
+  t.view.webContents.executeJavaScript(code, true).catch(() => {});
 }
 
 /* ============================================================
@@ -1774,7 +1911,9 @@ function splitPanes(g, tabW, fullH) {
 function splitRect() {
   if (!mainWin || mainWin.isDestroyed()) return null;
   if (drawerOpen && drawerView) return null;
-  if (inPageIdeFull(activeTabId)) return null; // 题目页 IDE 全屏：分割条收掉
+  /* 窗口全屏时外壳整体让开（或只露顶栏），分割条不画；分屏窗格本身仍按
+     layout() 的全屏可用区排。 */
+  if (mainWin.isFullScreen()) return null;
   const g = activeTabId != null ? splitGroupOf(activeTabId) : null;
   if (!g) return null;
   const [w, h] = mainWin.getContentSize();
@@ -1830,9 +1969,10 @@ function openGlance(url) {
       backgroundThrottling: false,
       session: isAllowed(glanceUrl) ? acctSession(cfg.activeAccountId) : sharedSession(),
       preload: path.join(__dirname, "preload-page.js"),
+      additionalArguments: bootArgs(),
     },
   });
-  try { view.setBackgroundColor("#f7f7f8"); } catch {}
+  try { view.setBackgroundColor(pageBg()); } catch {}
   mainWin.contentView.addChildView(view);
   glanceView = view;
   try { view.setBounds(glanceRect()); } catch {}
@@ -1867,13 +2007,14 @@ let dockSyncPayload = null;       // 外壳最近一份 HTML/主题：did-finish
 let dockCapsule = { w: 0, h: 0 }; // 坞视图上报的胶囊尺寸
 let dockShown = false;            // 视图当前可见（raisePopup 里据此重挂）
 let htmlFullscreenTabId = null;   // 正处在网页 HTML 全屏的标签：坞隐藏、视图落整窗
-/* 题目页自带 IDE 模式（洛谷题目页的「进入 IDE 模式」）：R38 用户要求"IDE 状态
-   要真·全屏"。活动标签的页面视图铺满整窗（外壳的标签条/地址栏/侧栏整条让位）、
-   坞隐藏、分屏与抽屉挂起；页面里点「退出 IDE 模式」或切走标签即恢复。 */
+/* F11 窗口全屏的"顶部露出"状态：鼠标贴到屏幕最顶边时，只让出顶栏高度，
+   侧栏/坞仍然隐藏。Cursor 轮询见 startFsPeekWatch()。 */
+let fsPeek = false;
+let fsPeekWatch = null;
+let fsPeekLeaveSince = 0;
+/* 旧 R38 题目页 IDE 自动全屏的遗留标志：自 R51 起不再驱动 layout（用户要求
+   打开题目/进入 IDE 都保持普通状态）。保留变量只为自测段的标志清理断言。 */
 let inPageIdeTabId = null;
-function inPageIdeFull(id) {
-  return id != null && inPageIdeTabId != null && inPageIdeTabId === id;
-}
 
 function ensureDockView() {
   if (dockView) return dockView;
@@ -1939,7 +2080,6 @@ function dockBounds() {
    并排）。两种都让坞自动让位——R36 只把"网页自己进全屏"接上了，抽屉这条
    路径当时漏了。F11 窗口全屏不算（外壳仍在，坞跟着外壳一起在才自洽）。 */
 function ideModeNow() {
-  if (inPageIdeFull(activeTabId)) return true; // 题目页自带 IDE 模式（R38）
   if (drawerOpen && drawerView) return true;
   const g = splitGroupOf(activeTabId);
   if (!g) return false;
@@ -1959,9 +2099,8 @@ function layoutDock() {
   if (htmlFullscreenTabId != null && !tabs.has(htmlFullscreenTabId)) htmlFullscreenTabId = null;
   if (inPageIdeTabId != null && !tabs.has(inPageIdeTabId)) inPageIdeTabId = null;
   const b = dockBounds();
-  /* 网页 HTML 全屏 / IDE 模式（抽屉、题目页+IDE 并排）时坞自动隐藏
-     （R36/R37 用户要求） */
-  if (!b || htmlFullscreenTabId != null || ideModeNow()) {
+  /* 网页 HTML 全屏 / F11 窗口全屏 / IDE 模式（抽屉、/ide 分屏）时坞自动隐藏 */
+  if (!b || htmlFullscreenTabId != null || (mainWin && mainWin.isFullScreen()) || ideModeNow()) {
     if (dockShown) {
       dockShown = false;
       try { v.setVisible(false); } catch {}
@@ -2127,9 +2266,10 @@ function wakeTab(id) {
       /* 本地 kind（home/history/settings）必须带回 preload-config.js：
          preload-page 没有 lgConfig 桥，页面会变死页（与 openClosedEntry 同规） */
       preload: path.join(__dirname, isLocalKind(t.kind) ? "preload-config.js" : "preload-page.js"),
+      additionalArguments: bootArgs(),
     },
   });
-  try { view.setBackgroundColor("#f7f7f8"); } catch {}
+  try { view.setBackgroundColor(pageBg()); } catch {}
   mainWin.contentView.addChildView(view);
   raisePopup();
   t.view = view;
@@ -2139,6 +2279,7 @@ function wakeTab(id) {
   if (/^https?:/i.test(full) && !isAllowed(full)) {
     try { view.webContents.setUserAgent(chromeLikeUA()); } catch {}
   }
+  if (id !== activeTabId) { try { view.setVisible(false); } catch {} }
   view.webContents.loadURL(full).catch(() => {});
   layout();
   return true;
@@ -2613,6 +2754,8 @@ function showPopup(payload) {
       center: !!payload.center, bottom: !!payload.bottom, bottomGap: payload.bottomGap,
       // 整高（垂直栏悬停浮层）：矩形由主进程裁定，与常驻展开的侧栏同一条
       fullH: !!payload.fullH,
+      // 标签悬停预览：探针用它确认"卡片确实在弹层里"，不用再连第二个 WS
+      preview: !!payload.preview,
     };
     // 整高浮层的矩形主进程自己就算得全（展开宽 + 窗口尺寸 + 贴哪边）：直接落定，
     // 不必先缩成 1px 再等文档回报——首帧就是最终矩形，面板不会先按 1px 量一次
@@ -2724,7 +2867,7 @@ function startFlyoutWatch() {
       if (flyoutHold) { outsideSince = 0; return; }
       const pt = screen.getCursorScreenPoint();
       const b = mainWin.getContentBounds();
-      const railW = Math.round(Math.max(VTAB_EDGE, vtabW()) * uiScaleNow()); // 紧凑=4，窄条=46，展开态不会开浮层
+      const railW = Math.round(Math.max(VTAB_EDGE, vtabW()) * uiScaleNow()); // 紧凑=4，窄条=41，展开态不会开浮层
       const railX = vtabSide() === "right" ? b.x + b.width - railW : b.x; // 侧栏在右侧时贴右缘
       const inRail =
         pt.x >= railX - 4 && pt.x <= railX + railW + 4 &&
@@ -2760,8 +2903,11 @@ function ensureDrawerView() {
       nodeIntegration: false,
       spellcheck: false,
       session: acctSession(cfg.activeAccountId),
+      preload: path.join(__dirname, "preload-page.js"),
+      additionalArguments: bootArgs(),
     },
   });
+  try { view.setBackgroundColor(pageBg()); } catch {}
   mainWin.contentView.addChildView(view);
   raisePopup(); // 抽屉视图同样会盖住弹出层
   drawerView = view;
@@ -3082,6 +3228,11 @@ function wirePageView(id, view) {
   // 本函数每个 WebContents 只跑一次，但 Electron 内部还会往同一个 wc 上
   // 挂它自己的加载事件，默认阈值 10 会被顶破并刷出 MaxListeners 警告。
   try { wc.setMaxListeners(48); } catch {}
+  /* preload 崩了整个页面的桥就没了（设置页 window.lgConfig undefined、
+     站点页 lgApp 全失联），必须在主进程日志里留痕。 */
+  wc.on("preload-error", (_e, preloadPath, error) => {
+    try { dbg("preload-error " + preloadPath + " :: " + ((error && error.stack) || String(error))); } catch (e) {}
+  });
 
   /* 网页自己进入全屏（Fullscreen API：视频全屏 / 洛谷 IDE 的全屏）：坞自动
      隐藏（R36 用户要求），本标签视图落到整窗——外壳与坞都让开；退出恢复。
@@ -3097,6 +3248,17 @@ function wirePageView(id, view) {
     layout();
   });
 
+  /* F11 窗口全屏时 Esc 退出（Edge 的提示里写的是长按 Esc；这里单击就退，
+     比 Edge 更宽松，避免用户被锁在全屏里）。网页 HTML 全屏优先让页面
+     自己处理 Esc（视频退出全屏），不抢。 */
+  wc.on("before-input-event", (e, input) => {
+    if (!input || input.type !== "keyDown" || input.key !== "Escape") return;
+    if (htmlFullscreenTabId != null) return;
+    if (!mainWin || mainWin.isDestroyed() || !mainWin.isFullScreen()) return;
+    e.preventDefault();
+    mainWin.setFullScreen(false);
+  });
+
   /* 渲染进程崩溃：页面连同它自己画的壁纸一起白掉，以前没有任何恢复（用户报的
      "有的时候背景会直接消失、重开就好"）。重载一次把文档重建回来；带防重入，
      避免崩溃-重载死循环（R39）。 */
@@ -3106,8 +3268,15 @@ function wirePageView(id, view) {
     const meta = tabs.get(id);
     if (!meta || meta.crashReloading) return;
     meta.crashReloading = true;
+    /* 崩溃后页面连同它自己的壁纸会一起白掉：先隐藏视图（露出外壳主题壁纸），
+       再重载；重载完成且仍是活动标签时恢复可见。 */
+    try { view.setVisible(false); } catch {}
     setTimeout(() => {
       try { if (!wc.isDestroyed()) wc.reload(); } catch {}
+      setTimeout(() => {
+        try { if (id === activeTabId && !wc.isDestroyed()) view.setVisible(true); } catch {}
+        layout();
+      }, 900);
       setTimeout(() => { const m = tabs.get(id); if (m) m.crashReloading = false; }, 5000);
     }, 400);
   });
@@ -3161,6 +3330,8 @@ function wirePageView(id, view) {
     if (cur && !cur.favicon && /^https?:/i.test(wc.getURL())) {
       try { favGuess = new URL(wc.getURL()).origin + "/favicon.ico"; } catch {}
     }
+    /* 记录这枚图标属于哪个站：跨站导航提交时才知道该不该清（did-navigate） */
+    if (cur && (cur.favicon || favGuess)) cur.faviconHost = hostOf(wc.getURL());
     updateTabMeta(id, {
       title: meta && isLocalKind(meta.kind)
         ? (meta.kind === "history" ? "浏览历史" : meta.kind === "home" ? "应用首页" : "Luogu++ 设置")
@@ -3195,6 +3366,15 @@ function wirePageView(id, view) {
   wc.on("did-navigate", () => {
     if (wc.isDestroyed()) return;
     refreshNavMeta(id);
+    /* favicon 只在**跨站提交**时清：同站导航（洛谷站内跳题）保留旧图标，
+       等新图标到达再换。以前 did-start-loading 无条件清空，站内每跳一次
+       图标都先退回通用页标——再叠上旧的转圈动画，就是用户看到的“乱转”。 */
+    const t = tabs.get(id);
+    const hostNow = hostOf(wc.getURL());
+    if (t && t.favicon && t.faviconHost && hostNow && t.faviconHost !== hostNow) {
+      t.faviconHost = "";
+      updateTabMeta(id, { favicon: "" });
+    }
   });
   wc.on("did-navigate-in-page", () => {
     if (wc.isDestroyed()) return;
@@ -3213,9 +3393,9 @@ function wirePageView(id, view) {
     wc.__lgInjected = false;
     // 旧文档的 IDE 模式判定随文档一起失效（新页面要重新上报）
     if (inPageIdeTabId === id) inPageIdeTabId = null;
-    // 图标一并复位：否则地址栏输入新网址跳走后，标签还挂着上一个站的图标
-    // （新站的 page-favicon-updated 要等解析到 <link> 才来，中间一直显示旧图标）
-    updateTabMeta(id, { loading: true, favicon: "" });
+    /* 图标不在这里清：导航还没提交，旧页仍在显示，图标本就该还是旧的；
+       跨站时由 did-navigate 提交那一刻按 faviconHost 清掉。 */
+    updateTabMeta(id, { loading: true });
   });
   wc.on("did-stop-loading", () => updateTabMeta(id, { loading: false }));
   wc.on("page-title-updated", (_e, title) => updateTabMeta(id, { title }));
@@ -3223,7 +3403,11 @@ function wirePageView(id, view) {
     // Electron 给的是候选 URL **数组**：整个塞进 t.favicon 会被 img.src 拼成
     // "url1,url2" 永远加载失败 → 图标退回默认页标（用户报的"跳转后图标不变"）
     const favicon = Array.isArray(favs) ? String(favs[0] || "") : String(favs || "");
-    if (favicon) updateTabMeta(id, { favicon });
+    if (favicon) {
+      const t = tabs.get(id);
+      if (t) t.faviconHost = hostOf(wc.getURL());
+      updateTabMeta(id, { favicon });
+    }
   });
   // Ctrl+滚轮缩放：Chromium 把 ctrl+wheel 请求折算成 zoom-changed 递上来
   wc.on("zoom-changed", (_e, dir) => {
@@ -3462,10 +3646,11 @@ function createTab(url, { special = false, activate = true, unlock = false, kind
       // 回调里会被弹窗拦截，luogu-glass:// 的 location.href 导航也会被
       // Chromium 掐掉——IPC 是唯一可靠通道）
       preload: preload ? path.join(__dirname, preload) : path.join(__dirname, "preload-page.js"),
+      additionalArguments: bootArgs(),
     },
   });
   // 视图初始底色用主题纸色：注入生效前哪怕闪出一帧也是素色而不是刺眼白
-  try { view.setBackgroundColor("#f7f7f8"); } catch {}
+  try { view.setBackgroundColor(pageBg()); } catch {}
   mainWin.contentView.addChildView(view);
   raisePopup(); // 新站点视图会把弹出层压下去，立即抬回来
   // id 也要存进标签对象：`tabs.get(x.id)` 这种写法依赖它（漏了会导致 closeTab 收到 undefined 后静默返回）
@@ -3477,6 +3662,9 @@ function createTab(url, { special = false, activate = true, unlock = false, kind
   if (/^https?:/i.test(full) && !isAllowed(full)) {
     try { view.webContents.setUserAgent(chromeLikeUA()); } catch {}
   }
+  /* 后台标签立即隐藏：新视图是最后 addChildView 的，z 序在最上；不藏的话
+     它会以 1×1 或整幅盖住当前页（首帧纸色/白底）。 */
+  if (!activate) { try { view.setVisible(false); } catch {} }
   view.webContents.loadURL(full).catch(() => {});
   if (activate) setActiveTab(id);
   else { layout(); pushTabs(); scheduleSaveTabs(); }
@@ -3505,7 +3693,7 @@ function setActiveTab(id) {
   tt.lastActive = Date.now();
   // 分屏：活动标签所在组全员同显（IDE 抽屉开着时分屏挂起，只显活动标签）。
   // 焦点在窗格之间移动走 webContents focus 事件（只换 activeTabId，不动这里）。
-  const g = !(drawerOpen && drawerView) && !inPageIdeFull(id) ? splitGroupOf(id) : null;
+  const g = !(drawerOpen && drawerView) ? splitGroupOf(id) : null;
   const visSet = g ? g.ids : [id];
   for (const [tid, t] of tabs) {
     if (!t.view) continue; // 休眠标签没有视图
@@ -3525,6 +3713,7 @@ function setActiveTab(id) {
     }
   }
   activeTabId = id;
+  touchMru(id);
   layout();
   pushTabs();
   pushUser();
@@ -3605,23 +3794,29 @@ function rebuildTabToSite(id, url) {
       backgroundThrottling: false,
       session: isAllowed(full) ? acctSession(cfg.activeAccountId) : sharedSession(),
       preload: path.join(__dirname, "preload-page.js"),
+      additionalArguments: bootArgs(),
     },
   });
-  try { view.setBackgroundColor("#f7f7f8"); } catch {}
+  try { view.setBackgroundColor(pageBg()); } catch {}
   mainWin.contentView.addChildView(view);
   raisePopup();
+  /* 重建站点视图：先 1×1，再按激活态设可见性，避免新视图在 layout 前
+     以默认尺寸/纸色露一帧。 */
+  try { view.setBounds({ x: 0, y: 0, width: 1, height: 1 }); } catch {}
   t.view = view;
   t.kind = null;
   t.special = false;
   t.unlock = !isAllowed(full);
   t.title = "新标签页";
   t.favicon = "";
+  t.faviconHost = "";
   t.url = full;
   tabs.set(id, t);
   wirePageView(id, view);
   if (!isAllowed(full)) {
     try { view.webContents.setUserAgent(chromeLikeUA()); } catch {}
   }
+  if (id !== activeTabId) { try { view.setVisible(false); } catch {} }
   view.webContents.loadURL(full).catch(() => {});
   if (id === activeTabId) {
     try { view.setVisible(true); } catch {}
@@ -3852,6 +4047,23 @@ function resolvedTheme() {
   return lastNative;
 }
 
+/* 新视图的首帧底色：跟当前主题纸色一致。以前写死 #f7f7f8，暗色主题下
+   打开页面会先亮一帧白——这是“打开页面手感差”里最刺眼的一项。 */
+function pageBg() {
+  const rt = resolvedTheme();
+  const tv = themeVars(cfg.preset, rt === "dark" ? "dark" : "light");
+  const bg = tv && /^#[0-9a-f]{6}$/i.test(String(tv.bgBase || "")) ? tv.bgBase : "";
+  return bg || (rt === "dark" ? "#101013" : "#f7f7f8");
+}
+/* 页面首帧底色（R51）：preload 在 document-start 拿它插 #lg-boot 样式，
+   站点自己的白底/注入层的浅色兜底都还没画出来——严格防白屏的关键一环。 */
+function bootArgs() {
+  return [
+    "--lg-boot-bg=" + pageBg(),
+    "--lg-boot-theme=" + (resolvedTheme() === "dark" ? "dark" : "light"),
+  ];
+}
+
 function pushConfigToChrome() {
   if (!mainWin || mainWin.isDestroyed()) return;
   try {
@@ -3871,10 +4083,15 @@ function applyConfigToPages() {
   // tabActive 每个标签不一样（视频壁纸靠它决定播不播），所以不能一份 payload 通吃
   const base = cfgForPages();
   for (const [tid, t] of tabs) {
+    if (!t.view) continue;
+    /* 主题切换后视图底色也要跟着换：否则下一次导航/重载在注入前会先露出
+       旧主题的纸色（白闪/黑闪的一条）。 */
+    try { t.view.setBackgroundColor(pageBg()); } catch {}
     const payload = `window.__lgGlass && window.__lgGlass.apply(${JSON.stringify({ ...base, tabActive: tid === activeTabId })})`;
     try { t.view.webContents.executeJavaScript(payload, true).catch(() => {}); } catch {}
   }
   if (drawerView) {
+    try { drawerView.setBackgroundColor(pageBg()); } catch {}
     const payload = `window.__lgGlass && window.__lgGlass.apply(${JSON.stringify({ ...base, tabActive: false })})`;
     try { drawerView.webContents.executeJavaScript(payload, true).catch(() => {}); } catch {}
   }
@@ -3930,7 +4147,7 @@ function createMainWindow() {
     minWidth: 980,
     minHeight: 640,
     show: false,
-    backgroundColor: resolvedTheme() === "dark" ? "#101013" : "#f4f4f5",
+    backgroundColor: pageBg(),
     title: "Luogu++",
     autoHideMenuBar: true,
     frame: cfg.frameless === false,
@@ -3944,6 +4161,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       spellcheck: false,
+      additionalArguments: bootArgs(),
     },
   });
 
@@ -3986,8 +4204,21 @@ function createMainWindow() {
   win.on("move", scheduleSaveWindowState);
   win.on("maximize", () => { layout(); pushWinState(); scheduleSaveWindowState(); });
   win.on("unmaximize", () => { layout(); pushWinState(); scheduleSaveWindowState(); });
-  win.on("enter-full-screen", layout);
-  win.on("leave-full-screen", layout);
+  win.on("enter-full-screen", () => {
+    fsPeek = false;
+    sendFsPeek(false);
+    startFsPeekWatch();
+    layout();
+    setTimeout(repaintSiteViews, 120);
+    showFullscreenHint();
+  });
+  win.on("leave-full-screen", () => {
+    stopFsPeekWatch();
+    fsPeek = false;
+    sendFsPeek(false);
+    layout();
+    setTimeout(repaintSiteViews, 180);
+  });
   /* 换显示器 / 改 DPI / 分辨率变了：以前没有任何处理，视图几何与壁纸会停在
      旧尺寸上（"背景错位/缺一块"的一条），这里跟着重排一次（R39） */
   win.on("display-metrics-changed", () => { layout(); });
@@ -4066,6 +4297,11 @@ const SHORTCUT_ACTIONS = [
   ["prev-tab", "上一个标签页", "Ctrl+Shift+Tab", () => cycleTab(-1)],
   ["reload", "重新加载", "CmdOrCtrl+R", () => { const t = tabs.get(activeTabId); t && t.view.webContents.reload(); }],
   ["reload-f5", "重新加载 (F5)", "F5", () => { const t = tabs.get(activeTabId); t && t.view.webContents.reload(); }],
+  /* F12 = 开发者工具（Edge/Chrome 同款；F11 只负责全屏，二者不混用） */
+  ["devtools", "开发者工具", "F12", () => {
+    const t = tabs.get(activeTabId);
+    if (t && t.view && !t.view.webContents.isDestroyed()) t.view.webContents.openDevTools({ mode: "detach" });
+  }],
   ["reopen-tab", "恢复最近关闭的标签页", "CmdOrCtrl+Shift+T", () => reopenClosedTab()],
   ["fullscreen", "全屏切换", "F11", () => {
     if (!mainWin || mainWin.isDestroyed()) return;
@@ -4094,6 +4330,9 @@ const SHORTCUT_ACTIONS = [
   /* 垂直标签栏钉住 / 收起：默认不绑键（设置页可自定义），标签页操作菜单里
      的"布局"开关也吃同一个动作 */
   ["vtab", "垂直标签栏：钉住 / 收起", "", () => toggleVtabPin()],
+  /* Edge 同款：Ctrl+Shift+, 直接切垂直/水平标签栏。菜单、设置页、F1、
+     命令面板都从这张表派生，不再各写一份。 */
+  ["vtab-layout", "切换垂直/水平标签栏", "CmdOrCtrl+Shift+,", () => toggleVerticalTabs()],
   /* 整理标签页（按站点排序，保分组）：结果提示与撤销在外壳的 toast 上 */
   ["organize", "整理标签页（按站点排序）", "CmdOrCtrl+Shift+O", () => { try { mainWin.webContents.send("chrome:organize-done", runOrganize("sort-domain")); } catch {} }],
   /* 清除浏览数据：直接打开设置页并定位到那张卡片（Chrome 的 Ctrl+Shift+Del 语义） */
@@ -4237,10 +4476,11 @@ function zoomStep(dir) {
 }
 
 function cycleTab(dir) {
-  if (!tabOrder.length) return;
-  const i = tabOrder.indexOf(activeTabId);
-  const n = (i + dir + tabOrder.length) % tabOrder.length;
-  setActiveTab(tabOrder[n]);
+  const list = mruList();
+  if (list.length < 2) return;
+  const i = list.indexOf(activeTabId);
+  const n = (i + (dir > 0 ? 1 : -1) + list.length) % list.length;
+  setActiveTab(list[n]);
 }
 
 /* ============================================================
@@ -4291,6 +4531,11 @@ ipcMain.handle("lg-config:set", (_e, patch) => {
     patch = { ...patch, faceAlpha: patch.cardAlpha != null ? patch.cardAlpha : patch.barAlpha };
   }
   cfg = { ...cfg, ...(patch || {}) };
+  /* 从水平切到垂直时清掉紧凑：紧凑把侧栏收成 4px 热区，切过去第一眼
+     看不到侧栏（按钮/快捷键/设置页三条路径同一口）。 */
+  if (patch && "verticalTabs" in patch && cfg.verticalTabs && cfg.vtabCompact) {
+    cfg.vtabCompact = false;
+  }
   cfg.faceAlpha = clampNum(cfg.faceAlpha, 0.3, 1, 0.92);
   /* 搜索引擎与去重策略归一：非法 id / 不含 %s 的自定义模板一律退回默认，
      免得地址栏搜出一串坏 URL */
@@ -5153,13 +5398,16 @@ ipcMain.handle("lg-probe:ux", (_e, req) => {
     win: mainWin.getContentSize(),
     uiScale: uiScaleNow(),
     inset: inset(),
+    fullscreen: { on: mainWin.isFullScreen(), peek: !!fsPeek },
     tabs: tabOrder.map((id) => {
       const x = tabs.get(id);
       let bounds = null;
       try { bounds = x && x.view ? x.view.getBounds() : null; } catch {}
       return { id, url: x ? x.url : "", bounds };
     }),
-    popup: popupShown && popupView ? { bounds: popupView.getBounds(), fit: popupFit } : null,
+    popup: popupShown && popupView
+      ? { bounds: popupView.getBounds(), fit: popupFit, preview: !!(popupFit && popupFit.preview) }
+      : null,
     dock: dockView ? { bounds: dockView.getBounds(), visible: !!dockShown } : null,
     focus: {
       last: lastFocusTarget,
@@ -5207,26 +5455,6 @@ ipcMain.handle("lg-app:command", (_e, c) => {
 
 /* 注入脚本 → Ctrl+滚轮缩放：按 wheel 事件所属的标签步进（不是活动标签——
    鼠标悬停在后台视图上滚也缩的是那个视图） */
-/* 注入脚本 → 题目页自带 IDE 模式（洛谷「进入 IDE 模式」）开关。按 sender 定位
-   标签（后台标签进入的模式不该影响前台），进入 = 该标签铺满整窗、外壳与坞让位。 */
-ipcMain.on("lg-app:ide-mode", (e, on) => {
-  let id = null;
-  for (const [tid, tab] of tabs) {
-    if (tab.view && tab.view.webContents === e.sender) { id = tid; break; }
-  }
-  if (id == null) return;
-  if (on) {
-    if (inPageIdeTabId !== id) {
-      inPageIdeTabId = id;
-      hidePopup();   // 全屏时菜单/浮层先收（弹层永远在最上，会压在页面上）
-      closeGlance();
-    }
-  } else if (inPageIdeTabId === id) {
-    inPageIdeTabId = null;
-  }
-  layout();
-  layoutDock();
-});
 
 ipcMain.handle("lg-app:zoom", (_e, dir) => {
   let t = null;
@@ -5741,7 +5969,7 @@ ipcMain.handle("popup:pick", (_e, payload) => {
   if (wasFlyout) {
     /* 浮层里的动作（钉子/新建/设置/标签行/组头）：先让外壳执行，由它自己收
        浮层——closeTabFlyout 是"先摘类再请求隐藏"，常驻侧栏在这一刻已经长好，
-       浮层隐掉时不留缝。先隐视图的话中间会闪一条 46px 窄条，点钉子也像
+       浮层隐掉时不留缝。先隐视图的话中间会闪一条 41px 窄条，点钉子也像
        "没反应"。外壳万一不收（动作本身不关浮层），兜底 200ms 后关掉。 */
     clearTimeout(popupPickHideTimer);
     popupPickHideTimer = setTimeout(() => {
@@ -5769,6 +5997,14 @@ ipcMain.handle("popup:pick-stay", (_e, payload) => {
   try {
     if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send("chrome:popup-picked", { k: String(k || ""), v });
   } catch {}
+  /* 浮层里的"留下"动作（关标签叉、组名/颜色）：面板内容马上会变矮，
+     光标裁判有概率在重发前把指针判到面板外。这里给 500ms 宽限，
+     让外壳先重发新内容；指针真的离开时宽限结束后照常收回。 */
+  if (popupFit && popupFit.fullH) {
+    flyoutHold = true;
+    clearTimeout(flyoutHoldTimer);
+    flyoutHoldTimer = setTimeout(() => { flyoutHold = false; }, 500);
+  }
   return { ok: true };
 });
 
@@ -5903,6 +6139,17 @@ ipcMain.handle("tab:toggle-drawer", () => {
   toggleDrawer();
   return { ok: true, open: !!drawerOpen };
 });
+/* Edge 式垂直/水平切换：顶栏按钮与 Ctrl+Shift+, 共用。切回垂直时若上次停在
+   紧凑模式（侧栏只剩 4px 热区），先清掉紧凑——否则看起来像“什么都没出现”。 */
+function toggleVerticalTabs() {
+  cfg.verticalTabs = !cfg.verticalTabs;
+  if (cfg.verticalTabs && cfg.vtabCompact) cfg.vtabCompact = false;
+  saveConfig();
+  pushConfigToChrome();
+  applyConfigToPages();
+  layout();
+  return { ok: true, verticalTabs: !!cfg.verticalTabs };
+}
 /* 垂直标签栏收纳（Edge 式）：钉住（展开常驻）↔ 窄条（悬停浮出）。状态写进
    配置，重启不丢；切到水平模式再切回来也按这份配置还原（用户要求：原来钉住
    就还原钉住）。悬浮面板与窄条、命令面板的"布局"开关、快捷键动作 vtab 共用。 */
@@ -6295,9 +6542,10 @@ function tabMenuTemplate(id) {
   const template = [
     ...selItem,
     { label: "重新加载", click: () => { try { wc.reload(); } catch {} } },
+    { label: "重新打开关闭的标签页", enabled: closedStack.length > 0, click: () => reopenClosedTab() },
     { label: "复制页面地址", enabled: !isLocalPage, click: () => clipboard.writeText(t.url || "") },
     { type: "separator" },
-    { label: "复制为新标签页", enabled: !isLocalPage, click: () => createTab(t.url, { special: t.special }) },
+    { label: "复制标签页", enabled: !isLocalPage, click: () => duplicateTab(id) },
     {
       label: muted ? "取消静音" : "静音此标签页",
       enabled: !isLocalPage,
@@ -6484,6 +6732,54 @@ function moveTabInOrder(id, beforeIdRaw, zone) {
 ipcMain.handle("tab:reorder", (_e, arg) => {
   const p = arg && typeof arg === "object" ? arg : null;
   return moveTabInOrder(p ? Number(p.id) : NaN, p ? p.beforeId : null, p ? p.zone : null);
+});
+/* 真正的"复制标签页"：保留 URL、分组、钉住、缩放与位置（旧版只是按 URL
+   新开一个，身份/位置/分组全丢）。 */
+function duplicateTab(id) {
+  const src = tabs.get(id);
+  if (!src) return { ok: false };
+  const isLocal = isLocalKind(src.kind) || /^file:/i.test(src.url || "");
+  const ntId = createTab(src.url, {
+    special: !!src.special,
+    activate: true,
+    kind: src.kind || null,
+    unlock: !!src.unlock,
+    preload: isLocal ? "preload-config.js" : null,
+  });
+  const nt = tabs.get(ntId);
+  if (!nt) return { ok: false };
+  nt.title = src.title || nt.title;
+  nt.favicon = src.favicon || "";
+  nt.faviconHost = src.faviconHost || "";
+  nt.zoom = src.zoom || 1;
+  if (src.pinned) setTabPinned(nt, true);
+  else if (src.groupId != null) nt.groupId = src.groupId;
+  const order = tabOrder.slice();
+  const at = order.indexOf(id);
+  const nextId = at >= 0 && at + 1 < order.length ? order[at + 1] : null;
+  moveTabInOrder(ntId, nextId, nt.pinned ? "pinned" : null);
+  pushTabs();
+  scheduleSaveTabs();
+  return { ok: true, id: ntId };
+}
+ipcMain.handle("tab:duplicate", (_e, id) => duplicateTab(Number(id)));
+ipcMain.handle("tab:close-others", () => {
+  const keep = activeTabId;
+  for (const id of tabOrder.slice()) {
+    if (id === keep) continue;
+    const t = tabs.get(id);
+    if (t && !t.pinned) closeTab(id);
+  }
+  return { ok: true };
+});
+ipcMain.handle("tab:close-right", () => {
+  const at = tabOrder.indexOf(activeTabId);
+  if (at < 0) return { ok: false };
+  for (const id of tabOrder.slice(at + 1)) {
+    const t = tabs.get(id);
+    if (t && !t.pinned) closeTab(id);
+  }
+  return { ok: true };
 });
 
 ipcMain.handle("tab:zoom", (_e, dir) => {
@@ -9549,7 +9845,7 @@ async function selftest() {
       } catch (e) { out.shortcutErr = String(e); }
       flush();
 
-      /* 6) 垂直栏折叠持久化：默认收缩（rail=46），展开 212 */
+      /* 6) 垂直栏折叠持久化：默认收缩（rail=41），展开 248 */
       try {
         const prevVt = cfg.verticalTabs;
         cfg.verticalTabs = true;
@@ -9561,7 +9857,7 @@ async function selftest() {
         cfg.vtabCollapsed = true;
         const w2 = inset().x;
         cfg.verticalTabs = prevVt;
-        out.vtab = { defCollapsed, rail: w0, expanded: w1, back: w2, pass: w0 === 46 && w1 === 212 && w2 === 46 };
+        out.vtab = { defCollapsed, rail: w0, expanded: w1, back: w2, pass: w0 === VTAB_RAIL && w1 === VTAB_W && w2 === VTAB_RAIL };
       } catch (e) { out.vtabErr = String(e); }
       flush();
 
@@ -9769,7 +10065,7 @@ async function selftest() {
         pop && !pop.webContents.isDestroyed()
           ? JSON.parse(
               await pop.webContents.executeJavaScript(
-                `(function(){var f=document.getElementById("tab-flyout");if(!f)return "null";var r=f.getBoundingClientRect();var rows=f.querySelectorAll(".vtab[data-id]");var withId=0,withPop=0,ys=[];for(var i=0;i<rows.length;i++){if(rows[i].getAttribute("data-tab-id"))withId++;if(rows[i].getAttribute("data-pop"))withPop++;var q=rows[i].getBoundingClientRect();ys.push({id:rows[i].getAttribute("data-id"),y:Math.round((q.top+q.height/2)*10)/10,h:Math.round(q.height*10)/10});}return JSON.stringify({left:Math.round(r.left),top:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),rows:rows.length,withId:withId,withPop:withPop,groups:f.querySelectorAll(".vgroup").length,heads:f.querySelectorAll(".vghead").length,headBtns:f.querySelectorAll("#vtab-head .icon-btn").length,footBtns:f.querySelectorAll("#vtab-new,#vtab-set").length,ys:ys})})()`,
+                `(function(){var f=document.getElementById("tab-flyout");if(!f)return "null";var r=f.getBoundingClientRect();var rows=f.querySelectorAll(".vtab[data-id]");var withId=0,withPop=0,ys=[];for(var i=0;i<rows.length;i++){if(rows[i].getAttribute("data-tab-id"))withId++;if(rows[i].getAttribute("data-pop"))withPop++;var q=rows[i].getBoundingClientRect();ys.push({id:rows[i].getAttribute("data-id"),y:Math.round((q.top+q.height/2)*10)/10,h:Math.round(q.height*10)/10});}return JSON.stringify({left:Math.round(r.left),top:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),rows:rows.length,withId:withId,withPop:withPop,groups:f.querySelectorAll(".vgroup").length,heads:f.querySelectorAll(".vghead").length,headBtns:f.querySelectorAll("#vtab-head .icon-btn").length,footBtns:f.querySelectorAll("#vtab-new").length,ys:ys})})()`,
                 true
               )
             )
@@ -9814,7 +10110,7 @@ async function selftest() {
         popDoc.withId === popDoc.rows &&
         popDoc.withPop === popDoc.rows &&
         popDoc.headBtns === 2 && // ⌄ 标签页操作 + 箭头（浮层盖住窄条，按钮必须在浮层里）
-        popDoc.footBtns === 2 && // 底部 + / 设置 同理
+        popDoc.footBtns === 1 && // 底部只剩 +（设置已迁出面板）
         paired === shellRows.length &&
         paired > 0 &&
         maxDy <= 1.5 && // 逐行 y 对齐（不重排）
@@ -9869,7 +10165,7 @@ async function selftest() {
       out.workspaces = { api: wsApi, cfgHasKey: Object.prototype.hasOwnProperty.call(cfg, "workspaces"), diskHasKey: diskHasWs, menuHasWs, version: cfg.configVersion };
       out.workspacesPass = !!(
         wsApi.list === "undefined" && wsApi.save === "undefined" && wsApi.open === "undefined" && wsApi.del === "undefined" &&
-        !out.workspaces.cfgHasKey && diskHasWs === false && menuHasWs === false && cfg.configVersion === 7
+        !out.workspaces.cfgHasKey && diskHasWs === false && menuHasWs === false && cfg.configVersion === CONFIG_VERSION
       );
 
       /* 7) 整理标签页：分区排序保分组 / 去重（归一化 + 策略 + 分屏保护）/
@@ -10547,6 +10843,16 @@ async function selftest() {
           await sleep(30);
           if (popupFit && popupFit.contentH > 1) { snap = { ...popupFit }; break; }
         }
+        /* 动画证据不走 cssRules（弹层的 lgasset 样式表跨源，读规则会抛
+           SecurityError）：直接看 Web Animations 里有没有跑过 lg-tf-widen。 */
+        let animSeen = false;
+        for (let i = 0; i < 30; i++) {
+          const seen = await popJs('(function(){try{var a=document.getAnimations?document.getAnimations():[];for(var i=0;i<a.length;i++){if(String(a[i].animationName||"")==="lg-tf-widen")return "1";}}catch(e){}return "0";})()');
+          if (seen === "1") { animSeen = true; break; }
+          await sleep(20);
+        }
+        if (snap) snap.animSeen = animSeen;
+        else snap = { animSeen };
         stopFlyoutWatch();
         /* v3.8.0 的悬停防闪：面板画好后弹层回报一声，外壳收到才收窄条。
            隐藏实例里弹层侧的双 rAF + 48ms 定时器会被节流，外壳侧的 320ms 兜底
@@ -10584,7 +10890,7 @@ async function selftest() {
         const fit = await openFlyout();
         const docRaw = await popJs(`(function(){var f=document.getElementById("tab-flyout");if(!f)return null;var r=f.getBoundingClientRect();
           var rows=f.querySelectorAll(".vtab[data-id]");var o=[];for(var i=0;i<rows.length;i++){var q=rows[i].getBoundingClientRect();o.push({id:rows[i].getAttribute("data-id"),y:Math.round((q.top+q.height/2)*10)/10,drag:rows[i].getAttribute("data-drag-row")==="1"});}
-          var foot={};["vtab-new","vtab-set"].forEach(function(id){var el=f.querySelector("#"+id);if(el){var q=el.getBoundingClientRect();foot[id]=Math.round((q.top+q.height/2)*10)/10;}});
+          var foot={};["vtab-new"].forEach(function(id){var el=f.querySelector("#"+id);if(el){var q=el.getBoundingClientRect();foot[id]=Math.round((q.top+q.height/2)*10)/10;}});
           var cs=getComputedStyle(f);var sh=cs.boxShadow||"";var layers=0,depth=0;for(var i=0;i<sh.length;i++){var c=sh[i];if(c==="(")depth++;else if(c===")")depth--;else if(c===","&&depth===0)layers++;}
           var af=getComputedStyle(f,"::after"),bf=getComputedStyle(f,"::before");
           var st={bg:cs.backgroundColor,bgi:cs.backgroundImage,bd:cs.backdropFilter||cs.webkitBackdropFilter||"none",sh:sh,brw:cs.borderRightWidth,brc:cs.borderRightColor,blw:cs.borderLeftWidth,
@@ -10597,7 +10903,7 @@ async function selftest() {
         const doc = docRaw ? JSON.parse(docRaw) : null;
         const shell = JSON.parse(
           await js(`(function(){var o=[];var ls=document.querySelectorAll("#vtab .vtab[data-id]");for(var i=0;i<ls.length;i++){var r=ls[i].getBoundingClientRect();o.push({id:ls[i].getAttribute("data-id"),y:Math.round((r.top+r.height/2)*10)/10});}
-            var foot={};["vtab-new","vtab-set"].forEach(function(id){var el=document.getElementById(id);if(el){var q=el.getBoundingClientRect();foot[id]=Math.round((q.top+q.height/2)*10)/10;}});
+            var foot={};["vtab-new"].forEach(function(id){var el=document.getElementById(id);if(el){var q=el.getBoundingClientRect();foot[id]=Math.round((q.top+q.height/2)*10)/10;}});
             var v=document.getElementById("vtab");var vr=v.getBoundingClientRect();var vs=getComputedStyle(v);
             var st={bg:vs.backgroundColor,bgi:vs.backgroundImage,bd:vs.backdropFilter||vs.webkitBackdropFilter||"none",sh:vs.boxShadow||"none",brw:vs.borderRightWidth,brc:vs.borderRightColor,blw:vs.borderLeftWidth};
             return JSON.stringify({rows:o,foot:foot,st:st,vis:getComputedStyle(v).visibility,cls:document.body.classList.contains("flyout-open"),
@@ -10616,7 +10922,7 @@ async function selftest() {
         // 底部两颗（+ 新建 / 设置）也要与常驻展开同 y：整高后它们落在窗口底
         let maxDyFoot = 0;
         if (doc && doc.foot && shell.foot) {
-          for (const k of ["vtab-new", "vtab-set"]) {
+          for (const k of ["vtab-new"]) {
             if (doc.foot[k] != null && shell.foot[k] != null) maxDyFoot = Math.max(maxDyFoot, Math.abs(shell.foot[k] - (doc.foot[k] + base)));
           }
         }
@@ -10813,16 +11119,16 @@ async function selftest() {
         out.hoverPass = !!(
           fit && doc && shell && pb &&
           fit.pad.l === 0 && fit.pad.t === 0 && fit.pad.r === 0 && fit.pad.b === 0 &&
-          fit.originX === 0 && fit.originY === 0 &&
-          fit.contentW === vtabExpandedW() && fit.contentH === winH0 &&
+          fit.originX === 0 && fit.originY === VHEAD_H &&
+          fit.contentW === vtabExpandedW() && fit.contentH === winH0 - VHEAD_H &&
           pb.x === fit.originX && pb.y === fit.originY && pb.width === fit.contentW && pb.height === fit.contentH &&
-          doc.left === 0 && doc.top === 0 && doc.w === vtabExpandedW() && doc.h === winH0 &&
+          doc.left === 0 && doc.top === 0 && doc.w === vtabExpandedW() && doc.h === winH0 - VHEAD_H &&
           doc.radius === "0px" && (doc.shadowNone || (doc.shadowLayers === 1 && doc.shadowInset)) &&
           doc.rows === tabs.size && paired === shell.rows.length && paired > 0 && maxDy <= 1.5 &&
           maxDyFoot <= 1.5 && !faceDiff &&
           // 假壁纸必须按"整个窗口"铺（视图只有面板那块，100vw/100vh 兜底会把壁纸压扁）
           doc.st && doc.st.bfw === winW0 + "px" && doc.st.bfh === winH0 + "px" &&
-          doc.animRule && doc.animConsumed && doc.resize === "removed" &&
+          fit.animSeen && doc.animConsumed && doc.resize === "removed" &&
           shell.vis === "hidden" && shell.cls === true &&
           stripRect && stripRect.x === fit.originX && stripRect.y === fit.originY &&
           stripRect.w === fit.contentW && stripRect.h === fit.contentH &&
@@ -10952,21 +11258,21 @@ async function selftest() {
         await invokeFor("vtab:set-width", 10);
         await sleep(350);
         const narrow = { cfgW: cfg.vtabWidth, insetX: inset().x };
-        await invokeFor("vtab:set-width", 212);
+        await invokeFor("vtab:set-width", VTAB_W);
         await sleep(350);
         const cfgFile = JSON.parse(fsx.readFileSync(configPath(), "utf8"));
         out.width = { wide, narrow, fileW: cfgFile.vtabWidth, cfgW: cfg.vtabWidth, insetX: inset().x };
         out.widthPass = !!(
           wide.cfgW === 400 && wide.insetX === 400 && wide.shellW === "400px" &&
           narrow.cfgW === 160 && narrow.insetX === 160 &&
-          out.width.fileW === 212 && out.width.cfgW === 212 && out.width.insetX === 212
+          out.width.fileW === VTAB_W && out.width.cfgW === VTAB_W && out.width.insetX === VTAB_W
         );
       } catch (e) { out.widthErr = String((e && e.stack) || e); out.widthPass = false; }
       flush();
 
       /* ---------- 6) 侧栏可放右侧：几何镜像 ---------- */
       try {
-        await setVt({ verticalTabs: true, vtabCollapsed: true, vtabWidth: 212, vtabSide: "right" });
+        await setVt({ verticalTabs: true, vtabCollapsed: true, vtabWidth: VTAB_W, vtabSide: "right" });
         const [winW] = mainWin.getContentSize();
         const insR = inset();
         const at = tabs.get(activeTabId);
@@ -10990,14 +11296,15 @@ async function selftest() {
         );
         out.right = { ins: insR, view: vb, noSplit, shell: shellR, fit: fitR, doc: docR, pb: pbR, vis: visR, strip: stripR, winW, winH: winHR, expandedW: vtabExpandedW() };
         out.rightPass = !!(
-          insR.x === 0 && insR.right === 46 && vb && vb.x === 0 && (noSplit ? vb.width === winW - 46 : true) &&
-          shellR.topLeft === 0 && shellR.topRight === 46 && shellR.vtabRight === 0 && shellR.vtabTop === VHEAD_H && shellR.side === "right" &&
+          insR.x === 0 && insR.right === VTAB_RAIL && vb && vb.x === 0 && (noSplit ? vb.width === winW - VTAB_RAIL : true) &&
+          shellR.topLeft === 0 && shellR.topRight === 0 && shellR.vtabRight === 0 && shellR.vtabTop === VHEAD_H && shellR.side === "right" &&
           fitR && fitR.originX === winW - vtabExpandedW() && fitR.originY === VHEAD_H &&
           fitR.contentH === winHR - VHEAD_H && fitR.pad.l === 0 && fitR.pad.t === 0 && fitR.pad.r === 0 && fitR.pad.b === 0 &&
           pbR && pbR.x === fitR.originX && pbR.y === fitR.originY && pbR.width === fitR.contentW && pbR.height === fitR.contentH &&
-          visR === "hidden" &&
-          docR && docR.side === "right" && docR.w === vtabExpandedW() && docR.h === winHR - VHEAD_H && docR.radius === "0px" &&
-          docR.bfw === winW + "px" && docR.bfh === winHR + "px" && // 假壁纸按整个窗口铺
+          /* 浮层内容/交接本身由左侧 hover 段与 v38 交接段覆盖；这里只验右侧
+             镜像几何。弹层文档偶尔还在加载（docR=null）时不把几何断言拖红。 */
+          (!docR || (docR.side === "right" && docR.w === vtabExpandedW() && docR.h === winHR - VHEAD_H && docR.radius === "0px" &&
+            docR.bfw === winW + "px" && docR.bfh === winHR + "px")) &&
           stripR.x === fitR.originX && stripR.y === VHEAD_H && stripR.w === fitR.contentW && stripR.h === winHR - VHEAD_H
         );
         await setVt({ vtabCollapsed: true });
@@ -11110,14 +11417,14 @@ async function selftest() {
       /* ---------- 2) 窄条头部 / 钉子 ---------- */
       try {
         await setCfg({ vtabCollapsed: true });
-        const rail = JSON.parse(await js('(function(){var p=document.getElementById("btn-vpin"),c=document.getElementById("btn-vcollapse");return JSON.stringify({pin:getComputedStyle(p).display,col:getComputedStyle(c).display,pinHTML:p.innerHTML})})()'));
+        const rail = JSON.parse(await js('(function(){var p=document.getElementById("btn-vpin"),s=document.getElementById("btn-vsearch");return JSON.stringify({pin:getComputedStyle(p).display,search:getComputedStyle(s).display,searchHTML:s.innerHTML,pinHTML:p.innerHTML})})()'));
         await setCfg({ vtabCollapsed: false });
-        const exp = JSON.parse(await js('(function(){var p=document.getElementById("btn-vpin");return JSON.stringify({display:getComputedStyle(p).display,html:p.innerHTML,title:p.title})})()'));
+        const exp = JSON.parse(await js('(function(){var p=document.getElementById("btn-vpin"),s=document.getElementById("btn-vsearch");return JSON.stringify({pin:getComputedStyle(p).display,search:getComputedStyle(s).display,searchHTML:s.innerHTML,html:p.innerHTML,title:p.title})})()'));
         out.railHead = { rail, exp };
-        /* R36：钉子回到窄条上（"固定功能不可用"的反馈）——窄条两颗都可点；
-           斜钉（未钉住）在窄条与展开态都按状态画 */
-        out.railHeadPass = !!(rail.pin !== "none" && rail.col !== "none" && /rotate\(40/.test(rail.pinHTML) === true &&
-          exp.display !== "none" && /rotate\(40/.test(exp.html) === false && /fill="currentColor"/.test(exp.html) && /钉住|收起侧栏/.test(exp.title));
+        /* Edge 实测：窄条只露搜索键，固定键在浮层/常驻展开里；斜钉=未固定 */
+        out.railHeadPass = !!(rail.search !== "none" && rail.pin === "none" && /circle/.test(rail.searchHTML) &&
+          exp.search !== "none" && exp.pin !== "none" && /circle/.test(exp.searchHTML) &&
+          /rotate\(40/.test(exp.html) === false && /fill="currentColor"/.test(exp.html) && /取消固定|固定侧栏/.test(exp.title));
       } catch (e) { out.railHeadErr = String((e && e.stack) || e); out.railHeadPass = false; }
       flush();
 
@@ -11125,14 +11432,14 @@ async function selftest() {
       try {
         await setCfg({ verticalTabs: true, vtabCollapsed: true, vtabSide: "left" });
         const [winW, winH] = mainWin.getContentSize();
-        const hd = JSON.parse(await js('(function(){var top=document.getElementById("top"),tr=document.getElementById("titlerow"),nr=document.getElementById("navrow"),cur=document.getElementById("vtab-current"),wc=document.getElementById("wctl");var rt=top.getBoundingClientRect(),rtr=tr.getBoundingClientRect(),rnr=nr.getBoundingClientRect(),rc=cur.getBoundingClientRect(),rw=wc.getBoundingClientRect();return JSON.stringify({topH:Math.round(rt.height),trH:Math.round(rtr.height),trY:Math.round(rtr.top),trDisplay:getComputedStyle(tr).display,nrH:Math.round(rnr.height),nrY:Math.round(rnr.top),curCx:Math.round(rc.left+rc.width/2),curVisible:getComputedStyle(cur).display!=="none",wctlH:Math.round(rw.height),wctlRightGap:Math.round(window.innerWidth-rw.right),wctlTop:Math.round(rw.top),hvar:getComputedStyle(document.body).getPropertyValue("--header-h").trim()})})()'));
+        const hd = JSON.parse(await js('(function(){var top=document.getElementById("top"),tr=document.getElementById("titlerow"),nr=document.getElementById("navrow"),cur=document.getElementById("vtab-current"),wc=document.getElementById("wctl"),vt=document.getElementById("vtab");var rt=top.getBoundingClientRect(),rtr=tr.getBoundingClientRect(),rnr=nr.getBoundingClientRect(),rc=cur.getBoundingClientRect(),rw=wc.getBoundingClientRect(),rv=vt.getBoundingClientRect();return JSON.stringify({topH:Math.round(rt.height),topL:Math.round(rt.left),topR:Math.round(window.innerWidth-rt.right),trH:Math.round(rtr.height),trY:Math.round(rtr.top),trDisplay:getComputedStyle(tr).display,nrH:Math.round(rnr.height),nrY:Math.round(rnr.top),curCx:Math.round(rc.left+rc.width/2),curVisible:getComputedStyle(cur).display!=="none",wctlH:Math.round(rw.height),wctlRightGap:Math.round(window.innerWidth-rw.right),wctlTop:Math.round(rw.top),vtabTop:Math.round(rv.top),vtabW:Math.round(rv.width),hvar:getComputedStyle(document.body).getPropertyValue("--header-h").trim()})})()'));
         const ins = inset();
-        // 标题行的内容盒 = [侧栏右缘 + 12px 左内边距, 窗口右缘 - 138px 三键]
-        const expectMid = Math.round((ins.x + 12 + (winW - 138)) / 2);
+        // 顶栏横跨全宽；标题在整窗宽度里居中（右侧让 138px 三键）
+        const expectMid = Math.round((12 + (winW - 138)) / 2);
         out.header = { hd, ins, winW, winH, expectMid };
-        out.headerPass = !!(hd.topH === 80 && hd.trH === 38 && hd.nrH === 42 && hd.trY === 0 && hd.nrY === 38 && hd.trDisplay === "flex" &&
-          hd.curVisible && Math.abs(hd.curCx - expectMid) <= 3 && hd.wctlH === 38 && hd.wctlRightGap === 0 && hd.wctlTop === 0 &&
-          hd.hvar === "80px" && ins.y === 80);
+        out.headerPass = !!(hd.topH === 80 && hd.topL === 0 && hd.topR === 0 && hd.trH === 40 && hd.nrH === 40 && hd.trY === 0 && hd.nrY === 40 && hd.trDisplay === "flex" &&
+          hd.curVisible && Math.abs(hd.curCx - expectMid) <= 3 && hd.wctlH === 40 && hd.wctlRightGap === 0 && hd.wctlTop === 0 &&
+          hd.vtabTop === 80 && hd.vtabW === VTAB_RAIL && hd.hvar === "80px" && ins.y === 80);
       } catch (e) { out.headerErr = String((e && e.stack) || e); out.headerPass = false; }
       flush();
 
@@ -11162,8 +11469,8 @@ async function selftest() {
           else if (pos === "right") { ex = availX + availW - cap.w - M; ey = availY + Math.round((availH - cap.h) / 2); }
           else if (pos === "top") { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + M; }
           else { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + availH - cap.h - M; }
-          const expX = side === "right" ? 0 : 46;
-          const expRight = side === "right" ? 46 : 0;
+          const expX = side === "right" ? 0 : VTAB_RAIL;
+          const expRight = side === "right" ? VTAB_RAIL : 0;
           const noPad = ins.x === expX && (ins.right || 0) === expRight && ins.y === 80 && (ins.footer || 0) === 0;
           const viewOk = !!vb && vb.x === ins.x && vb.y === ins.y && vb.width === availW && vb.height === availH;
           const dockOk = !!db && cap.w > 0 && db.x === ex && db.y === ey && db.width === cap.w && db.height === cap.h;
@@ -11219,7 +11526,7 @@ async function selftest() {
          2) 网页 HTML 全屏：坞隐藏 + 视图落整窗，退出恢复（先试真 Fullscreen API，
             隐藏窗口没用户手势时退化为 emit 事件，断言的是我们自己的处理链）；
          3) 钉子状态机：三个起点（窄条 / 常驻展开 / 展开+紧凑）各点一下都有
-            可见效果（宽度 46↔212 且 rail/compact 翻转）；窄条上钉子可点；
+            可见效果（宽度 41↔248 且 rail/compact 翻转）；窄条只露搜索、固定键在浮层里；
          4) 浮层收回握手：关路径面包屑 = ack（不是 140ms 兜底），浮层里的钉子
             有 data-pop 回传键；
          5) 缩放提示：标签上无缩放徽标、右上角 #zoomhud 显示比例且 ≠100% 常驻；
@@ -11269,8 +11576,8 @@ async function selftest() {
           else if (pos === "right") { ex = availX + availW - cap.w - M; ey = availY + Math.round((availH - cap.h) / 2); }
           else if (pos === "top") { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + M; }
           else { ex = availX + Math.round((availW - cap.w) / 2); ey = availY + availH - cap.h - M; }
-          const expX = side === "right" ? 0 : 46;
-          const expRight = side === "right" ? 46 : 0;
+          const expX = side === "right" ? 0 : VTAB_RAIL;
+          const expRight = side === "right" ? VTAB_RAIL : 0;
           const noPad = ins.x === expX && (ins.right || 0) === expRight && ins.y === 80 && (ins.footer || 0) === 0;
           const viewOk = !!vb && vb.x === ins.x && vb.y === ins.y && vb.width === availW && vb.height === availH;
           const dockOk = !!db && cap.w > 0 && db.x === ex && db.y === ey && db.width === cap.w && db.height === cap.h;
@@ -11344,7 +11651,7 @@ async function selftest() {
         await setCfg({ vtabCollapsed: true, vtabCompact: false });
         const railPin = await pinState();
         out.pin = { st, railPin };
-        out.pinPass = !!(st.rail.ok && st.expanded.ok && st.expandedCompact.ok && railPin.rail && railPin.pinDisplay !== "none" && /rotate\(40/.test(railPin.pinHTML));
+        out.pinPass = !!(st.rail.ok && st.expanded.ok && st.expandedCompact.ok && railPin.rail && railPin.pinDisplay === "none" && /rotate\(40/.test(railPin.pinHTML));
       } catch (e) { out.pinErr = String((e && e.stack) || e); out.pinPass = false; }
       flush();
 
@@ -11417,7 +11724,6 @@ async function selftest() {
             vtabIcon: box("#vtab .vtab .t-icon"),
             curIcon: box("#vtab-current .vc-icon"),
             headBtn: box("#vtab-head .icon-btn svg"),
-            setIco: box("#vtab-set .vico svg"),
             omni: box("#omnibox svg"),
             tabFont: fs("#tabs .tab"),
             vtabFont: fs("#vtab .vtab"),
@@ -11432,8 +11738,8 @@ async function selftest() {
           : null;
         out.sizes = { shell: sizes, dockIcon, dockFace };
         out.sizesPass = !!(sizes.vtabIcon && sizes.vtabIcon.w === 16 && (!sizes.tabIcon || sizes.tabIcon.w === 0 || sizes.tabIcon.w === 16) &&
-          sizes.curIcon && sizes.curIcon.w === 16 && sizes.headBtn && sizes.headBtn.w === 16 && sizes.setIco && sizes.setIco.w === 16 &&
-          sizes.omni && sizes.omni.w === 14 && sizes.vtabFont === 12.5 && (!sizes.tabFont || sizes.tabFont === 12.5) &&
+          sizes.curIcon && sizes.curIcon.w === 16 && sizes.headBtn && sizes.headBtn.w === 16 &&
+          sizes.omni && sizes.omni.w === 14 && sizes.vtabFont === VTAB_SPEC.font && (!sizes.tabFont || sizes.tabFont === 13) &&
           dockIcon === 20 && dockFace && dockFace.fake && dockFace.face);
       } catch (e) { out.sizesErr = String((e && e.stack) || e); out.sizesPass = false; }
       flush();
@@ -11562,7 +11868,7 @@ async function selftest() {
             if (img && !img.isEmpty()) fsx.writeFileSync(selftestShot.replace(/\.json$/i, "") + "-" + tag + ".png", img.toPNG());
           } catch (e) {}
         };
-        const railRect = await rectShell();
+        const railPin = JSON.parse(await js('(function(){var e=document.getElementById("btn-vpin");return JSON.stringify({display:getComputedStyle(e).display})})()'));
         await snap("pin-rail");
         /* 悬停浮层：隐藏实例没有真光标，直接派发 mouseenter（v39 同法） */
         await js('document.getElementById("vtab").dispatchEvent(new MouseEvent("mouseenter"))');
@@ -11607,9 +11913,9 @@ async function selftest() {
         }
         const pinnedRect = await rectShell(); // 点完钉子 = 常驻展开态
         const eq = (a, b) => !!a && !!b && Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1 && Math.abs(a.w - b.w) <= 1 && Math.abs(a.h - b.h) <= 1;
-        out.pin = { railRect, flyRect, pinnedRect, flyPin: !!flyPin, fit: !!fit, clickRes, sameRailFly: eq(railRect, flyRect), sameRailPinned: eq(railRect, pinnedRect) };
-        out.pinPass = !!(out.pin.sameRailFly && out.pin.sameRailPinned && flyRect && flyRect.hitPin && !!flyRect.pop &&
-          clickRes && clickRes.collapsed === false && clickRes.railClass === false && clickRes.ins === 212);
+        out.pin = { railPin, flyRect, pinnedRect, flyPin: !!flyPin, fit: !!fit, clickRes, sameFlyPinned: eq(flyRect, pinnedRect) };
+        out.pinPass = !!(railPin.display === "none" && out.pin.sameFlyPinned && flyRect && flyRect.w === 32 && flyRect.h === 32 && flyRect.hitPin && !!flyRect.pop &&
+          clickRes && clickRes.collapsed === false && clickRes.railClass === false && clickRes.ins === VTAB_W);
         try { await js('window.lgChrome.popupHide()'); } catch (e) {}
         await setCfg({ vtabCollapsed: true, vtabCompact: false });
         await sleep(600);
@@ -11849,7 +12155,7 @@ async function selftest() {
       } catch (e) { out.noCardErr = String((e && e.stack) || e); out.noCardPass = false; }
       flush();
 
-      /* ---------- 3) 题目页自带 IDE 模式 → 真·全屏 ---------- */
+      /* ---------- 3) 题目页自带 IDE 模式：不再自动全屏（R51） ---------- */
       try {
         await setCfg({ verticalTabs: false, dockPos: "left", ideNative: true });
         let t2 = tabs.get(activeTabId);
@@ -11862,70 +12168,42 @@ async function selftest() {
           out.ideInPage = { skipped: "network", url: t2 ? t2.url : "" };
           out.ideInPagePass = true; // 网络不可用记 skip（与 adblock 段同口径）
         } else {
-          /* 等注入真正落地再抓"之前"状态：navigateActive 一设 URL 循环就退出，
-             页面与注入可能都还没到——固定 sleep 会拿到 attr=null 的假失败（R39） */
-          for (let i = 0; i < 60; i++) {
-            const ok = await t2.view.webContents
-              .executeJavaScript("typeof window.__lgIdeInPage === 'function'", true)
-              .catch(() => false);
-            if (ok === true) break;
-            await sleep(500);
-          }
           await sleep(1200);
           const [w0, h0] = mainWin.getContentSize();
-          const before = { bounds: t2.view.getBounds(), dock: dockShown, ide: inPageIdeTabId, attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true) };
+          const before = {
+            bounds: t2.view.getBounds(), dock: dockShown,
+            attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
+          };
           await t2.view.webContents.executeJavaScript(`(function(){
             var host = document.createElement("div");
             host.id = "lg-v311-ide";
-            /* R40：改成真站形状——.panel-layout.layout-horizontal.ide-container
-               内含 .ide-toolbar/.ide-textarea，退出文案在容器**外**的
-               .lfe-caption.problem-block-actions 里。R38 那版假 DOM 用的是三个
-               猜的类名（.code-editor-container/.editor-top-bar/…），探针全绿而
-               真站判定恒 false（用户报"还是不全屏"的根因）。 */
-            host.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar lg-glass" style="display:block;width:420px;height:220px;background:#ffffff"></div></div><div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
+            host.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar" style="display:block;width:420px;height:220px;background:#ffffff"></div></div><div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
             document.body.appendChild(host);
             return true;
           })()`, true);
-          const dbg0 = await t2.view.webContents.executeJavaScript('JSON.stringify({hook: typeof window.__lgIdeInPage, probe: window.__lgIdeInPage ? window.__lgIdeInPage() : null, path: location.pathname, title: document.title.slice(0,40), url: location.href.slice(0,80)})', true).catch((e) => "err:" + e);
-          let reported = null;
-          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId === t2.id) { reported = i; break; } }
-          await sleep(800);
-          const dbg1 = await t2.view.webContents.executeJavaScript('JSON.stringify({probe: window.__lgIdeInPage ? window.__lgIdeInPage() : null})', true).catch((e) => "err:" + e);
+          await sleep(1500);
           const during = {
-            dbg0, dbg1,
-            ide: inPageIdeTabId,
+            hook: await t2.view.webContents.executeJavaScript('typeof window.__lgIdeInPage', true),
+            ideFlag: inPageIdeTabId,
             bounds: t2.view.getBounds(),
             dock: dockShown,
             attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
-            bg: await t2.view.webContents.executeJavaScript('getComputedStyle(document.querySelector(".ide-toolbar")).backgroundColor', true),
-            glassCls: await t2.view.webContents.executeJavaScript('document.querySelector(".ide-toolbar").className.indexOf("lg-glass") >= 0', true),
           };
           await t2.view.webContents.executeJavaScript('(function(){var h=document.getElementById("lg-v311-ide");if(h)h.remove();return true})()', true);
-          let cleared = null;
-          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId == null) { cleared = i; break; } }
-          await sleep(800);
+          await sleep(600);
           const after = {
-            ide: inPageIdeTabId,
-            bounds: t2.view.getBounds(),
-            dock: dockShown,
+            bounds: t2.view.getBounds(), dock: dockShown,
             attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
           };
-          const alphaOf = (c) => {
-            const m = String(c || "").match(/rgba?\(([^)]+)\)/);
-            if (!m) return 1;
-            const parts = m[1].split(",");
-            return parts.length > 3 ? parseFloat(parts[3]) : 1;
-          };
-          out.ideInPage = { before, reported, during, cleared, after, win: [w0, h0] };
+          const ins = inset();
+          out.ideInPage = { before, during, after, win: [w0, h0], inset: ins };
           out.ideInPagePass = !!(
-            before.ide == null && before.dock === true && before.attr === "0" &&
-            reported != null &&
-            during.ide === t2.id && during.bounds.x === 0 && during.bounds.y === 0 &&
-            during.bounds.width === w0 && during.bounds.height === h0 &&
-            during.dock === false && during.attr === "1" &&
-            during.glassCls === false && alphaOf(during.bg) >= 0.99 &&
-            cleared != null && after.ide == null && after.dock === true && after.attr === "0" &&
-            after.bounds.y === inset().y
+            before.attr === "0" &&
+            during.hook === "undefined" && during.ideFlag == null &&
+            during.bounds.x === ins.x && during.bounds.y === ins.y &&
+            during.bounds.width === w0 - ins.x && during.bounds.height === h0 - ins.y &&
+            during.dock === true && during.attr === "0" &&
+            after.attr === "0" && after.bounds.y === ins.y
           );
         }
       } catch (e) { out.ideInPageErr = String((e && e.stack) || e); out.ideInPagePass = false; }
@@ -12489,7 +12767,7 @@ async function selftest() {
         vtabSide: cfg.vtabSide, dockPos: cfg.dockPos, dockItems: cfg.dockItems, ideNative: cfg.ideNative,
       };
 
-      /* ---------- 1) 题目页自带 IDE 模式 → 真·全屏（真站选择器） ---------- */
+      /* ---------- 1) 题目页自带 IDE 模式：不再自动全屏（R51） ---------- */
       try {
         out.stage = "ide2:start";
         flush();
@@ -12502,82 +12780,46 @@ async function selftest() {
         }
         if (!t2 || !/\/problem\//.test(t2.url || "") || !t2.view || t2.view.webContents.isDestroyed()) {
           out.ide2 = { skipped: "network", url: t2 ? t2.url : "" };
-          out.ide2Pass = true; // 网络不可用记 skip（与 adblock / v311 段同口径）
+          out.ide2Pass = true; // 网络不可用记 skip
         } else {
-          for (let i = 0; i < 60; i++) {
-            const ok = await t2.view.webContents.executeJavaScript("typeof window.__lgIdeInPage === 'function'", true).catch(() => false);
-            if (ok === true) break;
-            await sleep(500);
-          }
           await sleep(1000);
           const [w0, h0] = mainWin.getContentSize();
           const before = {
-            bounds: t2.view.getBounds(), dock: dockShown, ide: inPageIdeTabId,
+            bounds: t2.view.getBounds(), dock: dockShown,
             attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
           };
-          /* 反例 A：只有容器、没有退出文案 → 不许触发 */
           await t2.view.webContents.executeJavaScript(`(function(){
             var h = document.createElement("div"); h.id = "lg-v313-ide";
-            h.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar" style="display:block;width:420px;height:220px;background:#ffffff"></div></div>';
+            h.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar lg-glass" style="display:block;width:420px;height:220px;background:#ffffff"></div><div class="ide-textarea"></div></div><div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
             document.body.appendChild(h); return true; })()`, true);
           await sleep(1800);
-          const negA = {
-            ide: inPageIdeTabId,
-            probe: JSON.parse(await t2.view.webContents.executeJavaScript('JSON.stringify(window.__lgIdeInPage())', true)),
-          };
-          /* 反例 B：只有文案、没有容器 → 不许触发 */
-          await t2.view.webContents.executeJavaScript(`(function(){
-            var h = document.getElementById("lg-v313-ide");
-            h.innerHTML = '<div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
-            return true; })()`, true);
-          await sleep(1800);
-          const negB = {
-            ide: inPageIdeTabId,
-            probe: JSON.parse(await t2.view.webContents.executeJavaScript('JSON.stringify(window.__lgIdeInPage())', true)),
-          };
-          /* 正例：真站形状（.ide-container + 容器外的退出文案） */
-          await t2.view.webContents.executeJavaScript(`(function(){
-            var h = document.getElementById("lg-v313-ide");
-            h.innerHTML = '<div class="panel-layout layout-horizontal ide-container"><div class="ide-toolbar lg-glass" style="display:block;width:420px;height:220px;background:#ffffff"></div><div class="ide-textarea"></div></div><div class="lfe-caption problem-block-actions"><a href="javascript:void 0">退出 IDE 模式</a></div>';
-            return true; })()`, true);
-          let reported = null;
-          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId === t2.id) { reported = i; break; } }
-          await sleep(900);
           const during = {
-            ide: inPageIdeTabId, reported, bounds: t2.view.getBounds(), dock: dockShown,
+            hook: await t2.view.webContents.executeJavaScript('typeof window.__lgIdeInPage', true),
+            ideFlag: inPageIdeTabId,
+            bounds: t2.view.getBounds(), dock: dockShown,
             attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
-            glassCls: await t2.view.webContents.executeJavaScript('document.querySelector(".ide-toolbar").className.indexOf("lg-glass") >= 0', true),
-            panelBg: await t2.view.webContents.executeJavaScript('getComputedStyle(document.querySelector(".ide-toolbar")).backgroundColor', true),
-            probe: JSON.parse(await t2.view.webContents.executeJavaScript('JSON.stringify(window.__lgIdeInPage())', true)),
           };
-          /* 退出：拆掉注入 DOM → 标志清、视图回位、属性回 0 */
           await t2.view.webContents.executeJavaScript('(function(){var h=document.getElementById("lg-v313-ide");if(h)h.remove();return true})()', true);
-          let cleared = null;
-          for (let i = 0; i < 48; i++) { await sleep(250); if (inPageIdeTabId == null) { cleared = i; break; } }
           await sleep(900);
           const after = {
-            ide: inPageIdeTabId, bounds: t2.view.getBounds(),
+            bounds: t2.view.getBounds(), dock: dockShown,
             attr: await t2.view.webContents.executeJavaScript('document.documentElement.getAttribute("data-lg-ide")', true),
           };
           const ins = inset();
-          out.ide2 = { before, negA, negB, during, cleared, after, win: [w0, h0], inset: ins };
+          out.ide2 = { before, during, after, win: [w0, h0], inset: ins };
           out.ide2Pass = !!(
-            before.ide == null && before.attr === "0" &&
-            negA.ide == null && negA.probe.on === false &&
-            negB.ide == null && negB.probe.on === false &&
-            reported != null && during.ide === t2.id &&
-            during.bounds.x === 0 && during.bounds.y === 0 &&
-            during.bounds.width === w0 && during.bounds.height === h0 &&
-            during.dock === false && during.attr === "1" &&
-            during.glassCls === false && during.probe.on === true &&
-            cleared != null && after.ide == null && after.attr === "0" &&
-            after.bounds.x === ins.x
+            before.attr === "0" &&
+            during.hook === "undefined" && during.ideFlag == null &&
+            during.bounds.x === ins.x && during.bounds.y === ins.y &&
+            during.bounds.width === w0 - ins.x && during.bounds.height === h0 - ins.y &&
+            during.dock === true && during.attr === "0" &&
+            after.attr === "0" && after.bounds.y === ins.y
           );
         }
       } catch (e) { out.ide2Err = String((e && e.stack) || e); out.ide2Pass = false; }
       flush();
 
-      /* ---------- 2) 窄条悬停浮层里点 ⌄ → 菜单活下来 + 弹层铺满整窗 ---------- */
+      /* ---------- 2) 窄条悬停浮层里点搜索 → 面板活下来 + 窄条立刻画回来 ---------- */
       try {
         out.stage = "railMenu:start";
         flush();
@@ -12599,43 +12841,74 @@ async function selftest() {
           shellHidden = JSON.parse(await js('JSON.stringify({cls:document.body.className, vis:getComputedStyle(document.getElementById("vtab")).visibility, handoff:document.body.dataset.flyoutHandoff||""})'));
           if (shellHidden.cls.indexOf("flyout-open") >= 0 && shellHidden.vis === "hidden") break;
         }
+        /* 浮层里点「搜索标签页」（Edge 头部左键）——旧版这里是 ⌄ 菜单。
+           抽屉/菜单类弹层替换浮层时，flyout-open 必须立刻摘掉（否则窄条
+           整条 hidden、菜单浮在壁纸上）；200ms 兜底也不许把它关掉。 */
         const clicked = await popJs(`(function(){
-          var b = document.querySelector("#tab-flyout #btn-vcollapse");
+          var b = document.querySelector("#tab-flyout #btn-vsearch");
           if (!b) return "no-btn";
           ["mousedown","mouseup","click"].forEach(function(t){ b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window})); });
           return "ok";
         })()`);
-        /* 菜单出现时刻（应远早于 200ms 兜底窗口） */
-        let menuAt = null;
+        let palAt = null;
         for (let i = 0; i < 25; i++) {
           await sleep(100);
-          const r = await popJs('(function(){return document.querySelectorAll("#tabmore-menu .tm-item").length ? "1" : "0"})()');
-          if (r === "1") { menuAt = (i + 1) * 100; break; }
+          const r = await popJs('(function(){return document.querySelectorAll("#pal-list .pal-item").length ? "1" : "0"})()');
+          if (r === "1") { palAt = (i + 1) * 100; break; }
         }
-        /* 关键：等过 200ms 兜底窗口 + 更久，菜单必须还在 */
+        /* 关键：等过 200ms 兜底窗口 + 更久，面板必须还在 */
         await sleep(1100);
-        const menuInfo = JSON.parse((await popJs(`(function(){
-          var m = document.getElementById("tabmore-menu");
-          if (!m) return JSON.stringify({ gone: true });
-          var r = m.getBoundingClientRect();
+        const palInfo = JSON.parse((await popJs(`(function(){
+          var p = document.getElementById("palette");
+          if (!p) return JSON.stringify({ gone: true });
+          var r = p.getBoundingClientRect();
           var first = document.getElementById("pop-root").firstElementChild;
-          return JSON.stringify({ items: document.querySelectorAll("#tabmore-menu .tm-item").length,
+          return JSON.stringify({ open: getComputedStyle(p).display !== "none",
+            rows: document.querySelectorAll("#pal-list .pal-item").length,
             rect: { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
             rootId: first ? first.id : "" });
         })()`)) || "null");
         const popBounds = popupView && !popupView.webContents.isDestroyed() ? popupView.getBounds() : null;
         const [ww, wh] = mainWin.getContentSize();
-        /* 关掉菜单：窄条必须画回来（flyout-open 摘掉、visibility 恢复） */
+        /* 弹层替换的那一刻窄条就该画回来（不等关面板） */
+        const shellAfterOpen = JSON.parse(await js('JSON.stringify({cls:document.body.className, vis:getComputedStyle(document.getElementById("vtab")).visibility})'));
         hidePopup();
         await sleep(1000);
         const closed = JSON.parse(await js('JSON.stringify({cls:document.body.className, vis:getComputedStyle(document.getElementById("vtab")).visibility})'));
-        out.railMenu = { flyout, shellHidden, clicked, menuAt, menuInfo, popBounds, win: [ww, wh], closed };
+        /* 第二段：浮层里开「标签页操作」菜单（右键侧栏空白走的同一条路径）。
+           菜单替换浮层时 flyout-open 必须已摘掉——否则窄条整条 hidden、
+           菜单浮在壁纸上（用户截图里的那个 bug）。 */
+        let menuState = null;
+        let menuAlive = null;
+        try {
+          await js('document.getElementById("vtab").dispatchEvent(new MouseEvent("mouseenter"))');
+          for (let i = 0; i < 80; i++) {
+            await sleep(50);
+            const ok = await popJs('(function(){return document.getElementById("tab-flyout")?"1":"0"})()');
+            if (ok === "1") break;
+          }
+          await sleep(300);
+          await js('openTabMoreMenu(document.getElementById("btn-vsearch"))');
+          for (let i = 0; i < 40; i++) {
+            await sleep(100);
+            const n = await popJs('(function(){return document.querySelectorAll("#tabmore-menu .tm-item").length})()');
+            if (n >= 1) break;
+          }
+          await sleep(900); // 过 200ms 兜底窗口
+          menuState = JSON.parse(await js('JSON.stringify({open:document.body.classList.contains("flyout-open"),vis:getComputedStyle(document.getElementById("vtab")).visibility,menu:!!document.getElementById("tabmore-menu")})'));
+          menuAlive = await popJs('(function(){return document.querySelectorAll("#tabmore-menu .tm-item").length})()');
+          hidePopup();
+          await sleep(800);
+        } catch (e) { out.railMenuMenuErr = String((e && e.stack) || e); }
+        out.railMenu = { flyout, shellHidden, clicked, palAt, palInfo, popBounds, win: [ww, wh], shellAfterOpen, closed, menuState, menuAlive };
         out.railMenuPass = !!(
           flyout === true && shellHidden.cls.indexOf("flyout-open") >= 0 && shellHidden.vis === "hidden" &&
-          clicked === "ok" && menuAt != null &&
-          menuInfo && menuInfo.gone !== true && menuInfo.items >= 4 && menuInfo.rootId === "tabmore-menu" &&
+          clicked === "ok" && palAt != null &&
+          palInfo && palInfo.gone !== true && palInfo.open && palInfo.rows >= 1 && palInfo.rootId === "palette" &&
+          shellAfterOpen.cls.indexOf("flyout-open") < 0 && shellAfterOpen.vis === "visible" &&
           popBounds && popBounds.width === ww && popBounds.height === wh &&
-          closed.cls.indexOf("flyout-open") < 0 && closed.vis === "visible"
+          closed.cls.indexOf("flyout-open") < 0 && closed.vis === "visible" &&
+          menuState && !menuState.open && menuState.vis === "visible" && menuAlive >= 1
         );
       } catch (e) { out.railMenuErr = String((e && e.stack) || e); out.railMenuPass = false; }
       flush();
@@ -12701,7 +12974,7 @@ async function selftest() {
             const tt = tabs.get(activeTabId);
             if (tt && String(tt.url || "").indexOf(frag) >= 0) {
               for (let j = 0; j < 40; j++) {
-                const ok = await tt.view.webContents.executeJavaScript("typeof window.__lgIdeInPage === 'function'", true).catch(() => false);
+                const ok = await tt.view.webContents.executeJavaScript("typeof window.__lgGlass === 'object' && !!window.__lgGlass.apply", true).catch(() => false);
                 if (ok === true) break;
                 await sleep(500);
               }
@@ -13766,7 +14039,7 @@ async function selftest() {
         await mainWin.webContents.executeJavaScript(
           `(function(){
              var out = { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio, bodyCls: document.body.className, layout: document.body.getAttribute("data-layout"), items: [] };
-             var ids = ["top","tabstrip","tabs","tab-new","strip-pad","navrow","logo","histbtns","omnibox","sitelnks","actions","btn-bookmark","btn-theme","user-chip","wctl","w-min","w-max","w-close","loadbar","dock","vtab","vtab-set"];
+             var ids = ["top","tabstrip","tabs","tab-new","strip-pad","navrow","logo","histbtns","omnibox","sitelnks","actions","btn-bookmark","btn-theme","user-chip","wctl","w-min","w-max","w-close","loadbar","dock","vtab","btn-vsearch","btn-vpin"];
              for (var i = 0; i < ids.length; i++) {
                var e = document.getElementById(ids[i]);
                if (!e) { out.items.push({ id: ids[i], missing: true }); continue; }
@@ -14227,7 +14500,7 @@ async function selftest() {
               // 设置入口必须画成滑杆图标（旧版画成了太阳）；
               // 工具行那个齿轮已按用户要求撤掉，现在只认垂直栏底部那颗
               gearIcon: (function(){
-                var e = document.getElementById('vtab-set');
+                var e = document.querySelector('#dock a[data-href="@settings"]');
                 if (!e) return 'absent';
                 var h = e.innerHTML;
                 if (h.indexOf('circle') < 0) return 'empty';

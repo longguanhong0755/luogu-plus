@@ -199,7 +199,7 @@
     },
     "vtabWidth": {
       "type": "number",
-      "def": 212
+      "def": 248
     },
     "vtabSide": {
       "type": "enum",

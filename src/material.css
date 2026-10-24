@@ -63,6 +63,9 @@
   --lg-radius: 8px;
   --lg-radius-lg: 12px;
   --lg-radius-xl: 16px;
+  /* 焦点环：不用纯墨色硬描边（用户明确不允许点击后出现黑色轮廓）。
+     30% 墨色 + 透明 = 柔和的明暗自适应环，键盘 Tab 仍看得见。 */
+  --lg-focus-ring: color-mix(in srgb, var(--ink, #18181b) 30%, transparent);
 
   /* ============================================================
      设计令牌（design.md 的可执行部分）
@@ -133,7 +136,7 @@
    压掉——那就等于没加。业界通行做法（Primer 的 focus ring 同理）。
    ============================================================ */
 :focus-visible {
-  outline: 2px solid var(--ink) !important;
+  outline: 2px solid var(--lg-focus-ring) !important;
   outline-offset: 2px !important;
   border-radius: var(--lg-radius-sm);
 }
@@ -181,6 +184,9 @@ html[data-lg-theme] ::selection {
   position: fixed;
   z-index: 80;
   pointer-events: none;
+  max-width: min(320px, calc(100vw - 16px));
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: var(--lg-space-1) var(--lg-space-4);
   border-radius: var(--lg-radius, 8px);
   font-size: var(--fs-base, 12px);
@@ -312,6 +318,14 @@ html[data-lg-bgvideo="1"][data-lg-bgready="1"] .lg-wallpaper { background-image:
   background-color: var(--lg-face, var(--lg-glass-card));
   background-image: linear-gradient(180deg, var(--lg-face-sheen, var(--lg-glass-sheen)), rgba(255, 255, 255, 0) 42%);
 }
+/* 弹层/坞的材质变量还没到（或主题尚未应用）时，宁可透明也不要 material.css
+   的白色兜底——那是首开切换时白闪的来源。popup.js/dock.js 就绪后打
+   data-lg-ready。 */
+html[data-lg-popup="1"]:not([data-lg-ready]) .lg-fake::after,
+html[data-lg-dock="1"]:not([data-lg-ready]) .lg-fake::after {
+  background-color: transparent !important;
+  background-image: none !important;
+}
 
 /* ============================================================
    3. 外壳层登记表（html[data-lg-shell="1"]）
@@ -343,7 +357,6 @@ html[data-lg-shell="1"] .icon-btn:hover,
 html[data-lg-shell="1"] .icon-btn.on,
 html[data-lg-shell="1"] #tab-new:hover,
 html[data-lg-shell="1"] #vtab-new:hover,
-html[data-lg-shell="1"] #vtab-set:hover,
 html[data-lg-shell="1"] .wbtn:hover {
   background-color: var(--lg-glass-bg-2) !important;
   background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;
@@ -465,6 +478,7 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
    lg-glass / lg-glass-soft / lg-noveil（站点改版也照样吃进来）。
    ============================================================ */
 :where(html[data-lg-ext="0"]) .l-card,
+:where(html[data-lg-ext="0"]) .card,
 :where(html[data-lg-ext="0"]) .lg-article,
 :where(html[data-lg-ext="0"]) .lg-glass,
 :where(html[data-lg-ext="0"]) .am-panel,
@@ -476,6 +490,7 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   border: 1px solid var(--lg-glass-line) !important;
+  border-radius: var(--lg-radius, 8px) !important;
   box-shadow: inset 0 1px 0 var(--lg-glass-hi), var(--lg-glass-drop) !important;
 }
 :where(html[data-lg-ext="0"]) .lg-glass-soft,
@@ -487,6 +502,7 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
   backdrop-filter: var(--lg-glass-blur) !important;
   -webkit-backdrop-filter: var(--lg-glass-blur) !important;
   border-color: var(--lg-glass-line) !important;
+  border-radius: max(0px, calc(var(--lg-radius, 8px) - 2px)) !important;
 }
 :where(html[data-lg-ext="0"]) .l-card::before,
 :where(html[data-lg-ext="0"]) .l-card::after,
@@ -523,9 +539,9 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
    7. 站外页自动玻璃（.lg-gx）
    「自动把网页转换成玻璃质感」——站外页的卡片/面板/容器被自动换成
    我们的玻璃面，与外壳、洛谷页同一套配方同一份变量。
-   作用域用 :where(html[data-lg-glassauto="1"]) 限定：只有**自动探测判定
-   为内容型**的站外页才生效（inject.js detectAutoGlass），表单密集 /
-   内容量不足 / 应用型站点一律不碰，洛谷页更是连这条规则都进不来。
+   作用域用 :where(html[data-lg-glassauto="1"]) 限定。R51 起所有站外
+   http(s) 页面默认玻璃化（排除名单里的域名由 inject.js 压成 0），
+   不再按内容型/应用型探测挑站。
 
    ⚠️ 为什么要单独一段、而不是复用第 6 段的 .lg-glass：
    第 6 段是洛谷页登记表，锁在 data-lg-ext="0" 里；站外页的面必须走
@@ -538,6 +554,11 @@ html[data-lg-ext="1"][data-lg-local="1"] .switch-row .knob {
    后代，就不给它挂 backdrop-filter（只留半透明底 + 发丝线），宁可不
    玻璃也不让人家的浮层错位。判定见 inject.js 的 glassifyExtOne()。
    ============================================================ */
+/* 壁纸层上的玻璃纱：保证正文在花纹壁纸上可读。ext.css 只负责建层/定位，
+   底色仍由本文件（材质单源）声明。 */
+html[data-lg-glassauto="1"] #lg-glass-bg::after {
+  background: color-mix(in srgb, var(--lg-glass-card) 52%, transparent);
+}
 :where(html[data-lg-glassauto="1"]) .lg-gx {
   background-color: color-mix(in srgb, var(--lg-glass-card) 78%, transparent) !important;
   background-image: linear-gradient(180deg, var(--lg-glass-sheen), rgba(255, 255, 255, 0) 42%) !important;

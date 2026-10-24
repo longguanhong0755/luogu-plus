@@ -85,14 +85,14 @@ body {
 }
 .lfe-marked p { margin: 0.7em 0; }
 .lfe-marked img,
-.lfe-marked-wrap img { border-radius: calc(var(--lg-radius) - 4px); }
+.lfe-marked-wrap img { border-radius: max(0px, calc(var(--lg-radius) - 4px)); }
 
 /* 题面表格：细线 + 行悬停（单色） */
 .lfe-marked table {
   border-collapse: separate !important;
   border-spacing: 0 !important;
   overflow: hidden;
-  border-radius: calc(var(--lg-radius) - 4px);
+  border-radius: max(0px, calc(var(--lg-radius) - 4px));
   font-size: var(--lg-fs-lead);
 }
 /* 表格条纹/悬停：墨色低浓度 wash（R41 令牌化——同一公式明暗自适应，
@@ -114,7 +114,7 @@ body {
 pre.code {
   background-color: var(--lg-glass-soft) !important;
   border: 1px solid var(--lg-glass-line) !important;
-  border-radius: calc(var(--lg-radius) - 2px) !important;
+  border-radius: max(0px, calc(var(--lg-radius) - 2px)) !important;
   font-family: var(--lg-mono) !important;
   font-size: var(--lg-fs-body) !important;
   line-height: 1.65 !important;
@@ -143,7 +143,7 @@ html:not([data-lg-ide="1"]) .code-editor-container .editor-top-bar {
   border-bottom: 1px solid var(--lg-glass-line) !important;
 }
 .editor-tab {
-  border-radius: 6px 6px 0 0;
+  border-radius: max(0px, calc(var(--lg-radius) - 2px)) max(0px, calc(var(--lg-radius) - 2px)) 0 0;
 }
 html:not([data-lg-ide="1"]) .monaco-editor,
 html:not([data-lg-ide="1"]) .monaco-editor-background,
@@ -152,7 +152,7 @@ html:not([data-lg-ide="1"]) .monaco-editor .margin {
 }
 html:not([data-lg-ide="1"]) .CodeMirror {
   background: var(--lg-glass-card) !important;
-  border-radius: calc(var(--lg-radius) - 2px);
+  border-radius: max(0px, calc(var(--lg-radius) - 2px));
 }
 
 /* ---------- 滚动条：方形细杆 ----------
@@ -529,7 +529,7 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
   color: var(--lg-ink, #18181b);
   background: transparent;
   border: 1px solid var(--lg-glass-line);
-  border-radius: calc(var(--lg-radius, 8px) - 2px);
+  border-radius: max(0px, calc(var(--lg-radius, 8px) - 2px));
 }
 .lg-pid-tip .lg-pid-go:hover {
   color: rgba(var(--lg-tint, 255, 255, 255), 1);
@@ -541,7 +541,7 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
 .lg-search-go,
 .lg-search-rand {
   font-family: var(--lg-sans) !important;
-  border-radius: calc(var(--lg-radius, 8px) - 2px) !important;
+  border-radius: max(0px, calc(var(--lg-radius, 8px) - 2px)) !important;
   border: 1px solid var(--lg-glass-line) !important;
   background: transparent !important;
   color: var(--lg-ink, #18181b) !important;
@@ -588,7 +588,7 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
   color: var(--lg-ink, #18181b);
   background: transparent;
   border: 1px solid var(--lg-glass-line);
-  border-radius: calc(var(--lg-radius, 8px) - 3px);
+  border-radius: max(0px, calc(var(--lg-radius, 8px) - 3px));
 }
 .lg-random-opt:hover { border-color: var(--lg-accent, #18181b); }
 .lg-random-opt.on {
@@ -613,7 +613,7 @@ html[data-lg-clean="1"] .lg-index-content .lg-article > .am-g > [class*="am-u-"]
   color: var(--lg-ink, #18181b);
   background: transparent;
   border: 1px solid var(--lg-glass-line);
-  border-radius: calc(var(--lg-radius, 8px) - 2px);
+  border-radius: max(0px, calc(var(--lg-radius, 8px) - 2px));
 }
 .lg-random-btn:hover { border-color: var(--lg-accent, #18181b); }
 .lg-random-btn.primary {

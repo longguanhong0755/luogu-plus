@@ -1,7 +1,10 @@
 /* LuoguLab — chrome 层预加载桥 */
 const { contextBridge, ipcRenderer, webFrame } = require("electron");
+const bootThemeArg = (process.argv || []).find((a) => String(a).startsWith("--lg-boot-theme="));
+const bootTheme = bootThemeArg ? String(bootThemeArg).slice("--lg-boot-theme=".length) : "";
 
 contextBridge.exposeInMainWorld("lgChrome", {
+  bootTheme: bootTheme,
   onTabs: (cb) => ipcRenderer.on("chrome:tabs", (_e, s) => cb(s)),
   onUser: (cb) => ipcRenderer.on("chrome:user", (_e, u) => cb(u)),
   onAccounts: (cb) => ipcRenderer.on("chrome:accounts", (_e, a) => cb(a)),
@@ -53,6 +56,8 @@ contextBridge.exposeInMainWorld("lgChrome", {
      那一刻浮层与窄条同像素，交接零闪烁 */
   onFlyoutShown: (cb) => ipcRenderer.on("chrome:flyout-shown", () => cb()),
   onWinState: (cb) => ipcRenderer.on("chrome:winstate", (_e, s) => cb(s)),
+  /* F11 全屏顶部露出：true=鼠标贴顶，外壳顶栏可见（侧栏/坞由主进程隐藏） */
+  onFsPeek: (cb) => ipcRenderer.on("chrome:fs-peek", (_e, on) => cb(!!on)),
   winMinimize: () => ipcRenderer.invoke("win:minimize"),
   winToggleMax: () => ipcRenderer.invoke("win:toggle-max"),
   winClose: () => ipcRenderer.invoke("win:close"),
@@ -78,6 +83,9 @@ contextBridge.exposeInMainWorld("lgChrome", {
   findStart: () => ipcRenderer.invoke("lg-app:find-open"),
   toggleFullscreen: () => ipcRenderer.invoke("win:toggle-fullscreen"),
   reopenTab: () => ipcRenderer.invoke("tab:reopen"),
+  duplicateTab: (id) => ipcRenderer.invoke("tab:duplicate", Number(id)),
+  closeOthers: () => ipcRenderer.invoke("tab:close-others"),
+  closeRight: () => ipcRenderer.invoke("tab:close-right"),
   copyText: (text) => ipcRenderer.invoke("app:copy-text", String(text || "")),
   onDownloads: (cb) => ipcRenderer.on("chrome:downloads", (_e, d) => cb(d)),
   newTab: () => ipcRenderer.invoke("tab:new"),

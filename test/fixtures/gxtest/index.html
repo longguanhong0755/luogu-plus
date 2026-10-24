@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>玻璃化验证页</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Microsoft YaHei", sans-serif; color: #1b1b1f;
+         /* 渐变底：玻璃要有东西可透才能看出效果——纯色底上模糊与不模糊一模一样 */
+         background: linear-gradient(135deg, #2b5876 0%, #4e4376 38%, #c86b98 72%, #f6a04d 100%);
+         min-height: 100vh; }
+  /* 吸顶导航：position:fixed —— 用来验证"含 fixed 后代的容器不给挂模糊" */
+  .topbar { position: fixed; top: 0; left: 0; right: 0; height: 46px; background: #ffffff;
+            border-bottom: 1px solid #e3e4e8; z-index: 999; display: flex; align-items: center; padding: 0 16px; }
+  .topbar .logo { font-weight: 700; }
+  .wrap { padding: 70px 24px 40px; max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lead { color: #666; margin: 0 0 22px; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  /* ① 白色实心卡片 —— 应当被玻璃化（.lg-gx） */
+  .card { background: #ffffff; border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card h3 { margin: 0 0 8px; font-size: 15px; }
+  .card p { margin: 0; font-size: 13px; color: #555; line-height: 1.75; }
+  /* ② 含 fixed 后代的卡片 —— 应当走 .lg-gx-noblur（不挂 backdrop-filter） */
+  .card.hasfixed { position: relative; height: 190px; overflow: hidden; }
+  .card.hasfixed .pin { position: fixed; top: 120px; right: 40px; width: 40px; height: 40px;
+                        background: #ff5252; border-radius: 50%; z-index: 1000; }
+  /* ③ 彩色卡片 —— 中性色判定应当跳过 */
+  .card.colored { background: #2f6fed; color: #fff; }
+  .card.colored p { color: rgba(255,255,255,.85); }
+  /* ④ 透明容器 —— 没有自己的底色，应当跳过 */
+  .card.transparent { background: transparent; box-shadow: none; }
+  /* ⑤ 表单 —— 交互控件不玻璃化 */
+  .formbox { background: #ffffff; border-radius: 10px; padding: 16px 18px; margin-top: 18px; }
+  .formbox input, .formbox textarea { width: 100%; padding: 8px 10px; border: 1px solid #d9dade;
+                                      border-radius: 6px; margin-bottom: 10px; font-size: 13px; }
+  .formbox textarea { height: 70px; }
+  .prose { margin-top: 22px; background: #ffffff; border-radius: 10px; padding: 18px 22px; }
+  .prose p { font-size: 13.5px; line-height: 1.95; color: #333; margin: 0 0 12px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #eef1f6; font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="topbar"><span class="logo">站外测试站</span><span style="margin-left:12px;color:#888;font-size:12px">吸顶 fixed 导航</span></div>
+  <main class="wrap">
+    <h1>自动玻璃化验证页</h1>
+    <p class="lead">白色卡片应变玻璃 · 含 fixed 的卡片应无模糊 · 彩色与透明容器应保持原样 · 表单不玻璃化</p>
+
+    <div class="grid">
+      <div class="card" data-test="plain">
+        <h3>普通卡片 A</h3>
+        <p>这一块是白色实心底色，应当被换成与外壳同一套玻璃面：半透明底、毛玻璃模糊、发丝线边框与顶部高光，文字与站点的原色保持不变。</p>
+        <span class="tag">标签</span>
+      </div>
+      <div class="card hasfixed" data-test="hasfixed">
+        <h3>含 fixed 的卡片 B</h3>
+        <p>这块里塞了一个 position:fixed 的圆点。它必须只拿到半透明底而不加模糊，否则人家页面里的吸顶元素会被劫持包含块而错位。</p>
+        <div class="pin"></div>
+      </div>
+      <div class="card colored" data-test="colored">
+        <h3>彩色卡片 C</h3>
+        <p>蓝色底属于站点的配色语义，玻璃化会把它洗掉，所以应当保持原样不被改动。</p>
+      </div>
+      <div class="card transparent" data-test="transparent">
+        <h3>透明容器 D</h3>
+        <p>这一块没有自己的底色，玻璃化没有意义，应当保持原样。</p>
+      </div>
+    </div>
+
+    <div class="formbox" data-test="form">
+      <h3>表单 E（不玻璃化）</h3>
+      <input type="text" placeholder="输入框" />
+      <textarea placeholder="文本域"></textarea>
+    </div>
+
+    <div class="prose" data-test="prose">
+      <h3 style="margin:0 0 10px;font-size:15px">正文 F</h3>
+      <p>这一段是长文正文，用来把页面的正文文本量推到探测阈值之上，好让"内容型站点"的判定成立。玻璃化只作用于卡片与面板，正文承载面保持站点自己的底色才最好读。</p>
+      <p>自动玻璃化这件事，风险全在"给别人的容器挂 backdrop-filter"上——backdrop-filter 会为元素创建包含块，页面里所有 position: fixed 的后代都会改为相对它定位，于是吸顶导航、悬浮按钮、弹层全部错位。v3.4.2 那次就是这么炸的。</p>
+      <p>所以判定分两档：容器内部没有任何 fixed 后代的，才给真正的毛玻璃；内部有 fixed 后代的，只给半透明底加发丝线，观感仍然是玻璃面，但绝不碰包含块。宁可少一点模糊，也不能让人家的页面散架。</p>
+      <p>另外彩色面不碰：蓝底卡片一旦被换成中性玻璃，站点原本用颜色传达的信息（比如状态色、分类色）就没了。透明容器也不碰——它本来就没有自己的底色，玻璃化等于凭空加一层。</p>
+      <p>最后一条是可逆：整套方案只给元素加一个类名，页面自己的样式一行都没有被改写过，关掉开关时摘掉类名，页面立刻恢复原样。这是它能敢碰别人网站的前提。</p>
+    </div>
+  </main>
+</body>
+</html>

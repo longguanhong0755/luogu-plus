@@ -22,7 +22,7 @@
   border: 1px solid var(--hairline);
   border-radius: var(--lg-radius);
 }
-.row-line input[type="text"]:focus { border-color: var(--ink); }
+.row-line input[type="text"]:focus { border-color: var(--lg-focus-ring); }
 .hint.inline { flex: 1; margin: 0; font-size: var(--lg-fs-caption); color: var(--ink-dim); }
 
 .list { display: flex; flex-direction: column; }
@@ -122,9 +122,9 @@
    落在输入框上只有浏览器默认的橙色描边（与主题色无关），按压与禁用无反馈。
    ============================================================ */
 
-/* 焦点：2px 墨色描边 + 2px offset，明暗自适应 */
+/* 焦点：柔和主题环 + 2px offset，明暗自适应 */
 :is(button, input, select, textarea, a, [tabindex]):focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--lg-focus-ring);
   outline-offset: 2px;
 }
 /* 按下：下沉 1px（克制但明确，不改底色——悬停那层已经在了） */

@@ -8,13 +8,23 @@
 set -u
 cd "$(dirname "$0")/.."
 bad=0
-# 新增文件（HEAD 里没有）：按同目录多数风格决定
-for f in $(git status --porcelain | awk '{print $2}' | grep -v '^$'); do
+# 本地默认与 HEAD 比；CI 传 LG_EOL_REF=<base> 时按 base...HEAD 的改动文件比，
+# 这样干净检出上也能真正检查这次提交有没有批量改行尾。
+REF="${LG_EOL_REF:-HEAD}"
+if [ "$REF" != "HEAD" ] && git rev-parse --verify "$REF" >/dev/null 2>&1; then
+  CHANGED=$(git diff --name-only --diff-filter=ACMR "$REF" HEAD | grep -v '^$')
+  echo "check-eol: base=$REF"
+else
+  REF=HEAD
+  CHANGED=$(git status --porcelain | awk '{print $2}' | grep -v '^$')
+fi
+# 新增文件（REF 里没有）：按同目录多数风格决定
+for f in $CHANGED; do
   [ -f "$f" ] || continue
-  if git cat-file -e "HEAD:$f" 2>/dev/null; then
-    # 已有文件：行尾风格必须与 HEAD 一致
-    head_cr=$(git show "HEAD:$f" | tr -cd '\r' | wc -c)
-    head_lines=$(git show "HEAD:$f" | wc -l)
+  if git cat-file -e "$REF:$f" 2>/dev/null; then
+    # 已有文件：行尾风格必须与 REF 一致
+    head_cr=$(git show "$REF:$f" | tr -cd '\r' | wc -c)
+    head_lines=$(git show "$REF:$f" | wc -l)
   else
     head_cr=""; head_lines=""
   fi

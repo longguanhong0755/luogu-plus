@@ -6,7 +6,7 @@
 黑白线条风的 5 套配色预设 + 细粒度外观调校、持久登录。
 v3.16.5 起界面尺寸与间距按 `design.md` 的像素级规范收敛，并有静态 + 运行时双重守卫。
 v3.16.6 起面板类界面（命令面板 / F1 / 标签搜索 / 查找条）改走弹层覆盖层，键盘焦点可跨视图路由。
-v3.16.7 做了一轮"真实鼠标走查"：修掉无效的 CSS 负值、3px 滑杆命中区、弹层容器焦点环、
+v3.17.0 做了一轮"十项体验修复"：修掉无效的 CSS 负值、3px 滑杆命中区、弹层容器焦点环、
 窄条关闭钮误触与地址栏联想过窄，并把成句提示、账号邮箱、菜单快捷键等次要文字的对比度
 提到可读档。
 
@@ -92,8 +92,9 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
   只认不透明底色、认不出返回 `unknown` 不参与判定）→ `insertCSS` →
   `executeJavaScript(inject.js)` → `apply(cfg)`；全部 CSS 变量内联到 `<html>`
 - **题目页自带 IDE 模式**（R38）：inject.js 判定（`/problem/` + 编辑器容器可见 +
-  「退出 IDE 模式」文案）→ `data-lg-ide="1"`（与 /ide 页同一套原生规则）+
-  `lgApp.ideMode` 上报 → 主进程让该标签视图铺满整窗（外壳与坞让位 = 真·全屏）
+  「退出 IDE 模式」文案）→ R51 起**不再自动全屏**：打开题目或手动进 IDE 都保持
+  普通页面，IDE 按玻璃主题渲染；F11 才是窗口全屏（Edge 式：鼠标贴屏幕顶边露顶栏），
+  F12 开发者工具
 - **注入层模块化**（v3.16.4）：`src/inject.js` 627 行内核 + `src/inject/` 8 个能力
   模块，按依赖顺序拼成一段脚本一次 `executeJavaScript` 注入；缺模块整层不注入
 - **设计系统单源**（v3.16.5）：`design.md` 写规范，`material.css` 是唯一实现；
@@ -101,7 +102,7 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
   `scripts/probe-design.cjs` 量运行时真实高度/圆角/字号
 - **工程门禁**：`scripts/check-all.sh` 9 步（材质 / 契约 / 设计令牌 / 死代码 /
   静默失败 / 语法 / 类型基线 / 行尾 / JSON）；`scripts/run-all-probes.sh`
-  6 个 CDP 探针 239 断言（隐藏隔离实例）
+  6 个 CDP 探针 255 断言（隐藏隔离实例；GitHub Actions 也跑这一套）
 - **持久化地基**（R42）：`readJsonSafe` / `writeTextAtomic(Sync)` 一处收口六份数据
   （配置 / 账号 / 标签 / 窗口 / 历史 / 下载）。读坏先备份 `.corrupt-<时间>` 再回退；
   写走 `<file>.tmp-<pid>` + rename 原子替换；失败（ENOSPC / EACCES）记
@@ -111,7 +112,7 @@ D:\workspace\luogu++\repo\     # 源码根（仓库 luogu-plus；package.json na
 ## 开发
 
 ```bash
-npm install                 # electron@^39 + @electron/packager（走 npmmirror）
+npm install                 # electron@^39 + @electron/packager + typescript
 npm start                   # 开发运行
 npm run dist                # 打包免安装绿色版
 npm run gen:icon            # 重新生成图标
@@ -121,7 +122,7 @@ npm run gen:icon            # 重新生成图标
 
 ```bash
 bash scripts/check-all.sh        # 9 步静态检查（材质/契约/设计令牌/死代码/静默失败/语法/类型/行尾/JSON）
-bash scripts/run-all-probes.sh   # 6 个 CDP 探针 239 断言（隔离实例、隐藏窗口）
+bash scripts/run-all-probes.sh   # 6 个 CDP 探针 255 断言（隔离实例、隐藏窗口）
 node scripts/lint-design-tokens.cjs   # 设计令牌守卫（--fix 自动收敛，--fix-strict 更激进）
 ```
 
@@ -172,12 +173,12 @@ omnibox 解析 5 形态 + tabs 快照（含 canBack/canFwd/muted/zoom）+ 配色
 ## 部署状态（2026-10-23）
 
 - 部署产物：`D:\workspace\luogu++\app\LuoguLab.exe`
-  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 **v3.16.7**）
+  （exe 壳打包于 v2.0.0；应用代码走 `resources/app` 松散文件热应用，当前 **v3.17.0**）
 - 源码仓库：`D:\workspace\luogu++\repo`（git 远端 `longguanhong0755/luogu-plus`）；
   开发运行目录 `D:\workspace\luogu++\dev`
 - 用户数据：`%APPDATA%\LuoguLab\`（由 LuoguGlass 迁移，含登录会话与映射配置）
 - 测试账号已登录（UID 2286752），会话持久化
-- 设计迭代史见 `design-log.md`（R1~R49，全部有探针/截图证据）
+- 设计迭代史见 `design-log.md`（R1~R51，全部有探针/截图证据）
 
 ## 已知环境注意事项
 

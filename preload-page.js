@@ -4,6 +4,58 @@
    privileged，Chromium 会直接掐掉导航，连 will-navigate 都不发）。
    这里给页面主世界暴露一个最小 API，走标准 IPC。 */
 const { contextBridge, ipcRenderer } = require("electron");
+/* R51：document-start 首帧主题底色（严格防白屏）。sandboxed preload 不能
+   require 本地文件，这段必须在两个 preload 里各留一份。
+   注意：preload 阶段 <html> 已经存在、<head>/<body> 可能还没解析出来；
+   直接往 documentElement 塞 <style> 会被解析器丢掉。所以先给 <html> 设
+   inline !important 背景（元素本身不会被替换），<body>/<head> 出现后再补；
+   inject.js 接管后移除这些 inline 属性，页面自己的背景恢复。 */
+(function bootTheme() {
+  const arg = (prefix) => {
+    const hit = (process.argv || []).find((s) => String(s).startsWith(prefix));
+    return hit ? String(hit).slice(prefix.length) : "";
+  };
+  const bg = arg("--lg-boot-bg=");
+  if (!bg) return;
+  const theme = arg("--lg-boot-theme=") || "light";
+  let style = null;
+  let bodyPatched = false;
+  const install = () => {
+    const root = document.documentElement;
+    if (!root) return false;
+    try {
+      if (!root.hasAttribute("data-lg-boot-bg")) root.setAttribute("data-lg-boot-bg", root.style.getPropertyValue("background") || "");
+      root.style.setProperty("background", bg, "important");
+      root.style.setProperty("color-scheme", theme, "important");
+    } catch (e) {}
+    if (document.body && !bodyPatched) {
+      try {
+        if (!document.body.hasAttribute("data-lg-boot-bg")) document.body.setAttribute("data-lg-boot-bg", document.body.style.getPropertyValue("background") || "");
+        document.body.style.setProperty("background", bg, "important");
+        bodyPatched = true;
+      } catch (e) {}
+    }
+    if (document.head && !style) {
+      try {
+        style = document.createElement("style");
+        style.id = "lg-boot";
+        style.textContent = "html,body{background:" + bg + " !important;color-scheme:" + theme + " !important}";
+        document.head.appendChild(style);
+      } catch (e) {}
+    }
+    return bodyPatched;
+  };
+  if (!install()) {
+    try {
+      const mo = new MutationObserver(() => {
+        if (install()) mo.disconnect();
+      });
+      mo.observe(document, { childList: true, subtree: true });
+      setTimeout(() => mo.disconnect(), 4000);
+    } catch (e) {}
+  }
+})();
+
 
 contextBridge.exposeInMainWorld("lgApp", {
   /* 打开题号（P1001 / CF1920A / AT_abc300_a …），外壳负责开新标签 */
@@ -27,9 +79,8 @@ contextBridge.exposeInMainWorld("lgApp", {
   /* 翻译：页面侧 fetch 会被 CORS 拦，统一由主进程出网（划词与整页翻译共用）。
      传数组走批量；返回 {ok, texts, target} 或 {ok:false, message}。 */
   translate: (texts) => ipcRenderer.invoke("lg-app:translate", { texts: Array.isArray(texts) ? texts : [texts] }),
-  /* 题目页自带 IDE 模式（洛谷「进入 IDE 模式」）开关：注入层判定后上报，
-     主进程据此让该标签铺满整窗（外壳与坞让位 = 真·全屏）。 */
-  ideMode: (on) => ipcRenderer.send("lg-app:ide-mode", !!on),
+  /* 题目页/洛谷自带 IDE 不再自动全屏（R51 用户要求）：页面保持普通状态，
+     IDE 也按玻璃主题渲染。原 lg-app:ide-mode 上报通道已删除。 */
   /* R42：这里原本挂着一个写死的 version:"6"（应用已到 3.14.0，值早就烂了，
      而且全库没有任何地方读它）。手抄的版本号一定会过期，且会让"能力探测"
      得到一个静默错误答案——宁愿没有这个字段。真需要时由主进程从
