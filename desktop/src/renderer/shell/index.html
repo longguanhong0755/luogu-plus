@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' file: data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; font-src 'self' data:"
+    />
+    <title>洛谷桌面版</title>
+    <link rel="stylesheet" href="shell.css" />
+  </head>
+  <body>
+    <div id="wallpaper"></div>
+    <div id="app">
+      <header id="titlebar">
+        <span class="tb-logo">洛</span>
+        <span class="tb-name">洛谷桌面版</span>
+        <span class="tb-sep"></span>
+        <span id="tb-title">主页</span>
+      </header>
+
+      <nav id="rail" aria-label="主导航"></nav>
+
+      <main id="content">
+        <section id="home" class="page"></section>
+
+        <section id="browse" hidden>
+          <div id="toolbar"></div>
+          <div id="workspace">
+            <div id="view-host"></div>
+            <aside id="ide-pane" hidden></aside>
+          </div>
+        </section>
+
+        <div id="overlay" hidden>
+          <div id="scrim"></div>
+
+          <div id="palette" class="overlay-card" hidden>
+            <div class="pal-head">
+              <span class="pal-icon"></span>
+              <input
+                id="pal-input"
+                type="text"
+                placeholder="输入题号、题名或功能…"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <span class="pal-esc">Esc</span>
+            </div>
+            <div id="pal-list" class="pal-list"></div>
+            <div class="pal-foot"><span>↑↓ 选择</span><span>↵ 打开</span><span>Esc 关闭</span></div>
+          </div>
+
+          <div id="switcher" class="overlay-card" hidden>
+            <div class="sw-head">打开的页面</div>
+            <div id="sw-list" class="sw-list"></div>
+            <div class="sw-foot">↑↓ 选择 · ↵ 切换 · Esc 关闭</div>
+          </div>
+        </div>
+
+        <div id="toasts" aria-live="polite"></div>
+      </main>
+    </div>
+
+    <script type="module" src="shell.js"></script>
+  </body>
+</html>

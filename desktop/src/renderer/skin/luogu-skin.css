@@ -1,0 +1,167 @@
+/* 洛谷页面统一皮肤。
+   关键思路：新版前端（Lentille/Columba）用 --theme-* 变量组织配色。
+   我们不去逐个类覆盖，而是把这些变量改写成应用的设计令牌；站点自带的
+   深色主题由 nativeTheme.themeSource 驱动（prefers-color-scheme）。
+   结构性改动只有三处：隐藏站点顶栏、站内左侧栏、页脚。 */
+
+html,
+body,
+#app,
+#app.lfe-body,
+#app .theme-page {
+  --theme-body-back: var(--lg-bg) !important;
+  --theme-body-color: var(--lg-text) !important;
+  --theme-body-image: none !important;
+  --theme-body-mid-mask: transparent !important;
+  --theme-body-color-filter: none !important;
+  --theme-card-background: var(--lg-surface) !important;
+  --theme-card-backdrop-filter: none !important;
+  --theme-navi-back: var(--lg-title) !important;
+  --theme-navi-fore: var(--lg-text) !important;
+  --theme-navi-logo: var(--lg-accent) !important;
+  --theme-dropdown: var(--lg-surface) !important;
+  --theme-tooltip: var(--lg-surface) !important;
+}
+
+html,
+body {
+  background: var(--lg-bg) !important;
+  color: var(--lg-text) !important;
+}
+
+body,
+input,
+textarea,
+select,
+button,
+.theme-page,
+.lfe-body {
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif !important;
+}
+
+body {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+/* ---- 站点外壳交给应用：顶栏、站内左栏、页脚不再显示 ---- */
+#app > .top-bar,
+#app > nav.sidebar,
+#app .theme-page > footer {
+  display: none !important;
+}
+
+#app > .main-container {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+#app .theme-page {
+  background: transparent !important;
+}
+
+#app .theme-page::before,
+#app .theme-page::after {
+  background-image: none !important;
+}
+
+/* ---- 内容排版 ---- */
+#app .theme-page {
+  color: var(--lg-text) !important;
+}
+
+/* 站点标题用的是硬编码深色，深色主题下必须显式提亮 */
+#app .lfe-h1,
+#app .lfe-h2,
+#app .lfe-h3,
+#app .lfe-h4,
+#app .lfe-h5,
+#app .lfe-h6,
+#app h1,
+#app h2,
+#app h3,
+#app h4,
+#app h5,
+#app h6 {
+  color: var(--lg-text) !important;
+}
+
+/* 卡片之间给一条发丝线，深色下分层更清楚 */
+#app .theme-page .l-card {
+  border: 1px solid var(--lg-border) !important;
+}
+
+a {
+  color: var(--lg-accent) !important;
+}
+
+a:not([class*="btn"]):not([class*="button"]):hover {
+  filter: brightness(1.08);
+}
+
+::selection {
+  background: var(--lg-accent-soft);
+}
+
+/* ---- 表单 ---- */
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  background: var(--lg-surface-2) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--lg-text-3) !important;
+}
+
+/* ---- 代码块 ---- */
+pre,
+pre code,
+.lfe-code,
+[class*="code-block"] {
+  background: var(--lg-surface-2) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: 8px !important;
+}
+
+code:not(pre code) {
+  background: var(--lg-surface-2) !important;
+  color: var(--lg-text) !important;
+  border-radius: 4px !important;
+  padding: 1px 5px !important;
+}
+
+blockquote {
+  border-left: 2px solid var(--lg-accent) !important;
+  background: var(--lg-accent-soft) !important;
+  color: var(--lg-text-2) !important;
+  margin-left: 0 !important;
+}
+
+/* ---- 滚动条与焦点 ---- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--lg-text-3) 55%, transparent);
+  border-radius: 5px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 1px solid var(--lg-accent) !important;
+  outline-offset: 1px;
+}

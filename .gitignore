@@ -21,3 +21,6 @@ tools/accounts-to-add.txt
 .idea/
 .DS_Store
 Thumbs.db
+
+# --- 新应用的本地冒烟产物 ---
+.lg-dev/

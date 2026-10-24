@@ -1,0 +1,183 @@
+/* 所有 IPC 的登记处（主进程 handler + preload 暴露 + 本文件三处同步维护）。 */
+const { app, ipcMain, dialog, clipboard } = require("electron");
+const { SECTIONS } = require("./views");
+
+function state(ctx) {
+  const cfg = ctx.cfg.get();
+  return {
+    version: app.getVersion(),
+    appearance: cfg.appearance,
+    general: cfg.general,
+    notify: cfg.notify,
+    theme: Object.assign({}, ctx.theme, { wallpaper: ctx.wallpaper }),
+    user: ctx.luogu.user,
+    home: ctx.luogu.home,
+    page: ctx.views.currentInfo(),
+    switcher: ctx.views.listOpen(),
+  };
+}
+
+function broadcastState(ctx) {
+  const payload = state(ctx);
+  for (const win of [ctx.win, ctx.settingsWin]) {
+    if (win && !win.isDestroyed()) win.webContents.send("app:state", payload);
+  }
+}
+
+const ACTIONS = [
+  { type: "action", id: "home", label: "主页" },
+  { type: "action", id: "problems", label: "题库" },
+  { type: "action", id: "training", label: "训练" },
+  { type: "action", id: "contest", label: "比赛" },
+  { type: "action", id: "discuss", label: "讨论" },
+  { type: "action", id: "record", label: "记录" },
+  { type: "action", id: "checkin", label: "今日签到" },
+  { type: "action", id: "login", label: "登录洛谷" },
+  { type: "action", id: "settings", label: "设置" },
+];
+
+function palette(query) {
+  const q = String(query || "").trim();
+  const out = [];
+  if (/^[A-Za-z]{1,4}\d+[A-Za-z0-9]*$/.test(q)) {
+    const pid = q.toUpperCase();
+    out.push({ type: "problem", pid, label: "打开题目 " + pid });
+  }
+  for (const action of ACTIONS) {
+    if (!q || action.label.includes(q)) out.push(action);
+  }
+  return out.slice(0, 8);
+}
+
+function registerIpc(ctx) {
+  ipcMain.handle("app:getState", () => state(ctx));
+
+  ipcMain.handle("app:setAppearance", async (_event, patch) => {
+    const appearance = ctx.cfg.setAppearance(patch);
+    await ctx.refreshAppearance();
+    return { appearance, state: state(ctx) };
+  });
+
+  ipcMain.handle("app:setGeneral", (_event, patch) => {
+    const general = ctx.cfg.setGeneral(patch);
+    ctx.applyAutoLaunch();
+    broadcastState(ctx);
+    return general;
+  });
+
+  ipcMain.handle("app:setNotify", (_event, patch) => {
+    const notify = ctx.cfg.setNotify(patch);
+    broadcastState(ctx);
+    return notify;
+  });
+
+  ipcMain.handle("app:pickWallpaper", async () => {
+    const result = await dialog.showOpenDialog(ctx.win, {
+      title: "选择壁纸",
+      properties: ["openFile"],
+      filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "bmp"] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return state(ctx);
+    ctx.cfg.setAppearance({ wallpaper: "custom", customWallpaper: result.filePaths[0] });
+    await ctx.refreshAppearance();
+    return state(ctx);
+  });
+
+  ipcMain.handle("app:nav", (_event, target) => {
+    if (target === "home") ctx.views.showHome();
+    else if (target === "login") ctx.views.openLogin();
+    else if (target === "profile") ctx.views.openProfile(ctx.luogu.user.uid);
+    else if (SECTIONS[target]) ctx.views.openSection(target);
+    ctx.emitPage();
+  });
+
+  ipcMain.handle("app:openProblem", (_event, pid) => {
+    ctx.views.openProblem(pid);
+  });
+
+  ipcMain.handle("app:viewAction", (_event, action) => {
+    if (action === "back") ctx.views.back();
+    else if (action === "forward") ctx.views.forward();
+    else if (action === "reload") ctx.views.reload();
+    else if (action === "external") ctx.views.openExternal();
+  });
+
+  ipcMain.handle("app:problemAction", (_event, payload) => {
+    const pid = String((payload && payload.pid) || "").toUpperCase();
+    const action = payload && payload.action;
+    if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) return;
+    if (action === "records") ctx.views.navigate(`/record/list?pid=${encodeURIComponent(pid)}`);
+    else if (action === "solutions") ctx.views.navigate(`/problem/solution/${encodeURIComponent(pid)}`);
+    else if (action === "submit") ctx.views.navigate(`/problem/${encodeURIComponent(pid)}#submit`);
+  });
+
+  ipcMain.handle("app:setIde", (_event, on) => {
+    ctx.views.setIde(!!on);
+  });
+
+  ipcMain.handle("app:overlay", (_event, open) => {
+    ctx.views.setOverlay(!!open);
+  });
+
+  ipcMain.handle("app:submit", async (_event, payload) => {
+    const pid = String((payload && payload.pid) || "").toUpperCase();
+    const code = String((payload && payload.code) || "");
+    const lang = String((payload && payload.lang) || "C++14");
+    if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid) || !code.trim()) {
+      return { ok: false, message: "题目编号或代码为空。" };
+    }
+    const result = await ctx.luogu.submit(pid, code, lang);
+    if (result.fallback) {
+      clipboard.writeText(code);
+      ctx.views.navigate(`/problem/${encodeURIComponent(pid)}#submit`);
+      ctx.toast("提交", result.message || "代码已复制，请在页面内提交。");
+    } else if (result.ok) {
+      ctx.toast("提交", `已提交 ${pid}，评测完成后会通知你。`);
+    }
+    return result;
+  });
+
+  ipcMain.handle("app:checkin", async () => {
+    const result = await ctx.luogu.checkin();
+    if (result.ok) ctx.toast("签到", result.already ? "今天已经签过了。" : "签到成功。");
+    return result;
+  });
+
+  ipcMain.handle("app:refreshHome", async () => {
+    const data = await ctx.luogu.refresh(true);
+    broadcastState(ctx);
+    return data;
+  });
+
+  ipcMain.handle("app:logout", async () => {
+    await ctx.luogu.logout();
+    ctx.views.showHome();
+    return state(ctx);
+  });
+
+  ipcMain.handle("app:palette", (_event, query) => palette(query));
+
+  ipcMain.handle("app:switcher", () => ctx.views.listOpen());
+
+  ipcMain.handle("app:switchTo", (_event, key) => {
+    ctx.views.switchTo(String(key || ""));
+  });
+
+  ipcMain.handle("app:openSettings", () => {
+    ctx.openSettings();
+  });
+
+  ipcMain.handle("app:command", (_event, name) => {
+    ctx.command(String(name || ""));
+  });
+
+  ipcMain.handle("app:getVersion", () => app.getVersion());
+
+  ipcMain.on("page:open-problem", (_event, pid) => {
+    ctx.views.openProblem(pid);
+  });
+
+  ctx.broadcastState = () => broadcastState(ctx);
+}
+
+module.exports = { registerIpc, broadcastState, state };

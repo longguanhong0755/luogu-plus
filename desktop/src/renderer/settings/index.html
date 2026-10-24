@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' file: data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; font-src 'self' data:"
+    />
+    <title>设置</title>
+    <link rel="stylesheet" href="../shared/base.css" />
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <header id="titlebar">
+      <span class="tb-logo">洛</span>
+      <span class="tb-name">洛谷桌面版</span>
+      <span class="tb-sep"></span>
+      <span class="tb-title">设置</span>
+    </header>
+
+    <div class="set-body">
+      <nav class="set-nav" aria-label="设置分区">
+        <button class="snav on" data-sec="appearance" type="button">外观</button>
+        <button class="snav" data-sec="general" type="button">通用</button>
+        <button class="snav" data-sec="notify" type="button">通知</button>
+        <button class="snav" data-sec="account" type="button">账号</button>
+        <button class="snav" data-sec="about" type="button">关于</button>
+      </nav>
+
+      <main class="set-pane">
+        <section data-panel="appearance">
+          <div class="field">
+            <div class="flabel">明暗<span class="fhint">可跟随 Windows 自动切换</span></div>
+            <div class="seg" id="mode-seg">
+              <button type="button" data-mode="light">浅色</button>
+              <button type="button" data-mode="dark">深色</button>
+              <button type="button" data-mode="system">跟随系统</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">材质<span class="fhint">纯色 ↔ 玻璃</span></div>
+            <div class="range">
+              <input type="range" id="mat" min="0" max="100" step="1" aria-label="材质" />
+              <span class="val nums" id="mat-val">55</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">壁纸<span class="fhint">玻璃材质下透出</span></div>
+            <div class="thumbs" id="wall-thumbs">
+              <button type="button" class="thumb" data-wall="desktop"><span>跟随桌面</span></button>
+              <button type="button" class="thumb" data-wall="builtin"><span>内置</span></button>
+              <button type="button" class="thumb" data-wall="daily"><span>每日一图</span></button>
+              <button type="button" class="thumb custom" data-wall="custom" id="wall-custom">自定义…</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">强调色<span class="fhint">选中与高亮</span></div>
+            <div class="swatches" id="accent-row">
+              <button type="button" class="sw luogu" data-accent="luogu" title="洛谷蓝"></button>
+              <button type="button" class="sw sys" data-accent="system" title="Windows 系统色"></button>
+              <input type="color" id="accent-custom" class="sw custom-input" value="#5b8cff" title="自定义颜色" />
+            </div>
+          </div>
+        </section>
+
+        <section data-panel="general" hidden>
+          <div class="field">
+            <div class="flabel">关窗行为</div>
+            <label class="radio"><input type="radio" name="close" value="tray" /> 收进托盘，继续在后台运行</label>
+            <label class="radio"><input type="radio" name="close" value="quit" /> 直接退出应用</label>
+          </div>
+          <div class="field">
+            <div class="flabel">开机自动启动<span class="fhint">默认关闭</span></div>
+            <label class="check"><input type="checkbox" id="autolaunch" /> 登录 Windows 后自动启动</label>
+          </div>
+        </section>
+
+        <section data-panel="notify" hidden>
+          <div class="field">
+            <label class="check"><input type="checkbox" id="notify-judge" /> 评测完成时发送系统通知</label>
+          </div>
+          <div class="field">
+            <label class="check"><input type="checkbox" id="notify-contest" /> 比赛开始前提醒</label>
+          </div>
+        </section>
+
+        <section data-panel="account" hidden>
+          <div class="field">
+            <div class="flabel">当前账号</div>
+            <div class="account-name" id="account-name">未登录</div>
+          </div>
+          <div class="row-actions">
+            <button type="button" class="btn-quiet" id="btn-login">打开登录页</button>
+            <button type="button" class="btn-quiet" id="btn-logout">退出登录</button>
+          </div>
+          <p class="hint-line">登录在主窗口的洛谷页面里完成，登录状态与本设置窗共享。</p>
+        </section>
+
+        <section data-panel="about" hidden>
+          <div class="field">
+            <div class="flabel">洛谷桌面版</div>
+            <div class="about-line nums" id="about-version">版本 —</div>
+          </div>
+          <p class="hint-line">为 Windows 打造的洛谷客户端。站外链接交给系统默认浏览器。</p>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="settings.js"></script>
+  </body>
+</html>

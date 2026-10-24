@@ -1,0 +1,50 @@
+/* 冒烟：用隔离 userData 启动一次（窗口 opacity=0，不可见、不抢焦点），
+   截图到 .lg-dev/smoke-home.png，然后正常退出。 */
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
+
+const desktop = path.join(__dirname, "..");
+const repo = path.join(desktop, "..");
+const electron = require("electron");
+
+const stamp = Date.now();
+const userData = path.join(os.tmpdir(), "luogu-desktop-smoke-" + stamp);
+const outDir = path.join(repo, ".lg-dev");
+const out = process.env.LG_SMOKE_OUT || path.join(outDir, "smoke-home.png");
+fs.mkdirSync(outDir, { recursive: true });
+
+console.log("electron:", electron);
+console.log("userData:", userData);
+console.log("screenshot:", out);
+
+const result = spawnSync(electron, [".", "--smoke"], {
+  cwd: desktop,
+  env: Object.assign({}, process.env, {
+    LG_USERDATA: userData,
+    LG_SMOKE_OUT: out,
+    LG_SMOKE: "1",
+    LG_DEMO: process.env.LG_DEMO || "1",
+  }),
+  encoding: "utf8",
+  timeout: 60000,
+});
+
+if (result.stdout) process.stdout.write(result.stdout);
+if (result.stderr) process.stderr.write(result.stderr);
+
+const ok =
+  result.status === 0 &&
+  String(result.stdout || "").includes("SMOKE_OK") &&
+  fs.existsSync(out) &&
+  fs.statSync(out).size > 5000;
+
+if (ok) {
+  console.log("smoke: PASS");
+  fs.rmSync(userData, { recursive: true, force: true });
+  process.exit(0);
+}
+
+console.error("smoke: FAIL status=" + result.status);
+process.exit(1);

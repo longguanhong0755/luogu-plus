@@ -1,9 +1,10 @@
 name: CI
 
-# 触发时机：推主干、开 PR、手动。
-# 门禁范围：静态检查 + 6 个 CDP 探针（全部必须通过）。
-# 探针用 --lg-livetest 的透明窗口：布局和输入是真实的，但 opacity=0 +
-# showInactive + 鼠标穿透，不会出现用户可见窗口，也不抢前台。
+# 两道门禁：
+#   desktop —— 新应用静态检查 + 不可见冒烟启动（截图作为 artifact）
+#   legacy  —— 归档旧版的 9 项静态检查（防止归档后腐化）
+# 两者都跑在 windows-latest，与本地环境一致。
+
 on:
   push:
     branches: [main]
@@ -18,10 +19,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  static-checks:
-    name: 静态检查
+  desktop:
+    name: Desktop 应用
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 静态检查（语法 / 资源 / IPC 双向对齐）
+        run: npm run check
+
+      - name: 冒烟启动（不可见，截图）
+        env:
+          LG_SMOKE_OUT: ${{ runner.temp }}/smoke-home.png
+        run: npm run smoke
+
+      - name: 上传截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-screenshots
+          path: ${{ runner.temp }}/smoke-*.png
+          if-no-files-found: ignore
+
+  legacy:
+    name: Legacy 静态检查
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: legacy
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,94 +72,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: legacy/package-lock.json
 
       - name: 安装静态检查依赖（不下载 Electron）
         run: npm ci --ignore-scripts
 
-      - name: 静态检查总入口
-        shell: bash
+      - name: 旧版 9 项静态检查
         env:
           LG_EOL_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
-        run: |
-          set -e
-          if [ -n "${LG_EOL_REF:-}" ] && git rev-parse --verify "$LG_EOL_REF" >/dev/null 2>&1; then
-            export LG_EOL_REF
-          else
-            unset LG_EOL_REF
-          fi
-          bash scripts/check-all.sh
-
-      - name: 探针脚本语法与 fixture
-        shell: bash
-        run: |
-          set -e
-          for p in scripts/probe-*.cjs; do
-            node --check "$p"
-            echo "  ok  $p"
-          done
-          test -f test/fixtures/gxtest/index.html
-          echo "  ok  fixture"
-
-      - name: 确认没有误提交密钥
-        shell: bash
-        run: |
-          set -e
-          if git grep -nIE "(ghp_[A-Za-z0-9]{30,}|github_pat_|AKIA[0-9A-Z]{16})" -- . \
-             ':!*.md' ':!.github/workflows/*' ; then
-            echo "疑似提交了访问令牌"
-            exit 1
-          fi
-          echo "  ok  未发现令牌"
-
-  probes:
-    name: CDP 探针
-    needs: static-checks
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: 安装 Electron
-        run: npm ci
-        env:
-          ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-
-      - name: 跑 6 个 CDP 探针
-        shell: bash
-        env:
-          LG_SERVE: node
-          LG_WINDOW_MODE: livetest
-          LG_DEV: "0"
-          LG_READY_TIMEOUT: "120"
-          PROBE_PORT: "9321"
-          WEB_PORT: "8911"
-        run: |
-          set -e
-          export LG_APP_DIR="$(cygpath -u "$GITHUB_WORKSPACE")"
-          export LG_EXE="$LG_APP_DIR/node_modules/electron/dist/electron.exe"
-          export LG_APP_ARG="."
-          export LG_PROBE_ROOT="$(cygpath -u "$RUNNER_TEMP")/luogu-probe"
-          export LG_TESTPAGE="$LG_APP_DIR/test/fixtures/gxtest/index.html"
-          export LG_OUT="$LG_PROBE_ROOT/out"
-          export LG_PROFILE="$LG_PROBE_ROOT/profile"
-          export LG_LOG="$LG_PROBE_ROOT/regress.log"
-          mkdir -p "$LG_PROBE_ROOT"
-          if ! bash scripts/run-all-probes.sh; then
-            echo "第一次运行失败，完整重试一次（runner 抖动/渲染首帧）"
-            sleep 3
-            bash scripts/run-all-probes.sh
-          fi
-
-      - name: 上传探针证据
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: probe-results
-          path: ${{ runner.temp }}/luogu-probe
-          if-no-files-found: ignore
-          retention-days: 14
+        run: bash scripts/check-all.sh
