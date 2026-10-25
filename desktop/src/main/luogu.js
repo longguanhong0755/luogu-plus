@@ -185,6 +185,19 @@ class LuoguService {
     this.ensureWindow();
     await this.loadPromise;
     if (!this.win || this.win.isDestroyed()) return null;
+    // reload/导航期间 executeJavaScript 会失败，这里统一等待
+    try {
+      const wc = this.win.webContents;
+      if (wc.isLoading()) {
+        await new Promise((resolve) => {
+          const done = () => resolve();
+          wc.once("did-stop-loading", done);
+          setTimeout(done, 10000);
+        });
+      }
+    } catch {
+      /* ignore */
+    }
     try {
       return await this.win.webContents.executeJavaScript(script, true);
     } catch (err) {
@@ -193,25 +206,43 @@ class LuoguService {
     }
   }
 
+  reloadHidden() {
+    if (!this.win || this.win.isDestroyed()) return;
+    this.loadPromise = new Promise((resolve) => {
+      const done = () => resolve();
+      this.win.webContents.once("did-stop-loading", done);
+      this.win.webContents.once("did-fail-load", done);
+      setTimeout(done, 12000);
+    });
+    this.win.webContents.reload();
+  }
+
   async fetchContext(pathname) {
     const url = pathname.startsWith("http") ? pathname : "https://www.luogu.com.cn" + pathname;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let lastFail = "";
+    for (let attempt = 0; attempt < 5; attempt++) {
       const result = await this.exec(
         `(async () => {
           try {
             const r = await fetch(${JSON.stringify(url)}, { credentials: "include" });
             const text = await r.text();
-            const m = text.match(/<script[^>]*id="lentille-context"[^>]*>([\\s\\S]*?)<\\/script>/);
-            if (!m) return { ok: false, status: r.status };
-            return { ok: true, context: JSON.parse(m[1]) };
+            const m = text.match(/<script[^>]*id=["']lentille-context["'][^>]*>([\\s\\S]*?)<\\/script>/);
+            if (!m) return { ok: false, status: r.status, reason: "no-ctx", len: text.length };
+            try {
+              return { ok: true, context: JSON.parse(m[1]) };
+            } catch (e) {
+              return { ok: false, status: r.status, reason: "parse", detail: String(e).slice(0, 120) };
+            }
           } catch (e) {
-            return { ok: false, error: String(e) };
+            return { ok: false, error: String(e).slice(0, 120) };
           }
         })()`
       );
       if (result && result.ok && result.context) return result.context;
-      await delay(600);
+      lastFail = JSON.stringify(result);
+      await delay(800);
     }
+    console.error("[luogu] fetchContext failed", pathname, lastFail);
     return null;
   }
 
@@ -505,8 +536,8 @@ class LuoguService {
       try {
         const contestContext = await this.fetchContext("/contest/list");
         next.contest = this.pickContest(this.parseContests(contestContext));
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.error("[luogu] contest fetch threw", err && err.message);
       }
 
       if (login.loggedIn) {
@@ -523,6 +554,12 @@ class LuoguService {
           const context = await this.fetchContext(
             `/record/list?user=${encodeURIComponent(login.uid)}&page=${page}`
           );
+          // cookie 还在但服务端会话已过期时，记录页会返回 needLogin 错误页
+          if (context && context.data && context.data.errorCode) {
+            this.user.loggedIn = false;
+            next.error = "登录已过期，请重新登录";
+            break;
+          }
           const pageRecords = this.parseRecords(context);
           if (!pageRecords.length) break;
           records = records.concat(pageRecords);
@@ -568,15 +605,23 @@ class LuoguService {
   }
 
   async checkin() {
-    const result = await this.exec(`(() => {
-      const scope = document.querySelector(".lg-punch") || document;
-      const buttons = Array.from(scope.querySelectorAll("button, a, .am-btn"));
+    const punchState = await this.readPunchState();
+    if (punchState.punched) return { ok: true, already: true };
+    const clickScript = `(() => {
+      const buttons = Array.from(document.querySelectorAll("button, a, [role=button], .am-btn"));
       const target = buttons.find((b) => /打卡|签到/.test(b.textContent || ""));
       if (!target) return { ok: false, reason: "not-found" };
       if (/已打卡|已签到/.test(target.textContent || "")) return { ok: true, already: true };
       target.click();
       return { ok: true, clicked: true };
-    })()`);
+    })()`;
+    let result = await this.exec(clickScript);
+    if (!result || !result.ok) {
+      // 首页可能还没渲染出打卡卡，重载一次再试
+      this.reloadHidden();
+      await delay(3500);
+      result = await this.exec(clickScript);
+    }
     if (!result || !result.ok) {
       return { ok: false, message: "没找到签到入口，已打开洛谷首页，可以在页面里手动签到。" };
     }
@@ -587,31 +632,54 @@ class LuoguService {
 
   /* ---------- 提交 ---------- */
 
-  async submit(pid, code, lang) {
+  async submit(pid, code, lang, verify = "") {
     const langId = LANG_IDS[lang] || LANG_IDS["C++14"];
+    // CSRF token 在页面 meta[name=csrf-token] 里，随会话轮换，不能拿 cookie 顶替
     const script = `(async () => {
-      const headers = { "Content-Type": "application/json", "X-Luogu-Type": "content-only", "X-Requested-With": "XMLHttpRequest" };
-      const body = JSON.stringify({ pid: ${JSON.stringify(pid)}, code: ${JSON.stringify(code)}, lang: ${Number(langId)}, enableO2: false });
-      const tryReq = async (url, options) => {
+      const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+      const headers = { "Content-Type": "application/json", "X-Luogu-Type": "content-only", "X-Requested-With": "XMLHttpRequest", "x-csrf-token": csrf };
+      const tryReq = async (url, bodyText) => {
         try {
-          const r = await fetch(url, options);
+          const r = await fetch(url, { method: "POST", headers, body: bodyText, credentials: "include" });
           const text = await r.text();
           let json = null;
           try { json = JSON.parse(text); } catch {}
-          return { status: r.status, json, text: text.slice(0, 200) };
+          return { status: r.status, json, text: text.slice(0, 240) };
         } catch (e) { return { status: 0, error: String(e) }; }
       };
-      const a = await tryReq("/api/problem/submit", { method: "POST", headers, body, credentials: "include" });
       const ridOf = (j) => j && (j.rid || (j.data && j.data.rid) || (j.currentData && j.currentData.rid));
-      if (ridOf(a.json)) return { ok: true, rid: ridOf(a.json) };
-      const form = new URLSearchParams({ pid: ${JSON.stringify(pid)}, code: ${JSON.stringify(code)}, lang: String(${Number(langId)}), enableO2: "false" });
-      const b = await tryReq("/api/problem/submit", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Luogu-Type": "content-only" }, body: form.toString(), credentials: "include" });
-      if (ridOf(b.json)) return { ok: true, rid: ridOf(b.json) };
-      return { ok: false, status: a.status || b.status, detail: (a.text || "") + " " + (b.text || "") };
+      const code = ${JSON.stringify(code)};
+      const verify = ${JSON.stringify(String(verify || ""))};
+      const attempts = [
+        { url: "/fe/api/problem/submit/${pid}", body: JSON.stringify(verify ? { code, lang: String(${Number(langId)}), enableO2: false, verify } : { code, lang: String(${Number(langId)}), enableO2: false }) },
+        { url: "/fe/api/problem/submit/${pid}", body: JSON.stringify({ code, lang: ${JSON.stringify(lang)}, enableO2: false }) },
+        { url: "/api/problem/submit", body: JSON.stringify({ code, lang: ${Number(langId)}, enableO2: false }) }
+      ];
+      let last = null;
+      for (const item of attempts) {
+        const res = await tryReq(item.url, item.body);
+        last = res;
+        if (ridOf(res.json)) return { ok: true, rid: ridOf(res.json), url: item.url };
+        const text = String(res.text || "");
+        if (text.indexOf("Captcha") !== -1 || text.indexOf("验证码") !== -1) {
+          return { ok: false, captchaRequired: true, status: res.status, detail: text.slice(0, 160) };
+        }
+        if (res.status !== 404 && text.indexOf("invalid_language") === -1) break;
+      }
+      return { ok: false, status: last ? last.status : 0, detail: last ? last.text || last.error || "" : "no attempt" };
     })()`;
     const result = await this.exec(script);
+    if (result && result.captchaRequired) {
+      return { ok: false, captchaRequired: true, message: "本次提交需要图形验证码，已在题目页打开提交区。" };
+    }
     if (!result || !result.ok) {
-      return { ok: false, fallback: true, message: "自动提交没有成功，代码已复制，请在题目页内提交。" };
+      return {
+        ok: false,
+        fallback: true,
+        message: "自动提交没有成功，代码已复制，请在题目页内提交。",
+        detail: result ? String(result.detail || result.error || "").slice(0, 300) : "exec failed",
+        status: result ? result.status : 0,
+      };
     }
     this.watchRecord(result.rid, pid).catch(() => {});
     return { ok: true, rid: result.rid };

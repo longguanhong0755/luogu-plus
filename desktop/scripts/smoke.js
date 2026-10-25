@@ -10,10 +10,12 @@ const repo = path.join(desktop, "..");
 const electron = require("electron");
 
 const stamp = Date.now();
-const userData = path.join(os.tmpdir(), "luogu-desktop-smoke-" + stamp);
+// LG_SMOKE_PROFILE：持久 profile（登录测试用，保留 cookie）；默认一次性临时目录。
+const userData = process.env.LG_SMOKE_PROFILE || path.join(os.tmpdir(), "luogu-desktop-smoke-" + stamp);
 const outDir = path.join(repo, ".lg-dev");
 const out = process.env.LG_SMOKE_OUT || path.join(outDir, "smoke-home.png");
 fs.mkdirSync(outDir, { recursive: true });
+if (process.env.LG_SMOKE_PROFILE) fs.mkdirSync(userData, { recursive: true });
 
 console.log("electron:", electron);
 console.log("userData:", userData);
@@ -25,7 +27,7 @@ const result = spawnSync(electron, [".", "--smoke"], {
     LG_USERDATA: userData,
     LG_SMOKE_OUT: out,
     LG_SMOKE: "1",
-    LG_DEMO: process.env.LG_DEMO || "1",
+    LG_DEMO: process.env.LG_DEMO === "0" ? "0" : process.env.LG_DEMO || "1",
   }),
   encoding: "utf8",
   timeout: Number(process.env.LG_SMOKE_TIMEOUT || 60000),
@@ -46,7 +48,7 @@ if (badShots.length) console.error("empty/small screenshots: " + badShots.join("
 
 if (ok) {
   console.log("smoke: PASS");
-  fs.rmSync(userData, { recursive: true, force: true });
+  if (!process.env.LG_SMOKE_PROFILE) fs.rmSync(userData, { recursive: true, force: true });
   process.exit(0);
 }
 

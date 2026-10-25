@@ -3,6 +3,500 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
+const { STATUS_TEXT } = require("./luogu");
+
+/* ---------- 真实账号登录测试（LG_SMOKE_LOGIN=<账号文件>）---------- */
+
+function firstAccount(file) {
+  const text = fs.readFileSync(file, "utf8");
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("//")) continue;
+    const idx = line.indexOf("----");
+    if (idx <= 0) continue;
+    const user = line.slice(0, idx).trim();
+    const pass = line.slice(idx + 4).trim();
+    if (user && pass) return { user, pass };
+  }
+  return null;
+}
+
+async function pollLoginState(ctx, wait, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = await ctx.luogu.loginState();
+    if (state.loggedIn) return state;
+    await wait(1000);
+  }
+  return null;
+}
+
+function findRecord(root, depth = 0) {
+  if (!root || depth > 8) return null;
+  if (Array.isArray(root)) {
+    for (const item of root) {
+      const hit = findRecord(item, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (typeof root === "object") {
+    if ("status" in root && "score" in root) return root;
+    for (const key of Object.keys(root)) {
+      const hit = findRecord(root[key], depth + 1);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+async function loginFlow(ctx, wait, outDir) {
+  const file = process.env.LG_SMOKE_LOGIN;
+  let accounts = [];
+  try {
+    const text = fs.readFileSync(file, "utf8");
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#") || line.startsWith("//")) continue;
+      const parts = line.split("----");
+      if (parts.length < 2) continue;
+      const user = parts[0].trim();
+      const pass = parts[1].trim(); // 第三段（如有）是其他字段，不是密码
+      if (user && pass) accounts.push({ user, pass });
+    }
+  } catch (err) {
+    console.log("LGTEST_FAIL 账号文件读取失败 " + err.message);
+    return;
+  }
+  const maxAccounts = Number(process.env.LG_SMOKE_LOGIN_MAX || 5);
+  accounts = accounts.slice(0, maxAccounts);
+  if (!accounts.length) {
+    console.log("LGTEST_FAIL 账号文件里没有可用行");
+    return;
+  }
+  console.log("LGTEST 候选账号 " + accounts.length + " 个");
+
+  // 测试期间不弹系统通知
+  ctx.cfg.setNotify({ judge: false, contest: false });
+
+  if (process.env.LG_SMOKE_FORCE_LOGIN === "1") {
+    try {
+      await ctx.luogu.logout();
+      console.log("LGTEST 已清除旧会话");
+    } catch {
+      /* ignore */
+    }
+  }
+  const existing = await ctx.luogu.loginState();
+  if (existing.loggedIn) {
+    console.log("LGTEST profile 已有登录态 uid=" + existing.uid);
+  } else {
+    const fillAndSubmit = (body) =>
+      `(() => {
+        const setVal = (el, v) => {
+          const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+          d.call(el, v);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+        ${body}
+      })()`;
+
+    const captchaInfo = (wc) =>
+      wc.executeJavaScript(
+        `(() => {
+          const img = [...document.querySelectorAll("img")].find((i) => /captcha|verify|geetest/i.test(i.src || ""));
+          const input = [...document.querySelectorAll("input")].find((i) => /captcha|验证码/i.test(i.placeholder || ""));
+          const iframe = [...document.querySelectorAll("iframe")].find((f) => /captcha|geetest|verify/i.test(f.src || ""));
+          return { img: img ? String(img.src).slice(0, 140) : "", input: input ? input.placeholder : "", iframe: iframe ? String(iframe.src).slice(0, 140) : "" };
+        })()`
+      );
+
+    const saveCaptcha = async (wc) => {
+      const data = await wc.executeJavaScript(
+        `(async () => {
+          const img = [...document.querySelectorAll("img")].find((i) => /captcha|verify|geetest/i.test(i.src || ""));
+          if (!img) return null;
+          const src = img.src;
+          if (src.startsWith("data:")) return src;
+          try {
+            const r = await fetch(src, { credentials: "include" });
+            const b = await r.blob();
+            return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+          } catch (e) { return null; }
+        })()`
+      );
+      if (!data) return false;
+      fs.writeFileSync(path.join(outDir, "login-captcha.png"), Buffer.from(String(data).split(",").pop(), "base64"));
+      console.log("LGTEST_CAPTCHA " + path.join(outDir, "login-captcha.png"));
+      return true;
+    };
+
+    const waitAnswer = async (seconds) => {
+      const answerFile = path.join(outDir, "captcha-answer.txt");
+      fs.rmSync(answerFile, { force: true });
+      console.log("LGTEST 等待验证码答案：写入 " + answerFile);
+      for (let i = 0; i < seconds; i++) {
+        if (fs.existsSync(answerFile)) return fs.readFileSync(answerFile, "utf8").trim();
+        await wait(1000);
+      }
+      return null;
+    };
+
+    const readError = (wc) =>
+      wc.executeJavaScript(
+        `(() => {
+          const nodes = [...document.querySelectorAll(".swal2-toast, .swal2-container, [class*=error], [class*=alert], [class*=toast]")];
+          return nodes.map((n) => (n.innerText || "")).join(" | ").replace(/\s+/g, " ").slice(0, 300);
+        })()`
+      );
+
+    let loggedInState = null;
+    let accountIndex = 0;
+    const MAX_ATTEMPTS = 12;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS && !loggedInState; attempt++) {
+      if (accountIndex >= accounts.length) break;
+      const account = accounts[accountIndex];
+      console.log("LGTEST account#" + (accountIndex + 1) + "=" + account.user.slice(0, 3) + "***");
+
+      ctx.views.openLogin();
+      const wc = ctx.views.currentWebContents();
+      if (!wc) {
+        console.log("LGTEST_FAIL 登录视图未创建");
+        return;
+      }
+      await wc.loadURL("https://www.luogu.com.cn/auth/login").catch(() => {});
+      for (let i = 0; i < 60 && wc.isLoading(); i++) await wait(500);
+      await wait(1000);
+
+      let step1 = null;
+      for (let i = 0; i < 10; i++) {
+        step1 = await wc.executeJavaScript(
+          fillAndSubmit(`
+          const inputs = [...document.querySelectorAll("input")].filter(
+            (i) => !["checkbox", "radio", "hidden", "password"].includes(i.type) && !i.disabled && i.offsetParent
+          );
+          const input = inputs[0];
+          if (!input) return { ok: false, reason: "no-account-input" };
+          setVal(input, ${JSON.stringify(account.user)});
+          const btn = [...document.querySelectorAll("button")].find((b) => /下一步|登录/.test(b.textContent || ""));
+          if (!btn) return { ok: false, reason: "no-next-btn" };
+          btn.click();
+          return { ok: true };`)
+        );
+        if (step1 && step1.ok) break;
+        await wait(700);
+      }
+      if (!step1 || !step1.ok) {
+        console.log("LGTEST_FAIL 找不到登录输入框/按钮");
+        return;
+      }
+
+      let sawPassword = false;
+      for (let i = 0; i < 24 && !sawPassword; i++) {
+        sawPassword = await wc.executeJavaScript(
+          `(() => { const el = document.querySelector("input[type=password]"); return !!(el && el.offsetParent); })()`
+        );
+        if (!sawPassword) await wait(500);
+      }
+      if (!sawPassword) {
+        console.log("LGTEST_FAIL 没有出现密码输入框");
+        return;
+      }
+
+      let captcha = null;
+      for (let i = 0; i < 10 && !captcha; i++) {
+        captcha = await captchaInfo(wc);
+        if (captcha && (captcha.img || captcha.input || captcha.iframe)) break;
+        captcha = null;
+        await wait(500);
+      }
+
+      await wc.executeJavaScript(
+        fillAndSubmit(`
+        const input = document.querySelector("input[type=password]");
+        if (!input) return { ok: false };
+        setVal(input, ${JSON.stringify(account.pass)});
+        return { ok: true };`)
+      );
+
+      if (captcha && (captcha.img || captcha.input)) {
+        const saved = await saveCaptcha(wc);
+        if (!saved) {
+          console.log("LGTEST_FAIL 验证码图获取失败");
+          return;
+        }
+        const answer = await waitAnswer(240);
+        if (!answer) {
+          console.log("LGTEST_FAIL 等待验证码答案超时");
+          return;
+        }
+        console.log("LGTEST captcha answered (attempt " + attempt + ")");
+        await wc.executeJavaScript(
+          fillAndSubmit(`
+          const inputs = [...document.querySelectorAll("input")].filter(
+            (i) => !["checkbox", "radio", "hidden", "password"].includes(i.type) && i.offsetParent
+          );
+          const input = inputs.find((i) => /captcha|验证码/i.test(i.placeholder || "")) || inputs[inputs.length - 1];
+          if (!input) return { ok: false };
+          setVal(input, ${JSON.stringify(answer)});
+          return { ok: true };`)
+        );
+      }
+
+      await wc.executeJavaScript(
+        fillAndSubmit(`
+        const btn = [...document.querySelectorAll("button")].find((b) => /^登录$/.test((b.textContent || "").trim())) ||
+          [...document.querySelectorAll("button")].find((b) => /登录/.test(b.textContent || ""));
+        if (!btn) return { ok: false };
+        btn.click();
+        return { ok: true };`)
+      );
+
+      for (let i = 0; i < 10; i++) {
+        await wait(1000);
+        const st = await ctx.luogu.loginState();
+        if (st.loggedIn) {
+          loggedInState = st;
+          break;
+        }
+      }
+      if (loggedInState) break;
+
+      const error = await readError(wc);
+      console.log("LGTEST account#" + (accountIndex + 1) + " failed, error=" + JSON.stringify(error));
+      if (/用户名或密码/.test(error)) {
+        accountIndex++;
+        continue;
+      }
+      if (/验证码/.test(error)) {
+        continue; // 同一账号换一张验证码重试
+      }
+      if (/频繁|稍后|尝试/.test(error)) {
+        await wait(30000);
+        continue;
+      }
+      break;
+    }
+
+    if (!loggedInState) {
+      console.log("LGTEST_FAIL 所有尝试均未登录成功");
+      return;
+    }
+  }
+
+  const state = await ctx.luogu.loginState();
+  if (!state || !state.loggedIn) {
+    console.log("LGTEST_FAIL 登录未完成");
+    return;
+  }
+  console.log("LGTEST logged-in uid=" + state.uid);
+
+  const diag = await ctx.luogu.exec(`(async () => {
+    const out = {};
+    const paths = ["/contest/list", "/user/${state.uid}", "/record/list?user=${state.uid}"];
+    for (const p of paths) {
+      try {
+        const r = await fetch("https://www.luogu.com.cn" + p, { credentials: "include" });
+        const t = await r.text();
+        out[p] = {
+          status: r.status,
+          url: String(r.url).slice(0, 100),
+          len: t.length,
+          hasCtx: t.indexOf("lentille-context") !== -1,
+          hasUid: t.indexOf("${state.uid}") !== -1,
+          head: t.slice(0, 90)
+        };
+      } catch (e) {
+        out[p] = { error: String(e).slice(0, 120) };
+      }
+    }
+    out.pageHref = location.href.slice(0, 100);
+    out.cookieHasUid = document.cookie.indexOf("_uid") !== -1;
+    return out;
+  })()`);
+  console.log("LGTEST_DIAG " + JSON.stringify(diag));
+
+  // 隐藏窗口在登录前加载过首页，刷新一次让打卡按钮出现
+  try {
+    ctx.luogu.reloadHidden();
+  } catch {
+    /* ignore */
+  }
+  await wait(2600);
+
+  ctx.views.showHome();
+  const refreshState = await ctx.luogu.refresh(true);
+  const home = (refreshState && refreshState.home) || {};
+  console.log(
+    "LGTEST user=" +
+      JSON.stringify({ uid: ctx.luogu.user.uid, name: ctx.luogu.user.name, avatar: !!ctx.luogu.user.avatar })
+  );
+  console.log(
+    "LGTEST home=" +
+      JSON.stringify({
+        punched: home.punched,
+        streak: home.streak,
+        heatDays: (home.heat || []).filter((d) => d.count > 0).length,
+        recent: (home.recent || []).length,
+        contest: home.contest ? home.contest.name : null,
+        error: home.error || "",
+      })
+  );
+
+  const records = await ctx.luogu.fetchLibrary("record", { page: 1, force: true });
+  console.log(
+    "LGTEST records=" +
+      JSON.stringify({
+        items: (records.items || []).length,
+        needLogin: records.needLogin,
+        error: records.error || "",
+        first: records.items && records.items[0] ? { pid: records.items[0].pid, status: records.items[0].statusText } : null,
+      })
+  );
+
+  const punch = await ctx.luogu.checkin();
+  console.log("LGTEST checkin=" + JSON.stringify({ ok: punch.ok, already: punch.already, message: punch.message || "" }));
+  if (!punch.ok) {
+    const pageDbg = await ctx.luogu.exec(`(() => ({
+      title: document.title,
+      href: location.href.slice(0, 100),
+      buttons: document.querySelectorAll("button").length,
+      anchors: document.querySelectorAll("a").length,
+      punchTextCount: ((document.body.innerText || "").match(/打卡|签到/g) || []).length,
+      punchEl: (() => {
+        const el = [...document.querySelectorAll("*")].find((n) => n.childElementCount === 0 && /打卡|签到/.test(n.textContent || ""));
+        return el ? el.tagName + "." + String(el.className).slice(0, 40) : "";
+      })(),
+      csrfMeta: (document.querySelector('meta[name="csrf-token"]') || {}).content || "",
+      csrfGlobals: Object.keys(window).filter((k) => /csrf|token/i.test(k)).slice(0, 10),
+      csrfWin: typeof window._FeCSRFToken !== "undefined" ? String(window._FeCSRFToken).slice(0, 8) : "",
+      cookieNames: document.cookie.split(";").map((x) => x.trim().split("=")[0]).slice(0, 10)
+    }))()`);
+    console.log("LGTEST_PAGE " + JSON.stringify(pageDbg));
+  }
+
+  if (process.env.LG_SMOKE_SUBMIT !== "0") {
+    // 打开真实提交弹窗，看验证码图的真实端点
+    await ctx.luogu.exec(`(async () => { location.href = "https://www.luogu.com.cn/problem/P1001"; })()`);
+    await wait(4000);
+    const dlgClick = await ctx.luogu.exec(`(() => {
+      const btn = [...document.querySelectorAll("button, a")].find((b) => /提交代码/.test(b.textContent || ""));
+      if (btn) { btn.click(); return "clicked"; }
+      return "no-btn";
+    })()`);
+    await wait(2500);
+    const dlgInfo = await ctx.luogu.exec(`(() => {
+      const imgs = [...document.querySelectorAll("img")].map((i) => String(i.src).slice(0, 110)).filter((s) => /captcha|verify/i.test(s));
+      const inputs = [...document.querySelectorAll("input")].map((i) => i.placeholder || i.type).slice(0, 14);
+      const ta = !!document.querySelector("textarea");
+      return { imgs, inputs, ta };
+    })()`);
+    console.log("LGTEST_DIALOG " + JSON.stringify({ dlgClick, dlgInfo }));
+    const code = "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<std::endl;return 0;}";
+    let result = await ctx.luogu.submit("P1001", code, "C++14");
+    if (result.captchaRequired) {
+      const data = await ctx.luogu.exec(
+        `(async () => {
+          const r = await fetch("/lg4/captcha?_t=" + Date.now(), { credentials: "include" });
+          const b = await r.blob();
+          return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+        })()`
+      );
+      if (data) {
+        const capFile = path.join(outDir, "submit-captcha.png");
+        fs.writeFileSync(capFile, Buffer.from(String(data).split(",").pop(), "base64"));
+        console.log("LGTEST_SUBMIT_CAPTCHA " + capFile);
+        const answerFile = path.join(outDir, "submit-captcha-answer.txt");
+        fs.rmSync(answerFile, { force: true });
+        let answer = null;
+        for (let i = 0; i < 150; i++) {
+          if (fs.existsSync(answerFile)) {
+            answer = fs.readFileSync(answerFile, "utf8").trim();
+            break;
+          }
+          await wait(1000);
+        }
+        if (answer) {
+          console.log("LGTEST submit captcha answered");
+          result = await ctx.luogu.submit("P1001", code, "C++14", answer);
+        }
+      }
+    }
+    console.log(
+      "LGTEST submit=" +
+        JSON.stringify({
+          ok: result.ok,
+          rid: result.rid,
+          fallback: result.fallback,
+          message: result.message || "",
+          status: result.status || 0,
+          detail: String(result.detail || "").slice(0, 200),
+        })
+    );
+    if (result.ok && result.rid) {
+      let finalRecord = null;
+      for (let i = 0; i < 40; i++) {
+        await wait(2000);
+        const recordCtx = await ctx.luogu.fetchContext("/record/" + result.rid);
+        const record = findRecord(recordCtx);
+        if (!record) continue;
+        const status = Number(record.status);
+        if (status === 0 || status === 1) continue;
+        finalRecord = { status, statusText: STATUS_TEXT[status] || String(status), score: Number(record.score) || 0 };
+        break;
+      }
+      console.log("LGTEST judge=" + JSON.stringify(finalRecord));
+    }
+  }
+
+  // 结构探针：登录态下的比赛列表与题目页语言表
+  const contestCtx = await ctx.luogu.fetchContext("/contest/list");
+  console.log(
+    "LGTEST_CONTEST " +
+      JSON.stringify(
+        contestCtx
+          ? {
+              dataKeys: Object.keys(contestCtx.data || {}),
+              first: contestCtx.data && contestCtx.data.contests && contestCtx.data.contests.result
+                ? JSON.stringify(contestCtx.data.contests.result[0]).slice(0, 240)
+                : null,
+            }
+          : null
+      )
+  );
+  const parsedContests = ctx.luogu.parseContests(contestCtx);
+  console.log(
+    "LGTEST_PICK " +
+      JSON.stringify({ parsedLen: parsedContests.length, picked: ctx.luogu.pickContest(parsedContests) })
+  );
+  const problemCtx = await ctx.luogu.fetchContext("/problem/P1001");
+  console.log(
+    "LGTEST_LANGS " +
+      JSON.stringify(
+        problemCtx
+          ? {
+              lastLanguage: problemCtx.data ? problemCtx.data.lastLanguage : null,
+              lastCodeLen: problemCtx.data && problemCtx.data.lastCode ? String(problemCtx.data.lastCode).length : 0,
+              acceptLanguages: problemCtx.data && problemCtx.data.problem ? problemCtx.data.problem.acceptLanguages : null,
+            }
+          : null
+      )
+  );
+
+  const refreshState2 = await ctx.luogu.refresh(true);
+  const home2 = (refreshState2 && refreshState2.home) || {};
+  console.log(
+    "LGTEST home2=" +
+      JSON.stringify({
+        heatDays: (home2.heat || []).filter((d) => d.count > 0).length,
+        recent: (home2.recent || []).length,
+        contest: home2.contest ? home2.contest.name : null,
+        error: home2.error || "",
+      })
+  );
+}
 
 async function runSmoke(ctx) {
   const out = process.env.LG_SMOKE_OUT || path.join(app.getPath("userData"), "smoke.png");
@@ -24,6 +518,9 @@ async function runSmoke(ctx) {
 
   const capture = async () => {
     try {
+      if (process.env.LG_SMOKE_LOGIN) {
+        await loginFlow(ctx, wait, outDir);
+      }
       if (process.env.LG_SMOKE_THEME === "light" || process.env.LG_SMOKE_THEME === "dark") {
         ctx.cfg.setAppearance({ mode: process.env.LG_SMOKE_THEME });
         await ctx.refreshAppearance();
