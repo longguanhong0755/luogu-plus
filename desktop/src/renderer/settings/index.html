@@ -4,109 +4,194 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' file: data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; font-src 'self' data:"
+      content="default-src 'self'; img-src 'self' file: data: https:; media-src 'self' file:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'none'; font-src 'self' data:"
     />
     <title>设置</title>
     <link rel="stylesheet" href="../shared/base.css" />
     <link rel="stylesheet" href="settings.css" />
   </head>
   <body>
-    <header id="titlebar">
-      <span class="tb-logo">洛</span>
-      <span class="tb-name">洛谷桌面版</span>
-      <span class="tb-sep"></span>
-      <span class="tb-title">设置</span>
-    </header>
+    <div id="wallpaper" aria-hidden="true">
+      <div class="wall-layer" data-slot="a"></div>
+      <div class="wall-layer" data-slot="b"></div>
+    </div>
 
-    <div class="set-body">
-      <nav class="set-nav" aria-label="设置分区">
-        <button class="snav on" data-sec="appearance" type="button">外观</button>
-        <button class="snav" data-sec="general" type="button">通用</button>
-        <button class="snav" data-sec="notify" type="button">通知</button>
-        <button class="snav" data-sec="account" type="button">账号</button>
-        <button class="snav" data-sec="about" type="button">关于</button>
-      </nav>
+    <div id="app">
+      <header id="titlebar">
+        <img class="tb-mark" src="../../assets/icon-32.png" alt="" draggable="false" />
+        <span class="tb-name">洛谷桌面版</span>
+        <span class="tb-sep"></span>
+        <span class="tb-title">设置</span>
+      </header>
 
-      <main class="set-pane">
-        <section data-panel="appearance">
-          <div class="field">
-            <div class="flabel">明暗<span class="fhint">可跟随 Windows 自动切换</span></div>
-            <div class="seg" id="mode-seg">
-              <button type="button" data-mode="light">浅色</button>
-              <button type="button" data-mode="dark">深色</button>
-              <button type="button" data-mode="system">跟随系统</button>
+      <div class="set-body">
+        <nav class="set-nav" aria-label="设置分区">
+          <button class="snav on" data-sec="appearance" type="button">外观</button>
+          <button class="snav" data-sec="wallpaper" type="button">壁纸</button>
+          <button class="snav" data-sec="rail" type="button">侧边栏</button>
+          <button class="snav" data-sec="general" type="button">通用</button>
+          <button class="snav" data-sec="notify" type="button">通知</button>
+          <button class="snav" data-sec="account" type="button">账号</button>
+          <button class="snav" data-sec="about" type="button">关于</button>
+        </nav>
+
+        <main class="set-pane">
+          <section data-panel="appearance">
+            <div class="field">
+              <div class="flabel">明暗<span class="fhint">跟随 Windows 自动切换</span></div>
+              <div class="seg" id="mode-seg">
+                <button type="button" data-mode="light">浅色</button>
+                <button type="button" data-mode="dark">深色</button>
+                <button type="button" data-mode="system">跟随系统</button>
+              </div>
             </div>
-          </div>
 
-          <div class="field">
-            <div class="flabel">材质<span class="fhint">纯色 ↔ 玻璃</span></div>
-            <div class="range">
-              <input type="range" id="mat" min="0" max="100" step="1" aria-label="材质" />
-              <span class="val nums" id="mat-val">55</span>
+            <div class="field">
+              <div class="flabel">材质<span class="fhint">0 = 纯色 · 100 = 强玻璃</span></div>
+              <div class="range">
+                <input type="range" id="mat" min="0" max="100" step="1" aria-label="材质" />
+                <span class="val nums" id="mat-val">55</span>
+              </div>
             </div>
-          </div>
 
-          <div class="field">
-            <div class="flabel">壁纸<span class="fhint">玻璃材质下透出</span></div>
-            <div class="thumbs" id="wall-thumbs">
-              <button type="button" class="thumb" data-wall="desktop"><span>跟随桌面</span></button>
-              <button type="button" class="thumb" data-wall="builtin"><span>内置</span></button>
-              <button type="button" class="thumb" data-wall="daily"><span>每日一图</span></button>
-              <button type="button" class="thumb custom" data-wall="custom" id="wall-custom">自定义…</button>
+            <div class="field">
+              <div class="flabel">强调色<span class="fhint">选中、链接与高亮</span></div>
+              <div class="swatches" id="accent-row">
+                <button type="button" class="sw luogu" data-accent="luogu" title="洛谷蓝"></button>
+                <button type="button" class="sw sys" data-accent="system" title="Windows 系统色"></button>
+                <input type="color" id="accent-custom" class="sw custom-input" value="#5b8cff" title="自定义颜色" />
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div class="field">
-            <div class="flabel">强调色<span class="fhint">选中与高亮</span></div>
-            <div class="swatches" id="accent-row">
-              <button type="button" class="sw luogu" data-accent="luogu" title="洛谷蓝"></button>
-              <button type="button" class="sw sys" data-accent="system" title="Windows 系统色"></button>
-              <input type="color" id="accent-custom" class="sw custom-input" value="#5b8cff" title="自定义颜色" />
+          <section data-panel="wallpaper" hidden>
+            <div class="field">
+              <div class="flabel">壁纸来源<span class="fhint">玻璃材质下透出</span></div>
+              <div class="src-grid" id="wp-sources">
+                <button type="button" class="src" data-wall="desktop"><b>跟随桌面</b><span>读取 Windows 当前壁纸</span></button>
+                <button type="button" class="src" data-wall="builtin"><b>内置</b><span>随强调色生成的渐变</span></button>
+                <button type="button" class="src" data-wall="daily"><b>每日一图</b><span>Bing 每日壁纸，按天缓存</span></button>
+                <button type="button" class="src" data-wall="custom"><b>单张图片</b><span>图片或视频文件</span></button>
+                <button type="button" class="src" data-wall="folder"><b>文件夹轮换</b><span>图片与视频，多张轮换</span></button>
+                <button type="button" class="src" data-wall="we"><b>Wallpaper Engine</b><span>从创意工坊目录导入</span></button>
+              </div>
             </div>
-          </div>
-        </section>
 
-        <section data-panel="general" hidden>
-          <div class="field">
-            <div class="flabel">关窗行为</div>
-            <label class="radio"><input type="radio" name="close" value="tray" /> 收进托盘，继续在后台运行</label>
-            <label class="radio"><input type="radio" name="close" value="quit" /> 直接退出应用</label>
-          </div>
-          <div class="field">
-            <div class="flabel">开机自动启动<span class="fhint">默认关闭</span></div>
-            <label class="check"><input type="checkbox" id="autolaunch" /> 登录 Windows 后自动启动</label>
-          </div>
-        </section>
+            <div class="field">
+              <div class="wp-preview" id="wp-preview">
+                <div class="wp-preview-img" id="wp-preview-img"></div>
+                <div class="wp-preview-meta">
+                  <span class="wp-preview-label" id="wp-preview-label">—</span>
+                  <span class="wp-preview-kind" id="wp-preview-kind"></span>
+                </div>
+              </div>
+              <div class="row-actions">
+                <button type="button" class="btn-quiet" id="wp-next">下一张</button>
+                <button type="button" class="btn-quiet" id="wp-pick-file">选择图片/视频…</button>
+                <button type="button" class="btn-quiet" id="wp-pick-dir">选择文件夹…</button>
+              </div>
+            </div>
 
-        <section data-panel="notify" hidden>
-          <div class="field">
-            <label class="check"><input type="checkbox" id="notify-judge" /> 评测完成时发送系统通知</label>
-          </div>
-          <div class="field">
-            <label class="check"><input type="checkbox" id="notify-contest" /> 比赛开始前提醒</label>
-          </div>
-        </section>
+            <div class="field" id="wp-folder-opts">
+              <div class="flabel">轮换<span class="fhint">文件夹与 Wallpaper Engine 列表</span></div>
+              <div class="inline-row">
+                <label class="mini-label" for="wp-interval">间隔</label>
+                <select id="wp-interval">
+                  <option value="0">不轮换</option>
+                  <option value="15">15 分钟</option>
+                  <option value="30">30 分钟</option>
+                  <option value="60">1 小时</option>
+                  <option value="120">2 小时</option>
+                  <option value="1440">每天</option>
+                </select>
+                <label class="check"><input type="checkbox" id="wp-shuffle" /> 随机顺序</label>
+              </div>
+              <div class="hint-line" id="wp-dir-label"></div>
+            </div>
 
-        <section data-panel="account" hidden>
-          <div class="field">
-            <div class="flabel">当前账号</div>
-            <div class="account-name" id="account-name">未登录</div>
-          </div>
-          <div class="row-actions">
-            <button type="button" class="btn-quiet" id="btn-login">打开登录页</button>
-            <button type="button" class="btn-quiet" id="btn-logout">退出登录</button>
-          </div>
-          <p class="hint-line">登录在主窗口的洛谷页面里完成，登录状态与本设置窗共享。</p>
-        </section>
+            <div class="field">
+              <div class="flabel">壁纸运动<span class="fhint">外壳与页面同步，无感知延迟</span></div>
+              <label class="check"><input type="checkbox" id="wp-motion" /> 缓慢漂浮</label>
+              <label class="check"><input type="checkbox" id="wp-zoom" /> 缓慢缩放</label>
+              <label class="check"><input type="checkbox" id="wp-fade" /> 切换时淡入</label>
+            </div>
 
-        <section data-panel="about" hidden>
-          <div class="field">
-            <div class="flabel">洛谷桌面版</div>
-            <div class="about-line nums" id="about-version">版本 —</div>
-          </div>
-          <p class="hint-line">为 Windows 打造的洛谷客户端。站外链接交给系统默认浏览器。</p>
-        </section>
-      </main>
+            <div class="field">
+              <div class="flabel">Wallpaper Engine<span class="fhint">支持视频壁纸；场景壁纸以预览图呈现</span></div>
+              <div class="row-actions">
+                <button type="button" class="btn-quiet" id="wp-we-pick">选择创意工坊目录…</button>
+                <button type="button" class="btn-quiet" id="wp-we-scan">重新扫描</button>
+              </div>
+              <div class="hint-line" id="wp-we-label">未选择目录</div>
+              <div class="we-grid" id="wp-we-list"></div>
+            </div>
+          </section>
+
+          <section data-panel="rail" hidden>
+            <div class="field">
+              <div class="flabel">顶部导航<span class="fhint">上移/下移排序，开关控制显隐</span></div>
+              <div class="rail-editor" id="rail-list"></div>
+            </div>
+            <div class="field">
+              <div class="flabel">自定义链接<span class="fhint">显示在顶部导航末尾</span></div>
+              <div class="rail-editor" id="rail-custom"></div>
+              <form id="rail-add" class="rail-add" autocomplete="off">
+                <input id="rail-add-label" type="text" maxlength="24" placeholder="名称" aria-label="链接名称" />
+                <input id="rail-add-url" type="text" placeholder="https://…" aria-label="链接地址" />
+                <button type="submit" class="btn-quiet">添加</button>
+              </form>
+            </div>
+            <div class="field">
+              <button type="button" class="btn-quiet" id="rail-reset">恢复默认侧边栏</button>
+              <div class="hint-line">底部固定保留：题号跳转、聊天、通知、设置。</div>
+            </div>
+          </section>
+
+          <section data-panel="general" hidden>
+            <div class="field">
+              <div class="flabel">关窗行为</div>
+              <label class="radio"><input type="radio" name="close" value="tray" /> 收进托盘，继续在后台运行</label>
+              <label class="radio"><input type="radio" name="close" value="quit" /> 直接退出应用</label>
+            </div>
+            <div class="field">
+              <div class="flabel">开机自动启动<span class="fhint">默认关闭</span></div>
+              <label class="check"><input type="checkbox" id="autolaunch" /> 登录 Windows 后自动启动</label>
+            </div>
+          </section>
+
+          <section data-panel="notify" hidden>
+            <div class="field">
+              <label class="check"><input type="checkbox" id="notify-judge" /> 评测完成时发送系统通知</label>
+            </div>
+            <div class="field">
+              <label class="check"><input type="checkbox" id="notify-contest" /> 比赛开始前提醒</label>
+            </div>
+          </section>
+
+          <section data-panel="account" hidden>
+            <div class="field">
+              <div class="flabel">当前账号</div>
+              <div class="account-name" id="account-name">未登录</div>
+            </div>
+            <div class="row-actions">
+              <button type="button" class="btn-quiet" id="btn-login">打开登录页</button>
+              <button type="button" class="btn-quiet" id="btn-logout">退出登录</button>
+            </div>
+            <p class="hint-line">登录在主窗口的洛谷页面里完成，登录状态与本设置窗共享。通行密钥只在点击后才会唤起系统窗口。</p>
+          </section>
+
+          <section data-panel="about" hidden>
+            <div class="field">
+              <div class="flabel">洛谷桌面版</div>
+              <div class="about-line nums" id="about-version">版本 —</div>
+            </div>
+            <p class="hint-line">
+              为 Windows 打造的洛谷客户端：原生列表、题目阅读面、内置 IDE、系统托盘与通知。
+              站外链接交给系统默认浏览器。
+            </p>
+          </section>
+        </main>
+      </div>
     </div>
 
     <script type="module" src="settings.js"></script>

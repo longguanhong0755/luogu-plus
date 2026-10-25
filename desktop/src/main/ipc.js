@@ -1,6 +1,12 @@
 /* 所有 IPC 的登记处（主进程 handler + preload 暴露 + 本文件三处同步维护）。 */
 const { app, ipcMain, dialog, clipboard } = require("electron");
-const { SECTIONS } = require("./views");
+const { LIBRARY_IDS, resolveRail } = require("./sections");
+
+function publicWallpaper(wallpaper) {
+  const out = Object.assign({}, wallpaper);
+  out.items = [];
+  return out;
+}
 
 function state(ctx) {
   const cfg = ctx.cfg.get();
@@ -9,7 +15,8 @@ function state(ctx) {
     appearance: cfg.appearance,
     general: cfg.general,
     notify: cfg.notify,
-    theme: Object.assign({}, ctx.theme, { wallpaper: ctx.wallpaper }),
+    rail: resolveRail(cfg),
+    theme: Object.assign({}, ctx.theme, { wallpaper: publicWallpaper(ctx.wallpaper) }),
     user: ctx.luogu.user,
     home: ctx.luogu.home,
     page: ctx.views.currentInfo(),
@@ -27,10 +34,14 @@ function broadcastState(ctx) {
 const ACTIONS = [
   { type: "action", id: "home", label: "主页" },
   { type: "action", id: "problems", label: "题库" },
+  { type: "action", id: "class", label: "课程" },
   { type: "action", id: "training", label: "训练" },
   { type: "action", id: "contest", label: "比赛" },
-  { type: "action", id: "discuss", label: "讨论" },
   { type: "action", id: "record", label: "记录" },
+  { type: "action", id: "discuss", label: "讨论" },
+  { type: "action", id: "article", label: "文章" },
+  { type: "action", id: "chat", label: "聊天" },
+  { type: "action", id: "notification", label: "通知" },
   { type: "action", id: "checkin", label: "今日签到" },
   { type: "action", id: "login", label: "登录洛谷" },
   { type: "action", id: "settings", label: "设置" },
@@ -39,14 +50,14 @@ const ACTIONS = [
 function palette(query) {
   const q = String(query || "").trim();
   const out = [];
-  if (/^[A-Za-z]{1,4}\d+[A-Za-z0-9]*$/.test(q)) {
-    const pid = q.toUpperCase();
-    out.push({ type: "problem", pid, label: "打开题目 " + pid });
+  const pid = q.match(/^([A-Za-z]{1,4}\d+[A-Za-z0-9]*)/);
+  if (pid) {
+    out.push({ type: "problem", pid: pid[1].toUpperCase(), label: "打开题目 " + pid[1].toUpperCase() });
   }
   for (const action of ACTIONS) {
-    if (!q || action.label.includes(q)) out.push(action);
+    if (!q || action.label.includes(q) || action.id.includes(q.toLowerCase())) out.push(action);
   }
-  return out.slice(0, 8);
+  return out.slice(0, 10);
 }
 
 function registerIpc(ctx) {
@@ -55,7 +66,20 @@ function registerIpc(ctx) {
   ipcMain.handle("app:setAppearance", async (_event, patch) => {
     const appearance = ctx.cfg.setAppearance(patch);
     await ctx.refreshAppearance();
+    ctx.scheduleWallpaperRotation();
     return { appearance, state: state(ctx) };
+  });
+
+  ipcMain.handle("app:setRail", (_event, patch) => {
+    const rail = ctx.cfg.setRail(patch);
+    broadcastState(ctx);
+    return rail;
+  });
+
+  ipcMain.handle("app:resetRail", () => {
+    const rail = ctx.cfg.resetRail();
+    broadcastState(ctx);
+    return rail;
   });
 
   ipcMain.handle("app:setGeneral", (_event, patch) => {
@@ -75,11 +99,55 @@ function registerIpc(ctx) {
     const result = await dialog.showOpenDialog(ctx.win, {
       title: "选择壁纸",
       properties: ["openFile"],
-      filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "bmp"] }],
+      filters: [
+        { name: "图片与视频", extensions: ["jpg", "jpeg", "png", "webp", "bmp", "gif", "mp4", "webm", "ogv"] },
+      ],
     });
     if (result.canceled || !result.filePaths[0]) return state(ctx);
-    ctx.cfg.setAppearance({ wallpaper: "custom", customWallpaper: result.filePaths[0] });
+    ctx.cfg.setAppearance({ wallpaper: "custom", wallpaperFile: result.filePaths[0], wallpaperIndex: 0 });
     await ctx.refreshAppearance();
+    return state(ctx);
+  });
+
+  ipcMain.handle("app:pickWallpaperDir", async () => {
+    const result = await dialog.showOpenDialog(ctx.win, {
+      title: "选择壁纸文件夹",
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return state(ctx);
+    ctx.cfg.setAppearance({ wallpaper: "folder", wallpaperDir: result.filePaths[0], wallpaperIndex: 0 });
+    await ctx.refreshAppearance();
+    ctx.scheduleWallpaperRotation();
+    return state(ctx);
+  });
+
+  ipcMain.handle("app:pickWeRoot", async () => {
+    const result = await dialog.showOpenDialog(ctx.win, {
+      title: "选择 Wallpaper Engine 目录（创意工坊 431960 或 Steam 库）",
+      properties: ["openDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return state(ctx);
+    const root = result.filePaths[0];
+    const items = await Promise.resolve(ctx.scanWe(root));
+    const first = items.find((item) => item.playable) || items[0];
+    ctx.cfg.setAppearance({
+      wallpaper: "we",
+      weRoot: root,
+      weId: first ? first.id : "",
+      wallpaperIndex: 0,
+    });
+    await ctx.refreshAppearance();
+    ctx.scheduleWallpaperRotation();
+    return { state: state(ctx), items };
+  });
+
+  ipcMain.handle("app:scanWe", (_event, root) => {
+    const dir = String(root || ctx.cfg.get().appearance.weRoot || "");
+    return { root: dir, items: dir ? ctx.scanWe(dir) : [] };
+  });
+
+  ipcMain.handle("app:nextWallpaper", async () => {
+    await ctx.nextWallpaper();
     return state(ctx);
   });
 
@@ -87,8 +155,37 @@ function registerIpc(ctx) {
     if (target === "home") ctx.views.showHome();
     else if (target === "login") ctx.views.openLogin();
     else if (target === "profile") ctx.views.openProfile(ctx.luogu.user.uid);
-    else if (SECTIONS[target]) ctx.views.openSection(target);
+    else if (target === "settings") ctx.openSettings();
+    else if (LIBRARY_IDS.has(target) || target === "class" || target === "chat" || target === "notification") {
+      ctx.views.openSection(target);
+    }
     ctx.emitPage();
+  });
+
+  ipcMain.handle("app:library", async (_event, payload) => {
+    const kind = String((payload && payload.kind) || "");
+    if (!LIBRARY_IDS.has(kind)) return { items: [], error: "未知列表" };
+    return ctx.luogu.fetchLibrary(kind, {
+      page: payload.page,
+      keyword: payload.keyword,
+      difficulty: payload.difficulty,
+      force: payload.force,
+    });
+  });
+
+  ipcMain.handle("app:openDetail", (_event, payload) => {
+    const url = String((payload && payload.url) || "");
+    const title = String((payload && payload.title) || "");
+    const key = payload && payload.key ? String(payload.key) : "";
+    ctx.views.openDetail(url, title, key);
+  });
+
+  ipcMain.handle("app:openCustom", (_event, payload) => {
+    ctx.views.openCustom(payload && payload.url, payload && payload.label);
+  });
+
+  ipcMain.handle("app:openWebFallback", (_event, kind) => {
+    ctx.views.openWebFallback(String(kind || ""));
   });
 
   ipcMain.handle("app:openProblem", (_event, pid) => {
@@ -106,8 +203,8 @@ function registerIpc(ctx) {
     const pid = String((payload && payload.pid) || "").toUpperCase();
     const action = payload && payload.action;
     if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) return;
-    if (action === "records") ctx.views.navigate(`/record/list?pid=${encodeURIComponent(pid)}`);
-    else if (action === "solutions") ctx.views.navigate(`/problem/solution/${encodeURIComponent(pid)}`);
+    if (action === "records") ctx.views.openDetail(`/record/list?pid=${encodeURIComponent(pid)}`, "提交记录");
+    else if (action === "solutions") ctx.views.openDetail(`/problem/solution/${encodeURIComponent(pid)}`, "题解");
     else if (action === "submit") ctx.views.navigate(`/problem/${encodeURIComponent(pid)}#submit`);
   });
 

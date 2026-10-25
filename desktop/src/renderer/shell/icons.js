@@ -14,6 +14,18 @@ export const ICONS = {
     '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 5H5v2a3 3 0 0 0 3 3"/><path d="M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v4"/><path d="M8 20h8"/>'
   ),
   discuss: S('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
+  class: S(
+    '<path d="M3 9.5 12 4l9 5.5-9 5.5z"/><path d="M7 11.6V17c0 1.5 2.2 2.7 5 2.7s5-1.2 5-2.7v-5.4"/><path d="M21 9.5V15"/>'
+  ),
+  article: S(
+    '<path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4"/><path d="M9 12h6M9 15.5h6M9 8.5h2"/>'
+  ),
+  chat: S('<path d="M4 5h16v10H9l-5 4z"/><circle cx="9" cy="10" r="1"/><circle cx="13" cy="10" r="1"/><circle cx="17" cy="10" r="1"/>'),
+  bell: S(
+    '<path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9"/><path d="M10 18.5a2.2 2.2 0 0 0 4 0"/>'
+  ),
+  link: S('<path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7L11.6 6"/><path d="M14 10.5a4 4 0 0 0-5.7 0L5.5 13.3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>'),
+  dot: S('<circle cx="12" cy="12" r="3.2"/>'),
   record: S(
     '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>'
   ),

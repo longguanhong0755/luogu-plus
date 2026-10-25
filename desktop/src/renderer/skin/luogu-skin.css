@@ -1,32 +1,65 @@
-/* 洛谷页面统一皮肤。
-   关键思路：新版前端（Lentille/Columba）用 --theme-* 变量组织配色。
-   我们不去逐个类覆盖，而是把这些变量改写成应用的设计令牌；站点自带的
-   深色主题由 nativeTheme.themeSource 驱动（prefers-color-scheme）。
-   结构性改动只有三处：隐藏站点顶栏、站内左侧栏、页脚。 */
+/* 洛谷页面统一皮肤（玻璃版）。
+   核心：页面里铺一层与窗口同坐标、同运动相位的壁纸复刻；所有承载面改成
+   半透明卡片，让壁纸真正透过内容，而不是只在外壳两侧露一点。
+   站点的语义色（难度、AC/WA、标签）尽量保留。 */
+
+:root {
+  color-scheme: var(--lg-color-scheme, dark);
+}
+
+html {
+  background: var(--lg-bg) !important;
+}
+
+body {
+  background: transparent !important;
+  color: var(--lg-text) !important;
+}
+
+/* 壁纸 + 主题色纱层。层尺寸=整个窗口，负偏移=视图在窗口中的位置，
+   因此与外壳壁纸逐像素对齐；transform 与外壳共用同一组变量。 */
+body::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  left: var(--lg-wall-left, 0);
+  top: var(--lg-wall-top, 0);
+  width: var(--lg-wall-w, 100vw);
+  height: var(--lg-wall-h, 100vh);
+  background-color: var(--lg-bg);
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 69%), transparent),
+      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 69%), transparent)
+    ),
+    var(--lg-wall-image, none);
+  background-size: 100% 100%, cover;
+  background-position: center, center;
+  background-repeat: no-repeat;
+  transform: translate3d(var(--lg-pan-x, 0px), var(--lg-pan-y, 0px), 0) scale(var(--lg-zoom, 1));
+  transform-origin: calc(var(--lg-wall-w, 100vw) / 2) calc(var(--lg-wall-h, 100vh) / 2);
+  pointer-events: none;
+}
 
 html,
 body,
 #app,
 #app.lfe-body,
-#app .theme-page {
-  --theme-body-back: var(--lg-bg) !important;
+#app .theme-page,
+#app .main-container {
+  --theme-body-back: transparent !important;
   --theme-body-color: var(--lg-text) !important;
   --theme-body-image: none !important;
   --theme-body-mid-mask: transparent !important;
   --theme-body-color-filter: none !important;
-  --theme-card-background: var(--lg-surface) !important;
-  --theme-card-backdrop-filter: none !important;
-  --theme-navi-back: var(--lg-title) !important;
+  --theme-card-background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 77%), transparent) !important;
+  --theme-card-backdrop-filter: blur(var(--lg-blur, 11px)) saturate(1.18) !important;
+  --theme-navi-back: color-mix(in srgb, var(--lg-title) var(--lg-panel-alpha, 73%), transparent) !important;
   --theme-navi-fore: var(--lg-text) !important;
   --theme-navi-logo: var(--lg-accent) !important;
-  --theme-dropdown: var(--lg-surface) !important;
-  --theme-tooltip: var(--lg-surface) !important;
-}
-
-html,
-body {
-  background: var(--lg-bg) !important;
-  color: var(--lg-text) !important;
+  --theme-dropdown: color-mix(in srgb, var(--lg-surface) 94%, transparent) !important;
+  --theme-tooltip: color-mix(in srgb, var(--lg-surface) 94%, transparent) !important;
+  background: transparent !important;
 }
 
 body,
@@ -44,7 +77,7 @@ body {
   line-height: 1.65;
 }
 
-/* ---- 站点外壳交给应用：顶栏、站内左栏、页脚不再显示 ---- */
+/* ---- 站点外壳交给应用 ---- */
 #app > .top-bar,
 #app > nav.sidebar,
 #app .theme-page > footer {
@@ -58,21 +91,16 @@ body {
   max-width: none !important;
 }
 
-#app .theme-page {
-  background: transparent !important;
-}
-
 #app .theme-page::before,
 #app .theme-page::after {
   background-image: none !important;
 }
 
-/* ---- 内容排版 ---- */
+/* ---- 排版 ---- */
 #app .theme-page {
   color: var(--lg-text) !important;
 }
 
-/* 站点标题用的是硬编码深色，深色主题下必须显式提亮 */
 #app .lfe-h1,
 #app .lfe-h2,
 #app .lfe-h3,
@@ -88,62 +116,190 @@ body {
   color: var(--lg-text) !important;
 }
 
-/* 卡片之间给一条发丝线，深色下分层更清楚 */
-#app .theme-page .l-card {
-  border: 1px solid var(--lg-border) !important;
+#app a {
+  color: var(--lg-accent);
 }
-
-a {
-  color: var(--lg-accent) !important;
-}
-
-a:not([class*="btn"]):not([class*="button"]):hover {
-  filter: brightness(1.08);
+#app a:hover {
+  color: color-mix(in srgb, var(--lg-accent) 78%, var(--lg-text));
 }
 
 ::selection {
-  background: var(--lg-accent-soft);
+  background: color-mix(in srgb, var(--lg-accent) 32%, transparent);
+}
+
+/* ---- 承载面：卡片、面板、侧栏、列表、表格 ---- */
+#app .l-card,
+#app .lfe-card,
+#app .card,
+#app .lfe-panel,
+#app .panel,
+#app .box,
+#app .lfe-box,
+#app .side,
+#app .lfe-side,
+#app .lfe-table,
+#app .am-table,
+#app .table,
+#app .lfe-list,
+#app .list,
+#app .comment,
+#app .am-comment,
+#app .lfe-comment,
+#app .markdown,
+#app .lfe-markdown,
+#app .article-content,
+#app .problem-content,
+#app .lfe-problem-content {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 77%), transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: 9px !important;
+  -webkit-backdrop-filter: blur(var(--lg-blur, 11px)) saturate(1.18);
+  backdrop-filter: blur(var(--lg-blur, 11px)) saturate(1.18);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+}
+
+#app .l-card {
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+
+#app .lfe-card-header,
+#app .card-header,
+#app .lfe-card-head {
+  background: color-mix(in srgb, var(--lg-text) 4%, transparent) !important;
+  border-bottom: 1px solid var(--lg-border) !important;
+  color: var(--lg-text) !important;
+}
+
+/* 表格 */
+#app table {
+  background: transparent !important;
+  border-color: var(--lg-border) !important;
+}
+#app thead,
+#app thead tr,
+#app th {
+  background: color-mix(in srgb, var(--lg-text) 6%, transparent) !important;
+  color: var(--lg-text-2) !important;
+  border-color: var(--lg-border) !important;
+}
+#app tbody,
+#app tr,
+#app td {
+  background: transparent !important;
+  color: var(--lg-text) !important;
+  border-color: var(--lg-border) !important;
+}
+#app tbody tr:hover {
+  background: color-mix(in srgb, var(--lg-text) 4%, transparent) !important;
+}
+
+/* 下拉、弹层、提示 */
+#app .dropdown,
+#app .dropdown-menu,
+#app .lfe-dropdown,
+#app .popup,
+#app .lfe-popup,
+#app .modal,
+#app .lfe-modal,
+#app .am-popover,
+#app .am-dropdown,
+#app .tooltip,
+#app .lfe-tooltip,
+#app [role="dialog"],
+#app [role="menu"] {
+  background: color-mix(in srgb, var(--lg-surface) 95%, transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.32) !important;
+  -webkit-backdrop-filter: blur(calc(var(--lg-blur, 11px) + 6px));
+  backdrop-filter: blur(calc(var(--lg-blur, 11px) + 6px));
+}
+#app .dropdown-item:hover,
+#app .lfe-dropdown-item:hover,
+#app .am-dropdown-content > li:hover,
+#app [role="menuitem"]:hover {
+  background: color-mix(in srgb, var(--lg-accent) 16%, transparent) !important;
+  color: var(--lg-text) !important;
 }
 
 /* ---- 表单 ---- */
 input:not([type="checkbox"]):not([type="radio"]),
 textarea,
 select {
-  background: var(--lg-surface-2) !important;
+  background: color-mix(in srgb, var(--lg-surface-2) 86%, transparent) !important;
   color: var(--lg-text) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: 6px !important;
   box-shadow: none !important;
 }
-
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--lg-accent) !important;
+  outline: none !important;
+}
 input::placeholder,
 textarea::placeholder {
   color: var(--lg-text-3) !important;
 }
+button {
+  color: var(--lg-text);
+}
 
-/* ---- 代码块 ---- */
+/* ---- 代码 ---- */
 pre,
 pre code,
 .lfe-code,
 [class*="code-block"] {
-  background: var(--lg-surface-2) !important;
+  background: color-mix(in srgb, var(--lg-surface-2) 88%, transparent) !important;
   color: var(--lg-text) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: 8px !important;
 }
-
 code:not(pre code) {
-  background: var(--lg-surface-2) !important;
+  background: color-mix(in srgb, var(--lg-text) 8%, transparent) !important;
   color: var(--lg-text) !important;
   border-radius: 4px !important;
   padding: 1px 5px !important;
 }
+pre code {
+  border: 0 !important;
+  background: transparent !important;
+}
 
 blockquote {
   border-left: 2px solid var(--lg-accent) !important;
-  background: var(--lg-accent-soft) !important;
+  background: color-mix(in srgb, var(--lg-accent) 10%, transparent) !important;
   color: var(--lg-text-2) !important;
   margin-left: 0 !important;
+}
+
+/* ---- 分页 ---- */
+#app .pagination,
+#app .lfe-pagination {
+  background: transparent !important;
+}
+#app .pagination > *,
+#app .lfe-pagination > * {
+  background: color-mix(in srgb, var(--lg-surface) 70%, transparent) !important;
+  color: var(--lg-text-2) !important;
+  border: 1px solid var(--lg-border) !important;
+}
+#app .pagination > .active,
+#app .lfe-pagination > .active {
+  background: var(--lg-accent-fill, var(--lg-accent)) !important;
+  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
+  color: var(--lg-on-accent, #fff) !important;
+}
+
+/* 站点主按钮：统一到可读的强调色填充 */
+#app .lfe-button.primary,
+#app .am-btn-primary,
+#app .btn-primary {
+  background: var(--lg-accent-fill, var(--lg-accent)) !important;
+  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
+  color: var(--lg-on-accent, #fff) !important;
 }
 
 /* ---- 滚动条与焦点 ---- */
@@ -165,3 +321,186 @@ blockquote {
   outline: 1px solid var(--lg-accent) !important;
   outline-offset: 1px;
 }
+
+/* ================= 深色审计修补 ================= */
+
+/* 登录页 / 用户页使用自己的容器底色，必须显式透明 */
+#app .main-wrapper,
+#app .lcolor-bg-background,
+#app .lcolor-bg-background.main,
+#app .bg,
+#app .background,
+#app .page-background {
+  background: transparent !important;
+}
+#app .main-wrapper::before,
+#app .main-wrapper::after,
+#app .lcolor-bg-background::before,
+#app .lcolor-bg-background::after {
+  background-image: none !important;
+}
+#app footer,
+#app .footer {
+  background: transparent !important;
+  color: var(--lg-text-3) !important;
+}
+
+/* 用户页头部白色横条 */
+#app .user-header,
+#app .user-header-bottom,
+#app .profile-header,
+#app .user-header .lcolor-bg-background {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 77%), transparent) !important;
+  border-color: var(--lg-border) !important;
+  color: var(--lg-text) !important;
+}
+#app .lcolor-bg-background {
+  color: var(--lg-text) !important;
+}
+
+/* 统计条：站点在深色下仍用 #333 的硬编码色 */
+#app .stat-text,
+#app .stat-text.name,
+#app .stat-name {
+  color: var(--lg-text-2) !important;
+}
+#app .stat-text.value,
+#app .stat-value {
+  color: var(--lg-text) !important;
+}
+
+/* 文章 / 讨论列表里的深色标题与摘要 */
+#app .l-card .row.title a,
+#app .l-card .title a,
+#app .l-card .row.title,
+#app .article-list a,
+#app .article-item a,
+#app .lfe-card a[href*="/article/"],
+#app .lfe-card .name,
+#app .lfe-card .title {
+  color: var(--lg-text) !important;
+}
+#app .l-card .content,
+#app .article-list .content,
+#app .article-item .content,
+#app .lfe-card .content,
+#app .lfe-card .excerpt {
+  color: var(--lg-text-2) !important;
+}
+#app .l-card .row.info > span {
+  background: transparent !important;
+  color: var(--lg-text-2) !important;
+  border-color: var(--lg-border) !important;
+}
+#app .colored-link-selector .name,
+#app .section-item .name,
+#app .l-card.collections .name,
+#app .content-right .name,
+#app .row-space-between.top .name {
+  color: var(--lg-text-2) !important;
+}
+
+/* 搜索/筛选控件（文章广场的 refined-input 是 div，不是 input） */
+#app .refined-input,
+#app .refined-input.text,
+#app .lfe-search,
+#app .search-input {
+  background: color-mix(in srgb, var(--lg-surface-2) 88%, transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: 7px !important;
+}
+#app .refined-input input,
+#app .refined-input textarea {
+  color: var(--lg-text) !important;
+}
+
+/* 中性按钮；保留站点的主色/语义按钮 */
+#app .lfe-button:not([class*="primary"]):not([class*="danger"]):not([class*="success"]):not([class*="warning"]):not([class*="blue"]):not([class*="green"]):not([class*="red"]),
+#app .btn:not([class*="primary"]):not([class*="danger"]):not([class*="success"]):not([class*="warning"]):not([class*="blue"]):not([class*="green"]):not([class*="red"]),
+#app .am-btn:not([class*="primary"]):not([class*="danger"]):not([class*="success"]):not([class*="warning"]) {
+  background: color-mix(in srgb, var(--lg-surface) 74%, transparent) !important;
+  color: var(--lg-text) !important;
+  border-color: var(--lg-border) !important;
+}
+
+/* 中性标签；难度/语义色标签不动 */
+#app .lfe-tag:not([class*="difficulty"]):not([class*="color"]):not([class*="level"]),
+#app .tag:not([class*="difficulty"]):not([class*="color"]),
+#app .badge:not([class*="difficulty"]):not([class*="color"]) {
+  background: color-mix(in srgb, var(--lg-text) 8%, transparent) !important;
+  color: var(--lg-text-2) !important;
+  border-color: var(--lg-border) !important;
+}
+
+/* 用户页热力图：浅灰格子改成语义玻璃 */
+#app .heat-map-cell {
+  background: color-mix(in srgb, var(--lg-text) 7%, transparent) !important;
+}
+#app .heat-map-cell.level-1,
+#app .heat-map-cell[class*="level-1"] {
+  background: color-mix(in srgb, var(--lg-accent) 26%, transparent) !important;
+}
+#app .heat-map-cell.level-2,
+#app .heat-map-cell[class*="level-2"] {
+  background: color-mix(in srgb, var(--lg-accent) 46%, transparent) !important;
+}
+#app .heat-map-cell.level-3,
+#app .heat-map-cell[class*="level-3"] {
+  background: color-mix(in srgb, var(--lg-accent) 66%, transparent) !important;
+}
+#app .heat-map-cell.level-4,
+#app .heat-map-cell[class*="level-4"] {
+  background: var(--lg-accent) !important;
+}
+
+/* 代码高亮：站点主题在深色下仍是浅色 token */
+@media (prefers-color-scheme: dark) {
+  #app .token.comment,
+  #app .token.prolog,
+  #app .token.doctype,
+  #app .token.cdata {
+    color: var(--lg-text-3) !important;
+  }
+  #app .token.punctuation {
+    color: var(--lg-text-2) !important;
+  }
+  #app .token.property,
+  #app .token.tag,
+  #app .token.boolean,
+  #app .token.number,
+  #app .token.constant,
+  #app .token.symbol {
+    color: var(--lg-orange) !important;
+  }
+  #app .token.selector,
+  #app .token.attr-name,
+  #app .token.string,
+  #app .token.char,
+  #app .token.builtin,
+  #app .token.inserted {
+    color: var(--lg-green) !important;
+  }
+  #app .token.operator,
+  #app .token.entity,
+  #app .token.url,
+  #app .token.variable {
+    color: var(--lg-text) !important;
+  }
+  #app .token.atrule,
+  #app .token.attr-value,
+  #app .token.function,
+  #app .token.class-name {
+    color: var(--lg-accent) !important;
+  }
+  #app .token.keyword,
+  #app .token.directive,
+  #app .token.directive.keyword {
+    color: #c792ea !important;
+  }
+  #app .token.regex,
+  #app .token.important {
+    color: var(--lg-orange) !important;
+  }
+}
+

@@ -1,91 +1,110 @@
-/* 外壳骨架：标题栏标题、左侧导航、浏览工具条。只有状态更新，不做业务。 */
+/* 外壳骨架：标题栏、左侧导航、浏览工具条。
+   导航完全由主进程下发的 rail 配置驱动，设置里的显隐/排序/自定义链接即时生效。 */
 import { icon } from "./icons.js";
 
-const NAV = [
-  { id: "home", label: "主页", icon: "home" },
-  { id: "problems", label: "题库", icon: "library" },
-  { id: "training", label: "训练", icon: "training" },
-  { id: "contest", label: "比赛", icon: "contest" },
-  { id: "discuss", label: "讨论", icon: "discuss" },
-  { id: "record", label: "记录", icon: "record" },
-];
-
 export function initChrome(actions) {
+  const railTop = document.getElementById("rail-top");
+  const railBottom = document.getElementById("rail-bottom");
   const rail = document.getElementById("rail");
   const titleEl = document.getElementById("tb-title");
   const toolbar = document.getElementById("toolbar");
   const homeEl = document.getElementById("home");
+  const libraryEl = document.getElementById("library");
   const browseEl = document.getElementById("browse");
+  const avatar = document.getElementById("tb-avatar");
+  const jumpForm = document.getElementById("rail-jump");
+  const jumpInput = document.getElementById("rail-jump-input");
 
-  const avatar = document.createElement("button");
-  avatar.className = "rail-avatar";
-  avatar.title = "个人主页";
-  avatar.type = "button";
-  avatar.textContent = "洛";
-  avatar.addEventListener("click", () => actions.profile());
-  rail.appendChild(avatar);
+  let data = null;
+  let railSignature = "";
+  let buttons = new Map();
 
-  const buttons = new Map();
-  for (const item of NAV) {
+  function navButton(item) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "rail-btn";
     btn.title = item.label;
-    btn.innerHTML = icon(item.icon);
-    btn.addEventListener("click", () => actions.nav(item.id));
-    rail.appendChild(btn);
-    buttons.set(item.id, btn);
+    btn.setAttribute("aria-label", item.label);
+    btn.dataset.id = item.id;
+    btn.innerHTML = icon(item.icon) || icon("dot");
+    btn.addEventListener("click", () => {
+      if (item.kind === "custom") actions.custom(item.url, item.label);
+      else if (item.kind === "action") actions.settings();
+      else actions.nav(item.id);
+    });
+    return btn;
   }
 
-  const spacer = document.createElement("div");
-  spacer.className = "rail-spacer";
-  rail.appendChild(spacer);
+  function renderRail(config) {
+    const signature = JSON.stringify([config.top, config.bottom]);
+    if (signature === railSignature) return;
+    railSignature = signature;
+    railTop.textContent = "";
+    railBottom.textContent = "";
+    buttons = new Map();
+    for (const item of config.top) {
+      const btn = navButton(item);
+      railTop.appendChild(btn);
+      buttons.set(item.id, btn);
+    }
+    for (const item of config.bottom) {
+      const btn = navButton(item);
+      railBottom.appendChild(btn);
+      buttons.set(item.id, btn);
+    }
+    rail.classList.toggle("empty-top", !config.top.length);
+  }
 
-  const settings = document.createElement("button");
-  settings.type = "button";
-  settings.className = "rail-btn";
-  settings.title = "设置";
-  settings.innerHTML = icon("settings");
-  settings.addEventListener("click", () => actions.settings());
-  rail.appendChild(settings);
+  function updateAvatar(user) {
+    const url = user && user.avatar ? String(user.avatar) : "";
+    if (url) {
+      if (avatar.dataset.url !== url) {
+        avatar.dataset.url = url;
+        avatar.textContent = "";
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = (user && user.name) || "头像";
+        avatar.appendChild(img);
+      }
+      avatar.classList.toggle("guest", false);
+    } else {
+      if (avatar.dataset.url) {
+        avatar.dataset.url = "";
+        avatar.textContent = "";
+      }
+      if (!avatar.textContent) avatar.textContent = "洛";
+      avatar.classList.toggle("guest", !(user && user.loggedIn));
+    }
+  }
 
-  let data = null;
+  function activeId(page) {
+    if (page.home) return "home";
+    if (page.library) return page.library;
+    if (page.section) return page.section;
+    if (page.kind === "problem" || page.kind === "detail") return "problems";
+    return "";
+  }
 
   function update(next) {
     data = next;
+    renderRail(next.rail);
     const page = next.page;
+    const active = activeId(page);
     titleEl.textContent = page.home ? "主页" : page.title || "";
+    if (page.library) titleEl.textContent = (next.rail.all.find((item) => item.id === page.library) || {}).label || page.title;
 
     homeEl.hidden = !page.home;
-    browseEl.hidden = page.home;
+    libraryEl.hidden = !page.library;
+    browseEl.hidden = page.home || !!page.library;
 
     for (const [id, btn] of buttons) {
-      btn.classList.toggle("active", page.home ? id === "home" : id === activeSection(page));
+      btn.classList.toggle("active", id === active);
     }
-
     avatar.classList.toggle("active", page.kind === "profile");
-    if (next.user && next.user.avatar) {
-      if (avatar.dataset.url !== next.user.avatar) {
-        avatar.dataset.url = next.user.avatar;
-        avatar.textContent = "";
-        const img = document.createElement("img");
-        img.src = next.user.avatar;
-        img.alt = next.user.name || "头像";
-        avatar.appendChild(img);
-      }
-    } else if (avatar.dataset.url) {
-      avatar.dataset.url = "";
-      avatar.textContent = "洛";
-    }
+    updateAvatar(next.user);
 
-    if (!page.home) renderToolbar(page);
-  }
-
-  function activeSection(page) {
-    if (page.kind === "section") return String(page.key).replace("section:", "");
-    if (page.kind === "problem") return "problems";
-    if (page.kind === "login") return "home";
-    return "";
+    if (!page.home && !page.library) renderToolbar(page);
+    else toolbar.textContent = "";
   }
 
   function renderToolbar(page) {
@@ -110,13 +129,13 @@ export function initChrome(actions) {
 
     if (page.isProblem) {
       toolbar.appendChild(textButton(icon("list") + "提交记录", () => actions.problem({ action: "records", pid: page.pid })));
-      toolbar.appendChild(textButton(icon("discuss") + "题解", () => actions.problem({ action: "solutions", pid: page.pid })));
+      toolbar.appendChild(textButton(icon("article") + "题解", () => actions.problem({ action: "solutions", pid: page.pid })));
       const ide = textButton(icon("code") + "IDE", () => actions.ide(!page.ide));
       if (page.ide) ide.classList.add("primary");
       toolbar.appendChild(ide);
     }
 
-    toolbar.appendChild(textButton(icon("external") + "浏览器", () => actions.view("external")));
+    toolbar.appendChild(iconButton("external", "在浏览器打开", () => actions.view("external")));
   }
 
   function iconButton(name, label, onClick) {
@@ -139,5 +158,34 @@ export function initChrome(actions) {
     return btn;
   }
 
-  return { update, get data() { return data; } };
+  jumpForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const raw = jumpInput.value.trim();
+    const match = raw.match(/^([A-Za-z]{1,4}\d+[A-Za-z0-9]*)$/);
+    if (!match) {
+      jumpForm.classList.add("bad");
+      setTimeout(() => jumpForm.classList.remove("bad"), 900);
+      jumpInput.select();
+      return;
+    }
+    jumpInput.value = "";
+    jumpInput.blur();
+    actions.openProblem(match[1].toUpperCase());
+  });
+
+  jumpInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      jumpInput.value = "";
+      jumpInput.blur();
+    }
+  });
+
+  avatar.addEventListener("click", () => actions.profile());
+
+  return {
+    update,
+    get data() {
+      return data;
+    },
+  };
 }

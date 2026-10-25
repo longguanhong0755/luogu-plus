@@ -1,10 +1,19 @@
-/* 壁纸解析：跟随桌面 / 内置渐变 / 每日一图 / 自定义图片。
-   桌面壁纸从注册表读原图路径；每日一图来自 Bing，按天缓存到 userData。 */
+/* 壁纸解析：桌面 / 内置 / 每日一图 / 单张 / 文件夹轮换 / Wallpaper Engine。
+   解析结果同时服务两个渲染层：
+   - 外壳：真实 wallpaper 层（图片或视频）；
+   - 洛谷页面：同坐标的静态复刻层（backdrop），保证玻璃面板后面透出同一张图。
+   Wallpaper Engine 的 scene/web 壁纸无法在本应用内运行，退化为其预览图并标注。 */
 const fs = require("node:fs");
 const path = require("node:path");
 const { app, net } = require("electron");
 const { execFileSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
+const { hexToRgba } = require("./theme");
+
+const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".avif"]);
+const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv"]);
+
+const weCache = new Map();
 
 function desktopWallpaperPath() {
   if (process.platform !== "win32") return "";
@@ -20,6 +29,18 @@ function desktopWallpaperPath() {
   }
 }
 
+function extOf(file) {
+  return path.extname(String(file || "")).toLowerCase();
+}
+
+function isImage(file) {
+  return IMAGE_EXT.has(extOf(file));
+}
+
+function isVideo(file) {
+  return VIDEO_EXT.has(extOf(file));
+}
+
 function toUrl(file) {
   try {
     if (file && fs.existsSync(file)) return pathToFileURL(file).href;
@@ -27,6 +48,10 @@ function toUrl(file) {
     /* ignore */
   }
   return "";
+}
+
+function cssUrl(url) {
+  return url ? `url("${String(url).replace(/"/g, '\\"')}")` : "";
 }
 
 function todayKey() {
@@ -55,18 +80,258 @@ async function dailyImage() {
   }
 }
 
-async function resolve(cfg) {
-  const kind = cfg.appearance.wallpaper;
-  if (kind === "desktop") {
-    return { kind, url: toUrl(desktopWallpaperPath()) };
-  }
-  if (kind === "custom") {
-    return { kind, url: toUrl(cfg.appearance.customWallpaper) };
-  }
-  if (kind === "daily") {
-    return { kind, url: await dailyImage() };
-  }
-  return { kind: "builtin", url: "" };
+/* ---------- 文件夹轮换 ---------- */
+
+function listFolder(dir) {
+  const out = [];
+  if (!dir) return out;
+  const walk = (current, depth) => {
+    if (depth > 3 || out.length >= 400) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (out.length >= 400) return;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        walk(full, depth + 1);
+      } else if (isImage(entry.name) || isVideo(entry.name)) {
+        out.push(full);
+      }
+    }
+  };
+  walk(dir, 0);
+  out.sort((a, b) => a.localeCompare(b, "zh-CN"));
+  return out;
 }
 
-module.exports = { resolve, desktopWallpaperPath };
+/* ---------- Wallpaper Engine ---------- */
+
+function readProject(dir) {
+  const projectFile = path.join(dir, "project.json");
+  let json;
+  try {
+    json = JSON.parse(fs.readFileSync(projectFile, "utf8"));
+  } catch {
+    return null;
+  }
+  const type = String(json.type || "").toLowerCase();
+  const mediaName = typeof json.file === "string" ? json.file : "";
+  const previewName = typeof json.preview === "string" ? json.preview : "";
+  const media = mediaName ? path.join(dir, mediaName) : "";
+  const preview = previewName ? path.join(dir, previewName) : "";
+  const mediaOk = !!media && fs.existsSync(media) && (isVideo(media) || isImage(media));
+  const previewOk = !!preview && fs.existsSync(preview) && isImage(preview);
+  const playable = mediaOk && (type === "video" || type === "image" || isImage(media));
+  let note = "";
+  if (!playable) {
+    if (type === "scene") note = "场景壁纸：以预览图呈现";
+    else if (type === "web") note = "网页壁纸：以预览图呈现";
+    else if (type === "application") note = "程序壁纸：以预览图呈现";
+    else note = "无可用视频/图片，以预览图呈现";
+  }
+  return {
+    id: path.basename(dir),
+    dir,
+    title: String(json.title || path.basename(dir)).slice(0, 80),
+    type: type || "unknown",
+    media,
+    preview,
+    playable,
+    note,
+    previewUrl: toUrl(previewOk ? preview : mediaOk && isImage(media) ? media : ""),
+  };
+}
+
+function findWeDirs(root) {
+  const dirs = [];
+  const queue = [{ dir: root, depth: 0 }];
+  let visited = 0;
+  while (queue.length && dirs.length < 200 && visited < 3000) {
+    const { dir, depth } = queue.shift();
+    visited++;
+    if (fs.existsSync(path.join(dir, "project.json"))) {
+      dirs.push(dir);
+      continue;
+    }
+    if (depth >= 5) continue;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      queue.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
+    }
+  }
+  return dirs;
+}
+
+function scanWe(root) {
+  if (!root) return [];
+  const key = path.resolve(root);
+  const cached = weCache.get(key);
+  if (cached && Date.now() - cached.at < 30000) return cached.items;
+  const candidates = [root];
+  if (path.basename(root) !== "431960") {
+    candidates.push(path.join(root, "steamapps", "workshop", "content", "431960"));
+    candidates.push(path.join(root, "workshop", "content", "431960"));
+    candidates.push(path.join(root, "content", "431960"));
+  }
+  const dirs = [];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) dirs.push(...findWeDirs(candidate));
+    if (dirs.length) break;
+  }
+  const items = dirs.map(readProject).filter(Boolean);
+  items.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+  weCache.set(key, { at: Date.now(), items });
+  return items;
+}
+
+/* ---------- 解析 ---------- */
+
+function builtinBackdrop(theme) {
+  const accent = (theme && theme.colors && theme.colors.accent) || "#5b8cff";
+  const bg = (theme && theme.colors && theme.colors.bg) || "#1e1e22";
+  return (
+    `radial-gradient(120% 90% at 76% 6%, ${hexToRgba(accent, 0.22)}, transparent 55%), ` +
+    `linear-gradient(160deg, ${hexToRgba(accent, 0.08)}, ${bg} 72%)`
+  );
+}
+
+function videoFallback(theme) {
+  const accent = (theme && theme.colors && theme.colors.accent) || "#5b8cff";
+  const bg = (theme && theme.colors && theme.colors.bg) || "#1e1e22";
+  return (
+    `radial-gradient(100% 80% at 30% 10%, ${hexToRgba(accent, 0.18)}, transparent 60%), ` +
+    `linear-gradient(145deg, ${hexToRgba(accent, 0.06)}, ${bg})`
+  );
+}
+
+function pickIndex(cfg, count) {
+  if (!count) return 0;
+  const index = Number(cfg.appearance.wallpaperIndex) || 0;
+  return ((index % count) + count) % count;
+}
+
+async function resolve(cfg, theme) {
+  const a = cfg.appearance;
+  const base = {
+    kind: a.wallpaper,
+    url: "",
+    video: false,
+    poster: "",
+    backdrop: builtinBackdrop(theme),
+    label: "",
+    count: 0,
+    items: [],
+    motion: !!a.wallpaperMotion,
+    zoom: !!a.wallpaperZoom,
+    fade: !!a.wallpaperFade,
+  };
+
+  if (a.wallpaper === "desktop") {
+    const file = desktopWallpaperPath();
+    const url = toUrl(file);
+    return Object.assign(base, {
+      url,
+      backdrop: url ? cssUrl(url) : builtinBackdrop(theme),
+      label: url ? "桌面壁纸" : "桌面壁纸不可用",
+      count: url ? 1 : 0,
+    });
+  }
+
+  if (a.wallpaper === "daily") {
+    const url = await dailyImage();
+    return Object.assign(base, {
+      url,
+      backdrop: url ? cssUrl(url) : builtinBackdrop(theme),
+      label: url ? "Bing 每日一图" : "每日一图暂不可用",
+      count: url ? 1 : 0,
+    });
+  }
+
+  if (a.wallpaper === "custom") {
+    const file = a.wallpaperFile;
+    const video = isVideo(file);
+    const url = toUrl(file);
+    return Object.assign(base, {
+      url,
+      video,
+      backdrop: video || !url ? videoFallback(theme) : cssUrl(url),
+      label: url ? path.basename(file) : "未选择图片",
+      count: url ? 1 : 0,
+    });
+  }
+
+  if (a.wallpaper === "folder") {
+    const files = listFolder(a.wallpaperDir);
+    const index = pickIndex(cfg, files.length);
+    const file = files[index] || "";
+    const video = isVideo(file);
+    const url = toUrl(file);
+    return Object.assign(base, {
+      url,
+      video,
+      backdrop: video || !url ? videoFallback(theme) : cssUrl(url),
+      label: url ? `${path.basename(file)} · ${index + 1}/${files.length}` : "文件夹为空",
+      count: files.length,
+      items: files.slice(0, 24).map((item) => ({ url: toUrl(item), title: path.basename(item), video: isVideo(item) })),
+    });
+  }
+
+  if (a.wallpaper === "we") {
+    const items = scanWe(a.weRoot);
+    let chosen = null;
+    if (a.weId) chosen = items.find((item) => item.id === a.weId) || null;
+    if (!chosen) chosen = items[pickIndex(cfg, items.length)] || null;
+    if (!chosen) {
+      return Object.assign(base, {
+        backdrop: builtinBackdrop(theme),
+        label: a.weRoot ? "没有找到 Wallpaper Engine 壁纸" : "未选择 Wallpaper Engine 目录",
+        items,
+      });
+    }
+    const url = toUrl(chosen.playable ? chosen.media : chosen.preview);
+    const video = chosen.playable && isVideo(chosen.media);
+    const poster = chosen.previewUrl;
+    return Object.assign(base, {
+      url,
+      video,
+      poster,
+      backdrop: video || !url ? poster ? cssUrl(poster) : videoFallback(theme) : cssUrl(url),
+      label: chosen.title + (chosen.note ? " · " + chosen.note : ""),
+      count: items.length,
+      items,
+    });
+  }
+
+  return base;
+}
+
+function count(cfg) {
+  const a = cfg.appearance;
+  if (a.wallpaper === "folder") return listFolder(a.wallpaperDir).length;
+  if (a.wallpaper === "we") return scanWe(a.weRoot).length;
+  return 1;
+}
+
+module.exports = {
+  resolve,
+  count,
+  scanWe,
+  listFolder,
+  desktopWallpaperPath,
+  isImage,
+  isVideo,
+  builtinBackdrop,
+  videoFallback,
+};

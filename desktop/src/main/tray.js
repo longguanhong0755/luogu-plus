@@ -18,6 +18,13 @@ function createTray(ctx) {
         },
       },
       {
+        label: "题库",
+        click: () => {
+          ctx.showWindow();
+          if (ctx.views) ctx.views.showLibrary("problems");
+        },
+      },
+      {
         label: "今日签到",
         click: async () => {
           ctx.showWindow();
@@ -27,6 +34,12 @@ function createTray(ctx) {
           } else {
             ctx.toast("签到", result.message || "签到没有成功。");
           }
+        },
+      },
+      {
+        label: "换一张壁纸",
+        click: () => {
+          ctx.nextWallpaper().catch(() => {});
         },
       },
       { type: "separator" },

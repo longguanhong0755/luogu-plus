@@ -46,6 +46,8 @@ const required = [
   "src/main/config.js",
   "src/main/theme.js",
   "src/main/views.js",
+  "src/main/sections.js",
+  "src/main/passkey-guard.js",
   "src/main/luogu.js",
   "src/main/tray.js",
   "src/main/notify.js",
@@ -56,6 +58,7 @@ const required = [
   "src/preload/settings.js",
   "src/renderer/shell/index.html",
   "src/renderer/shell/shell.js",
+  "src/renderer/shell/library.js",
   "src/renderer/shell/shell.css",
   "src/renderer/settings/index.html",
   "src/renderer/settings/settings.js",
@@ -114,7 +117,7 @@ for (const file of walk(path.join(ROOT, "src", "main"), []).filter((f) => f.ends
   for (const m of source.matchAll(/webContents\.send\("([^"]+)"/g)) mainSends.add(m[1]);
 }
 const preloadListeners = new Set();
-for (const file of ["src/preload/shell.js", "src/preload/settings.js"]) {
+for (const file of ["src/preload/shell.js", "src/preload/settings.js", "src/preload/page.js"]) {
   const source = read(file);
   for (const m of source.matchAll(/on\("([^"]+)"/g)) preloadListeners.add(m[1]);
 }
@@ -137,6 +140,57 @@ else ok("站外链接不在数据层处理");
 const viewsSource = read("src/main/views.js");
 if (/openExternal\(url\)/.test(viewsSource)) ok("站外链接交给系统浏览器");
 else fail("views.js 没有站外链接出口");
+
+/* 7. 产品关键约束（0.2.0） */
+const passkeySource = read("src/main/passkey-guard.js");
+if (/__lgPasskeyGuard/.test(passkeySource) && /allowUntil/.test(passkeySource) && /credentials\.get/.test(passkeySource)) {
+  ok("通行密钥守卫存在且需要显式点击");
+} else {
+  fail("通行密钥守卫不完整");
+}
+if (/addScriptToEvaluateOnNewDocument/.test(viewsSource) && /runImmediately/.test(viewsSource)) {
+  ok("守卫在主世界文档创建前注入");
+} else {
+  fail("views.js 没有主世界守卫注入");
+}
+if (/uid > 0/.test(luoguSource)) ok("登录态要求真实 uid（游客 _uid=0 不算登录）");
+else fail("登录态可能把游客误判为已登录");
+
+const sectionsSource = read("src/main/sections.js");
+if (/class: \{ label: "课程"/.test(sectionsSource) && /article: \{ label: "文章"/.test(sectionsSource)) {
+  ok("侧栏包含课程/文章等内置页面");
+} else {
+  fail("sections.js 缺少课程或文章板块");
+}
+if (/resolveRail/.test(sectionsSource) && /custom/.test(sectionsSource)) ok("侧栏支持排序/显隐/自定义");
+else fail("sections.js 缺少侧栏定制模型");
+
+const themeSource = read("src/main/theme.js");
+if (/accentFill/.test(themeSource) && /onAccent/.test(themeSource)) ok("强调色实心按钮有对比度令牌");
+else fail("theme.js 缺少 accentFill/onAccent");
+
+for (const [name, content, needle] of [
+  ["壁纸来源", configSource, /wallpaperInterval/],
+  ["文件夹轮换", configSource, /wallpaperDir/],
+  ["Wallpaper Engine", configSource, /weRoot/],
+]) {
+  if (needle.test(content)) ok(name + "配置存在");
+  else fail(name + "配置缺失");
+}
+
+const shellHtml = read("src/renderer/shell/index.html");
+if (/rail-jump-input/.test(shellHtml) && /id="library"/.test(shellHtml)) ok("外壳包含题号跳转与原生列表容器");
+else fail("外壳缺少题号跳转或列表容器");
+const settingsHtml = read("src/renderer/settings/index.html");
+if (/data-sec="wallpaper"/.test(settingsHtml) && /data-sec="rail"/.test(settingsHtml) && /id="wp-we-list"/.test(settingsHtml)) {
+  ok("设置包含壁纸与侧边栏分区");
+} else {
+  fail("设置缺少壁纸/侧边栏分区");
+}
+
+const designFile = path.join(ROOT, "..", "design.md");
+if (fs.existsSync(designFile) && fs.statSync(designFile).size > 6000) ok("design.md 存在且有实质内容");
+else fail("design.md 缺失或过短");
 
 console.log("");
 console.log(`check: ${checks} 项通过, ${failures} 项失败`);

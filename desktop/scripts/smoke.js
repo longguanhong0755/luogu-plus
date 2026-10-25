@@ -28,17 +28,21 @@ const result = spawnSync(electron, [".", "--smoke"], {
     LG_DEMO: process.env.LG_DEMO || "1",
   }),
   encoding: "utf8",
-  timeout: 60000,
+  timeout: Number(process.env.LG_SMOKE_TIMEOUT || 60000),
 });
 
 if (result.stdout) process.stdout.write(result.stdout);
 if (result.stderr) process.stderr.write(result.stderr);
 
+const shots = [...String(result.stdout || "").matchAll(/SMOKE_SHOT \S+ (.+)/g)].map((m) => m[1].trim());
+const badShots = shots.filter((file) => !fs.existsSync(file) || fs.statSync(file).size <= 5000);
 const ok =
   result.status === 0 &&
   String(result.stdout || "").includes("SMOKE_OK") &&
   fs.existsSync(out) &&
-  fs.statSync(out).size > 5000;
+  fs.statSync(out).size > 5000 &&
+  badShots.length === 0;
+if (badShots.length) console.error("empty/small screenshots: " + badShots.join(", "));
 
 if (ok) {
   console.log("smoke: PASS");

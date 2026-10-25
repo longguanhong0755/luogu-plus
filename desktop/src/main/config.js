@@ -5,13 +5,32 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
 
+const RAIL_ORDER = ["home", "problems", "class", "training", "contest", "record", "discuss", "article"];
+const RAIL_IDS = new Set(RAIL_ORDER);
+const WALLPAPERS = ["desktop", "builtin", "daily", "custom", "folder", "we"];
+
 const DEFAULTS = {
   appearance: {
     mode: "system", // light | dark | system
     material: 55, // 0 = 纯色不透明, 100 = 强玻璃
-    wallpaper: "desktop", // desktop | builtin | daily | custom
-    customWallpaper: "",
     accent: "luogu", // luogu | system | #rrggbb
+    wallpaper: "desktop", // desktop | builtin | daily | custom | folder | we
+    wallpaperFile: "",
+    wallpaperDir: "",
+    wallpaperInterval: 30, // 分钟，0 = 不轮换
+    wallpaperShuffle: true,
+    wallpaperMotion: true,
+    wallpaperZoom: true,
+    wallpaperFade: true,
+    wallpaperIndex: 0,
+    weRoot: "",
+    weId: "",
+    customWallpaper: "", // 旧版字段，读取时迁移到 wallpaperFile
+  },
+  rail: {
+    order: RAIL_ORDER.slice(),
+    hidden: [],
+    custom: [], // [{ id, label, url }]
   },
   general: {
     closeAction: "tray", // tray | quit
@@ -59,15 +78,60 @@ function clamp(value, lo, hi, fallback) {
   return Math.min(hi, Math.max(lo, n));
 }
 
+function sanitizeRail(rail) {
+  const order = [];
+  const seen = new Set();
+  for (const id of Array.isArray(rail.order) ? rail.order : []) {
+    if (RAIL_IDS.has(id) && !seen.has(id)) {
+      seen.add(id);
+      order.push(id);
+    }
+  }
+  for (const id of RAIL_ORDER) if (!seen.has(id)) order.push(id);
+  rail.order = order;
+  rail.hidden = Array.isArray(rail.hidden) ? [...new Set(rail.hidden.filter((id) => RAIL_IDS.has(id)))] : [];
+
+  const custom = [];
+  for (const item of Array.isArray(rail.custom) ? rail.custom : []) {
+    if (!isPlainObject(item)) continue;
+    const label = String(item.label || "").trim().slice(0, 24);
+    const url = String(item.url || "").trim();
+    if (!label || !/^https?:\/\//i.test(url)) continue;
+    if (custom.length >= 8) break;
+    const slug = String(item.id || "")
+      .replace(/^custom:/, "")
+      .replace(/[^a-z0-9-]/gi, "")
+      .slice(0, 32);
+    const id = "custom:" + (slug || "link" + (custom.length + 1));
+    if (custom.some((entry) => entry.id === id)) continue;
+    custom.push({ id, label, url });
+  }
+  rail.custom = custom;
+}
+
 function sanitize() {
   const a = data.appearance;
   if (!["light", "dark", "system"].includes(a.mode)) a.mode = "system";
   a.material = Math.round(clamp(a.material, 0, 100, 55));
-  if (!["desktop", "builtin", "daily", "custom"].includes(a.wallpaper)) a.wallpaper = "desktop";
-  if (typeof a.customWallpaper !== "string") a.customWallpaper = "";
+  if (!WALLPAPERS.includes(a.wallpaper)) a.wallpaper = "desktop";
+  if (typeof a.wallpaperFile !== "string") a.wallpaperFile = "";
+  if (!a.wallpaperFile && typeof a.customWallpaper === "string" && a.customWallpaper) a.wallpaperFile = a.customWallpaper;
+  a.customWallpaper = "";
+  if (typeof a.wallpaperDir !== "string") a.wallpaperDir = "";
+  if (typeof a.weRoot !== "string") a.weRoot = "";
+  if (typeof a.weId !== "string") a.weId = "";
+  a.wallpaperInterval = Math.round(clamp(a.wallpaperInterval, 0, 1440, 30));
+  a.wallpaperShuffle = !!a.wallpaperShuffle;
+  a.wallpaperMotion = !!a.wallpaperMotion;
+  a.wallpaperZoom = !!a.wallpaperZoom;
+  a.wallpaperFade = !!a.wallpaperFade;
+  a.wallpaperIndex = Math.max(0, Math.floor(clamp(a.wallpaperIndex, 0, 100000, 0)));
   if (typeof a.accent !== "string" || !(a.accent === "luogu" || a.accent === "system" || /^#[0-9a-fA-F]{6}$/.test(a.accent))) {
     a.accent = "luogu";
   }
+
+  if (!isPlainObject(data.rail)) data.rail = clone(DEFAULTS.rail);
+  sanitizeRail(data.rail);
 
   const g = data.general;
   if (!["tray", "quit"].includes(g.closeAction)) g.closeAction = "tray";
@@ -117,6 +181,13 @@ function setAppearance(patch) {
   return data.appearance;
 }
 
+function setRail(patch) {
+  data.rail = Object.assign({}, data.rail, patch || {});
+  sanitize();
+  save();
+  return data.rail;
+}
+
 function setGeneral(patch) {
   data.general = Object.assign({}, data.general, patch || {});
   sanitize();
@@ -138,4 +209,29 @@ function setWindow(patch) {
   return data.window;
 }
 
-module.exports = { DEFAULTS, init, get, save, setAppearance, setGeneral, setNotify, setWindow, sanitize };
+function resetRail() {
+  data.rail = clone(DEFAULTS.rail);
+  compileRailOrder(data.rail);
+  save();
+  return data.rail;
+}
+
+function compileRailOrder(target) {
+  sanitizeRail(target);
+}
+
+module.exports = {
+  DEFAULTS,
+  RAIL_ORDER,
+  WALLPAPERS,
+  init,
+  get,
+  save,
+  setAppearance,
+  setRail,
+  setGeneral,
+  setNotify,
+  setWindow,
+  resetRail,
+  sanitize,
+};

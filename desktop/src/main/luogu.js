@@ -39,6 +39,19 @@ const STATUS_TEXT = {
   7: "未通过",
   8: "OLE",
   12: "AC",
+  14: "UC",
+};
+
+const DIFFICULTY = {
+  0: { name: "暂无评定", color: "#9aa0aa" },
+  1: { name: "入门", color: "#f0616d" },
+  2: { name: "普及−", color: "#f2a33c" },
+  3: { name: "普及/提高−", color: "#f2c94c" },
+  4: { name: "普及+/提高", color: "#3ecf8e" },
+  5: { name: "提高+/省选−", color: "#5b8cff" },
+  6: { name: "省选/NOI−", color: "#a86bff" },
+  7: { name: "NOI/NOI+", color: "#8b8f9c" },
+  8: { name: "NOI+/CTSC", color: "#5d6270" },
 };
 
 const LANG_IDS = {
@@ -133,6 +146,7 @@ class LuoguService {
     };
     this.refreshing = false;
     this.lastRefresh = 0;
+    this.libCache = new Map();
   }
 
   init() {
@@ -216,8 +230,9 @@ class LuoguService {
       return c ? c.value : "";
     };
     const clientId = get("__client_id");
-    const uid = Number(get("_uid")) || null;
-    return { loggedIn: !!clientId, uid };
+    const uid = Number(get("_uid")) || 0;
+    // 游客也会拿到 __client_id 和 _uid=0，必须要求真实 uid 才算登录。
+    return { loggedIn: !!clientId && uid > 0, uid: uid || null };
   }
 
   /* ---------- 数据抓取 ---------- */
@@ -249,6 +264,157 @@ class LuoguService {
       if (!("uid" in item) || !("name" in item)) return false;
       return uid ? Number(item.uid) === Number(uid) : true;
     });
+  }
+
+  /* ---------- 原生列表 ---------- */
+
+  async fetchLibrary(kind, options = {}) {
+    const page = Math.max(1, Number(options.page) || 1);
+    const keyword = String(options.keyword || "").trim();
+    const difficulty = String(options.difficulty || "").trim();
+    const force = !!options.force;
+    const cacheKey = [kind, page, keyword, difficulty].join("|");
+    const cached = this.libCache.get(cacheKey);
+    if (!force && cached && Date.now() - cached.at < 45000) return cached.payload;
+
+    const base = { kind, page, perPage: 0, total: 0, items: [], needLogin: false, categories: [], error: "" };
+    if (kind === "record") {
+      const login = await this.loginState();
+      if (!login.loggedIn) {
+        return Object.assign(base, { needLogin: true });
+      }
+      const context = await this.fetchContext(
+        `/record/list?user=${encodeURIComponent(login.uid || "")}&page=${page}`
+      );
+      if (!context) return Object.assign(base, { error: "记录加载失败" });
+      const records = this.parseRecords(context);
+      const items = records.map((record) => {
+        const problem = record.problem || {};
+        const status = Number(record.status);
+        return {
+          type: "record",
+          id: record.id || record.rid || "",
+          pid: String(problem.pid || record.pid || ""),
+          title: String(problem.title || record.title || ""),
+          status: Number.isFinite(status) ? status : null,
+          statusText: Number.isFinite(status) ? STATUS_TEXT[status] || String(status) : "",
+          score: Number(record.score) || 0,
+          time: toMillis(record.submitTime || record.time),
+          memory: Number(record.memory) || 0,
+          language: String(record.languageName || record.language || ""),
+        };
+      });
+      const payload = Object.assign(base, { items, total: items.length });
+      this.libCache.set(cacheKey, { at: Date.now(), payload });
+      return payload;
+    }
+
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    if (keyword) params.set("keyword", keyword);
+    if (difficulty) params.set("difficulty", difficulty);
+    const paths = {
+      problems: "/problem/list?" + params.toString(),
+      training: "/training/list?" + params.toString(),
+      contest: "/contest/list?" + params.toString(),
+      discuss: "/discuss?" + params.toString(),
+      article: "/article?" + params.toString(),
+    };
+    const pathname = paths[kind];
+    if (!pathname) return Object.assign(base, { error: "未知列表" });
+    const context = await this.fetchContext(pathname);
+    if (!context) return Object.assign(base, { error: "数据加载失败，请检查网络" });
+    const data = context.data || {};
+    const node =
+      kind === "problems"
+        ? data.problems
+        : kind === "training"
+          ? data.trainings
+          : kind === "contest"
+            ? data.contests
+            : kind === "discuss"
+              ? data.posts
+              : data.articles;
+    const list = node && Array.isArray(node.result) ? node.result : [];
+    const categories = Array.isArray(data.categories) ? data.categories : [];
+    let items = [];
+    if (kind === "problems") {
+      items = list.map((item) => {
+        const diff = DIFFICULTY[Number(item.difficulty)] || DIFFICULTY[0];
+        return {
+          type: "problem",
+          pid: String(item.pid || ""),
+          title: String(item.name || ""),
+          difficulty: Number(item.difficulty) || 0,
+          difficultyName: diff.name,
+          difficultyColor: diff.color,
+          submissions: Number(item.totalSubmit) || 0,
+          accepted: Number(item.totalAccepted) || 0,
+          provider: item.provider ? String(item.provider.name || "") : "",
+        };
+      });
+    } else if (kind === "training") {
+      items = list.map((item) => ({
+        type: "training",
+        id: String(item.id || ""),
+        title: String(item.name || ""),
+        provider: item.provider ? String(item.provider.name || "") : "",
+        createTime: toMillis(item.createTime),
+        deadline: toMillis(item.deadline),
+        problemCount: Number(item.problemCount) || 0,
+        markCount: Number(item.markCount) || 0,
+      }));
+    } else if (kind === "contest") {
+      items = list.map((item) => ({
+        type: "contest",
+        id: String(item.id || ""),
+        title: String(item.name || ""),
+        start: toMillis(item.startTime),
+        end: toMillis(item.endTime),
+        host: item.host ? String(item.host.name || "") : "",
+        rated: Number(item.rated) || 0,
+        problemCount: Number(item.problemCount) || 0,
+      }));
+    } else if (kind === "discuss") {
+      items = list.map((item) => ({
+        type: "discuss",
+        id: String(item.id || ""),
+        title: String(item.title || ""),
+        author: item.author ? String(item.author.name || "") : "",
+        avatar: item.author ? String(item.author.avatar || "") : "",
+        time: toMillis(item.time),
+        forum: item.forum ? String(item.forum.name || "") : "",
+        replyCount: Number(item.replyCount) || 0,
+        topped: !!item.topped,
+        locked: !!item.locked,
+      }));
+    } else if (kind === "article") {
+      items = list.map((item) => ({
+        type: "article",
+        id: String(item.lid || item.id || ""),
+        title: String(item.title || ""),
+        author: item.author ? String(item.author.name || "") : "",
+        avatar: item.author ? String(item.author.avatar || "") : "",
+        time: toMillis(item.time),
+        upvote: Number(item.upvote) || 0,
+        replyCount: Number(item.replyCount) || 0,
+        favorCount: Number(item.favorCount) || 0,
+        category: Number(item.category) || 0,
+        excerpt: String(item.content || "")
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+          .replace(/[#>*`_~]/g, "")
+          .slice(0, 120),
+      }));
+    }
+    const payload = Object.assign(base, {
+      items,
+      perPage: Number(node && node.perPage) || items.length,
+      total: Number(node && node.count) || items.length,
+      categories: categories.map((item) => ({ key: String(item.key || ""), name: String(item.name || "") })),
+    });
+    this.libCache.set(cacheKey, { at: Date.now(), payload });
+    return payload;
   }
 
   buildHeat(records) {
@@ -484,6 +650,7 @@ class LuoguService {
     } catch {
       /* ignore */
     }
+    this.libCache.clear();
     this.lastRefresh = 0;
     await this.refresh(true);
   }

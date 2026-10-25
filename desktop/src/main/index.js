@@ -10,7 +10,7 @@ const { ViewManager } = require("./views");
 const { LuoguService } = require("./luogu");
 const { createNotifier } = require("./notify");
 const { createTray } = require("./tray");
-const { registerIpc, broadcastState } = require("./ipc");
+const { registerIpc, broadcastState, state } = require("./ipc");
 const { runSmoke, seedDemo } = require("./smoke");
 
 const UA =
@@ -46,7 +46,8 @@ function bootstrap() {
     const startMode = ctx.cfg.get().appearance.mode;
     nativeTheme.themeSource = startMode === "system" ? "system" : startMode;
     ctx.theme = theme.payload(ctx.cfg.get());
-    ctx.wallpaper = await wallpaper.resolve(ctx.cfg.get());
+    ctx.wallpaper = await wallpaper.resolve(ctx.cfg.get(), ctx.theme);
+    ctx.scanWe = (root) => wallpaper.scanWe(root);
 
     ctx.session = session.fromPartition("persist:luogu");
     ctx.session.setUserAgent(UA);
@@ -87,20 +88,50 @@ function bootstrap() {
       }
     };
 
-    ctx.refreshAppearance = async () => {
+    ctx.refreshAppearance = async (options = {}) => {
       const mode = ctx.cfg.get().appearance.mode;
       nativeTheme.themeSource = mode === "system" ? "system" : mode;
       ctx.theme = theme.payload(ctx.cfg.get());
-      ctx.wallpaper = await wallpaper.resolve(ctx.cfg.get());
+      ctx.wallpaper = await wallpaper.resolve(ctx.cfg.get(), ctx.theme);
       applyTheme(ctx.win, ctx.theme);
       applyTheme(ctx.settingsWin, ctx.theme);
       ctx.views.updateTheme();
+      if (options.reschedule !== false) ctx.scheduleWallpaperRotation();
       broadcastState(ctx);
+    };
+
+    let rotationTimer = null;
+    ctx.scheduleWallpaperRotation = () => {
+      if (rotationTimer) {
+        clearInterval(rotationTimer);
+        rotationTimer = null;
+      }
+      const a = ctx.cfg.get().appearance;
+      if (!["folder", "we"].includes(a.wallpaper) || a.wallpaperInterval <= 0) return;
+      rotationTimer = setInterval(() => {
+        ctx.nextWallpaper().catch((err) => console.error("[wallpaper] rotate:", err.message));
+      }, a.wallpaperInterval * 60000);
+    };
+
+    ctx.nextWallpaper = async () => {
+      const cfg = ctx.cfg.get();
+      const a = cfg.appearance;
+      const total = wallpaper.count(cfg);
+      let next = (Number(a.wallpaperIndex) || 0) + 1;
+      if (a.wallpaperShuffle && total > 1) {
+        next = Math.floor(Math.random() * total);
+        if (next === a.wallpaperIndex) next = (next + 1) % total;
+      } else if (total > 0) {
+        next = next % total;
+      }
+      ctx.cfg.setAppearance({ wallpaperIndex: next, weId: "" });
+      await ctx.refreshAppearance({ reschedule: false });
+      return state(ctx);
     };
 
     ctx.command = (name) => {
       if (!ctx.win || ctx.win.isDestroyed()) return;
-      if (name === "palette" || name === "switcher") {
+      if (name === "palette" || name === "switcher" || name === "jump") {
         ctx.showWindow();
         ctx.win.webContents.send("app:command", name);
         return;
@@ -114,9 +145,31 @@ function bootstrap() {
         return;
       }
       if (name === "devtools") {
-        const wc = ctx.views.currentWebContents() || ctx.win.webContents;
-        if (wc.isDevToolsOpened()) wc.closeDevTools();
-        else wc.openDevTools({ mode: "detach" });
+        const viewWc = ctx.views.currentWebContents();
+        const wc = viewWc || ctx.win.webContents;
+        if (wc.isDevToolsOpened()) {
+          wc.closeDevTools();
+          return;
+        }
+        let detached = false;
+        if (viewWc) {
+          try {
+            if (viewWc.debugger.isAttached()) {
+              viewWc.debugger.detach();
+              detached = true;
+            }
+          } catch {
+            /* ignore */
+          }
+          if (detached) wc.once("devtools-closed", () => ctx.views.reinstallGuard(wc));
+        }
+        setTimeout(() => {
+          try {
+            wc.openDevTools({ mode: "detach" });
+          } catch (err) {
+            console.error("[devtools]", err.message);
+          }
+        }, 40);
       }
     };
 
@@ -147,6 +200,7 @@ function bootstrap() {
     });
 
     ctx.applyAutoLaunch();
+    ctx.scheduleWallpaperRotation();
     if (!ctx.smoke || process.env.LG_SMOKE_NET === "1") ctx.luogu.init();
     app.__lgCtx = ctx;
 
