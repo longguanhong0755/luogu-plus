@@ -224,12 +224,19 @@ function registerIpc(ctx) {
       return { ok: false, message: "题目编号或代码为空。" };
     }
     const result = await ctx.luogu.submit(pid, code, lang);
-    if (result.fallback) {
-      clipboard.writeText(code);
-      ctx.views.navigate(`/problem/${encodeURIComponent(pid)}#submit`);
-      ctx.toast("提交", result.message || "代码已复制，请在页面内提交。");
-    } else if (result.ok) {
+    if (result.ok) {
       ctx.toast("提交", `已提交 ${pid}，评测完成后会通知你。`);
+    } else {
+      // 原生提交没走通（登录过期 / 需要验证码 / 易盾交互式挑战）：
+      // 打开题目页提交区并自动填入代码，用户在页面里完成验证后提交。
+      clipboard.writeText(code);
+      const filled = await ctx.views.openSubmitAssist(pid, code);
+      ctx.toast(
+        "提交",
+        filled
+          ? "已在题目页填入代码，请完成页面里的验证后点“提交评测”。"
+          : "代码已复制，请在题目页内提交。"
+      );
     }
     return result;
   });

@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
+const ocr = require("./ocr");
 const { STATUS_TEXT } = require("./luogu");
 
 /* ---------- 真实账号登录测试（LG_SMOKE_LOGIN=<账号文件>）---------- */
@@ -48,6 +49,505 @@ function findRecord(root, depth = 0) {
     }
   }
   return null;
+}
+
+/* 仅测试用：一次试多种提交 payload 形状，打印每种的服务器原始反应，
+   定位 invalid_language_type 到底卡在类型还是 id。 */
+async function shapeProbe(ctx, wait) {
+  const shapes = [
+    { tag: "str5-boolO2", lang: "5", o2: false },
+    { tag: "num5-intO2", lang: 5, o2: 0 },
+    { tag: "num28-intO2", lang: 28, o2: 0 },
+    { tag: "num3-intO2", lang: 3, o2: 0 },
+    { tag: "num34-intO2", lang: 34, o2: 0 },
+  ];
+  for (const s of shapes) {
+    const r = await ctx.luogu.exec(
+      `(async () => {
+        const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+        const headers = { "Content-Type": "application/json", "X-Luogu-Type": "content-only", "X-Requested-With": "XMLHttpRequest", "x-csrf-token": csrf };
+        const r = await fetch("/fe/api/problem/submit/P1001", {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify({ code: "#include <iostream>\\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b;return 0;}", lang: ${JSON.stringify(s.lang)}, enableO2: ${JSON.stringify(s.o2)} }),
+        });
+        const text = await r.text();
+        let j = null;
+        try { j = JSON.parse(text); } catch {}
+        let short = text;
+        try {
+          const err = j && (j.errorType || (j.data && j.data.errorType));
+          short = (err || "") + " | " + String((j && (j.errorMessage || (j.data && j.data.errorMessage))) || text.slice(0, 80));
+          if (j && (j.rid || (j.data && j.data.rid))) short = "RID=" + (j.rid || j.data.rid);
+        } catch {}
+        return { status: r.status, resp: String(short).slice(0, 200) };
+      })()`
+    );
+    console.log("LGSHAPE " + s.tag + " " + JSON.stringify(r));
+    await wait(1200);
+  }
+}
+
+/* 仅测试用：从 Vue 组件内部抓语言下拉每项的 value 绑定 + pinia 语言表。 */
+async function langVueProbe(ctx, wait) {
+  await ctx.luogu.exec(`(async () => { location.href = "https://www.luogu.com.cn/problem/P1001#submit"; })()`);
+  await wait(6000);
+  await ctx.luogu.exec(`(() => {
+    const el = [...document.querySelectorAll("button, [role=combobox], [class*=select], [class*=dropdown], [class*=picker]")].find((b) => /C\+\+/.test(b.textContent || "") && (b.textContent || "").length < 40);
+    if (el) el.click();
+    return "ok";
+  })()`);
+  await wait(1500);
+  const opts = await ctx.luogu.exec(`(() => {
+    const read = (el) => {
+      try {
+        const c = el.__vueParentComponent;
+        if (!c) return null;
+        const p = c.props || {};
+        const out = {};
+        for (const k of Object.keys(p)) {
+          const v = p[k];
+          out[k] = typeof v === "object" && v !== null ? "[obj]" : String(v).slice(0, 40);
+        }
+        return out;
+      } catch (e) { return { err: String(e).slice(0, 60) }; }
+    };
+    return [...document.querySelectorAll('[role=option], li, [class*=option], [class*=item]')]
+      .map((o) => {
+        const t = (o.textContent || "").trim();
+        if (!t || t.length > 30 || !/Pascal|C|Python|Java|Rust|Go|Haskell|PHP|Kotlin|OCaml/.test(t)) return null;
+        return { t: t.slice(0, 30), props: read(o), dataset: JSON.stringify(o.dataset).slice(0, 80) };
+      })
+      .filter(Boolean)
+      .slice(0, 40);
+  })()`);
+  console.log("LGPROBE-VUE " + JSON.stringify(opts).slice(0, 5000));
+  const pinia = await ctx.luogu.exec(`(() => {
+    try {
+      const app = document.querySelector("#app").__vue_app__;
+      const pinia = app && app.config.globalProperties.$pinia;
+      if (!pinia) return "no-pinia";
+      const out = {};
+      for (const [k, v] of Object.entries(pinia.state.value)) {
+        const s = JSON.stringify(v);
+        if (s && /C\\+\\+|Pascal/.test(s)) out[k] = s.slice(0, 3000);
+      }
+      return out;
+    } catch (e) { return "err:" + String(e).slice(0, 80); }
+  })()`);
+  console.log("LGPROBE-PINIA " + JSON.stringify(pinia).slice(0, 5000));
+}
+
+/* 仅测试用：抓提交 403 响应里的完整 errorData 与交互式验证码弹窗 DOM。 */
+async function interactiveProbe(ctx, wait) {
+  await ctx.luogu.exec(`(async () => { location.href = "https://www.luogu.com.cn/problem/P1001#submit"; })()`);
+  await wait(6000);
+  await ctx.luogu.exec(`(() => {
+    window.__lgLog = [];
+    const oo = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (m, u) {
+      this.__lgUrl = String(u).slice(0, 200);
+      return oo.apply(this, arguments);
+    };
+    const os = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function (body) {
+      try {
+        window.__lgLog.push({ k: "xhr", url: this.__lgUrl, body: String(body || "").slice(0, 400) });
+      } catch {}
+      this.addEventListener("load", () => {
+        try {
+          window.__lgLog.push({ k: "xhr-res", url: this.__lgUrl, status: this.status, body: String(this.responseText || "").slice(0, 5000) });
+        } catch {}
+      });
+      return os.apply(this, arguments);
+    };
+    const code = "#include <iostream>\\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<std::endl;return 0;}";
+    const ed = [...document.querySelectorAll("[contenteditable=true]")].find((t) => t.offsetParent);
+    if (ed) {
+      ed.focus();
+      document.execCommand("selectAll", false, null);
+      document.execCommand("insertText", false, code);
+    }
+    return "ok";
+  })()`);
+  await wait(500);
+  await ctx.luogu.exec(`(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /^提交(评测|代码)?$/.test((b.textContent || "").trim()) && b.offsetParent);
+    if (btn) btn.click();
+    return "ok";
+  })()`);
+  await wait(3500);
+  const dlg = await ctx.luogu.exec(`(() => {
+    const swal = document.querySelector(".swal2-popup");
+    return {
+      html: swal ? (swal.innerHTML || "").slice(0, 3000) : "",
+      canvas: [...document.querySelectorAll(".swal2-popup canvas, .swal2-popup iframe, .swal2-popup embed")].map((c) => c.tagName).slice(0, 6),
+    };
+  })()`);
+  console.log("LGINTERACTIVE dlg=" + JSON.stringify(dlg).slice(0, 3500));
+  const log = await ctx.luogu.exec(`(() => (window.__lgLog || []).filter((e) => e.k === "xhr-res" && /submit|captcha|verify|challenge/.test(e.url)))()`);
+  console.log("LGINTERACTIVE res=" + JSON.stringify(log).slice(0, 6000));
+}
+
+/* 仅测试用：驱动真实提交 UI（填代码→点提交→验证码弹窗→OCR→确认），
+   全程 fetch/XHR 拦截记录，抓 fz 的真实请求与验证码 img 真实 src。 */
+async function uiSubmitProbe(ctx, wait, outDir) {
+  await ctx.luogu.exec(`(async () => { location.href = "https://www.luogu.com.cn/problem/P1001#submit"; })()`);
+  await wait(6000);
+  const editors = await ctx.luogu.exec(`(() => {
+    const out = { textarea: [], editable: [], cm: [], buttons: [] };
+    for (const t of document.querySelectorAll("textarea")) out.textarea.push({ ph: t.placeholder, cls: String(t.className).slice(0, 60), visible: !!t.offsetParent });
+    for (const t of document.querySelectorAll("[contenteditable=true]")) out.editable.push({ cls: String(t.className).slice(0, 60), visible: !!t.offsetParent });
+    for (const t of document.querySelectorAll(".cm-content, .CodeMirror, [class*=editor]")) out.cm.push({ cls: String(t.className).slice(0, 60), tag: t.tagName });
+    for (const b of document.querySelectorAll("button")) {
+      const t = (b.textContent || "").trim();
+      if (/^提交/.test(t) && t.length < 12) out.buttons.push({ t, cls: String(b.className).slice(0, 50) });
+    }
+    return out;
+  })()`);
+  console.log("LGUISUBMIT editors=" + JSON.stringify(editors).slice(0, 1200));
+  await ctx.luogu.exec(`(() => {
+    window.__lgLog = [];
+    const of = window.fetch;
+    window.fetch = function (...args) {
+      let url = "";
+      try { url = typeof args[0] === "string" ? args[0] : String(args[0] && args[0].url || ""); } catch {}
+      let init = "";
+      try { init = args[1] ? JSON.stringify({ m: args[1].method, h: args[1].headers }).slice(0, 260) : ""; } catch {}
+      window.__lgLog.push({ k: "req", url: url.slice(0, 200), init });
+      const p = of.apply(this, args);
+      try {
+        p.then((res) => {
+          try {
+            const clone = res.clone();
+            clone.text().then((t) => window.__lgLog.push({ k: "res", url: url.slice(0, 200), status: res.status, body: t.slice(0, 260) })).catch(() => {});
+          } catch {}
+        }).catch(() => {});
+      } catch {}
+      return p;
+    };
+    const oo = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (m, u) {
+      this.__lgUrl = String(u).slice(0, 200);
+      this.__lgM = String(m);
+      return oo.apply(this, arguments);
+    };
+    const os = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function (body) {
+      try {
+        window.__lgLog.push({ k: "xhr", url: this.__lgUrl, m: this.__lgM, body: String(body || "").slice(0, 300) });
+      } catch {}
+      this.addEventListener("load", () => {
+        try {
+          window.__lgLog.push({ k: "xhr-res", url: this.__lgUrl, status: this.status, body: String(this.responseText || "").slice(0, 300) });
+        } catch {}
+      });
+      return os.apply(this, arguments);
+    };
+    return "patched";
+  })()`);
+  const filled = await ctx.luogu.exec(`(() => {
+    const code = "#include <iostream>\\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<std::endl;return 0;}";
+    const ta = [...document.querySelectorAll("textarea")].find((t) => t.offsetParent);
+    if (ta) {
+      const d = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+      d.call(ta, code);
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      return "textarea";
+    }
+    const ed = [...document.querySelectorAll("[contenteditable=true]")].find((t) => t.offsetParent);
+    if (ed) {
+      ed.focus();
+      document.execCommand("selectAll", false, null);
+      document.execCommand("insertText", false, code);
+      return "contenteditable";
+    }
+    return "no-editor";
+  })()`);
+  console.log("LGUISUBMIT fill=" + filled);
+  await ctx.luogu.exec(`(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /^提交(评测|代码)?$/.test((b.textContent || "").trim()) && b.offsetParent);
+    if (btn) { btn.click(); return "clicked"; }
+    return "no-btn";
+  })()`);
+  await wait(3000);
+  const dlg = await ctx.luogu.exec(`(() => {
+    const swal = document.querySelector(".swal2-popup, .swal2-container");
+    const imgs = [...document.querySelectorAll("img")].map((i) => String(i.src).slice(0, 160)).filter((s) => /captcha|verify|sign/i.test(s));
+    const inputs = [...document.querySelectorAll(".swal2-popup input, .swal2-container input")].map((i) => ({ ph: i.placeholder, cls: String(i.className).slice(0, 40) }));
+    return { hasSwal: !!swal, swalText: swal ? (swal.innerText || "").slice(0, 200) : "", imgs, inputs };
+  })()`);
+  console.log("LGUISUBMIT dialog=" + JSON.stringify(dlg));
+  const log1 = await ctx.luogu.exec(`(() => { const l = window.__lgLog || []; return l.filter((e) => /captcha|verify|submit/.test(e.url)); })()`);
+  console.log("LGUISUBMIT log=" + JSON.stringify(log1).slice(0, 3000));
+  if (dlg.imgs && dlg.imgs[0]) {
+    const data = await ctx.luogu.exec(
+      `(async () => {
+        const img = [...document.querySelectorAll(".swal2-popup img, img")].find((i) => /captcha|verify|sign/i.test(i.src || ""));
+        if (!img) return null;
+        try {
+          const r = await fetch(img.src, { credentials: "include" });
+          const b = await r.blob();
+          return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+        } catch (e) { return null; }
+      })()`
+    );
+    if (data) {
+      const capFile = path.join(outDir, "ui-captcha.png");
+      fs.writeFileSync(capFile, Buffer.from(String(data).split(",").pop(), "base64"));
+      const got = await ocr.recognize(fs.readFileSync(capFile));
+      console.log("LGUISUBMIT captcha saved " + capFile + " ocr=" + (got.ok ? got.text : got.reason));
+      if (got.ok) {
+        await ctx.luogu.exec(`(() => {
+          const input = document.querySelector(".swal2-popup input, .swal2-container input");
+          if (!input) return "no-input";
+          const d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+          d.call(input, ${JSON.stringify(got.text)});
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          const btn = [...document.querySelectorAll(".swal2-popup button, .swal2-container button")].find((b) => /提交|确认|确定/.test(b.textContent || ""));
+          if (btn) btn.click();
+          return "answered";
+        })()`);
+        await wait(3500);
+        const log2 = await ctx.luogu.exec(`(() => { const l = window.__lgLog || []; return l.slice(-8); })()`);
+        console.log("LGUISUBMIT after=" + JSON.stringify(log2).slice(0, 2600));
+      }
+    }
+  }
+}
+
+/* 仅测试用：对比 /api/verify/captcha 与 /lg4/captcha 在不同请求头下的响应形态，
+   找出真实弹窗（fz 取 widget HTML）与我们裸 GET 的差别。 */
+async function captchaFetchProbe(ctx) {
+  const variants = [
+    { tag: "plain", url: "/api/verify/captcha", headers: {} },
+    { tag: "content-only", url: "/api/verify/captcha", headers: { "X-Luogu-Type": "content-only", "X-Requested-With": "XMLHttpRequest" } },
+    { tag: "t-param", url: "/api/verify/captcha?_t=123", headers: {} },
+    { tag: "lg4", url: "/lg4/captcha?_t=123", headers: {} },
+  ];
+  for (const v of variants) {
+    const r = await ctx.luogu.exec(
+      `(async () => {
+        try {
+          const r = await fetch(${JSON.stringify(v.url)}, { credentials: "include", headers: ${JSON.stringify(v.headers)} });
+          const ct = r.headers.get("content-type");
+          const text = await r.text();
+          return { status: r.status, ct, head: text.slice(0, 260), len: text.length };
+        } catch (e) { return { error: String(e).slice(0, 120) }; }
+      })()`
+    );
+    console.log("LGCAPFETCH " + v.tag + " " + JSON.stringify(r));
+  }
+}
+
+/* 仅测试用：对候选语言 id 真实提交（OCR 验证码），从评测记录反查语言名，
+   同时验证 提交→验证码→评测 全链路。 */
+async function langSubmitProbe(ctx, wait, outDir) {
+  const code = "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<std::endl;return 0;}";
+  const rawSubmit = (langId, captcha) =>
+    ctx.luogu.exec(
+      `(async () => {
+        const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+        const headers = { "Content-Type": "application/json", "X-Luogu-Type": "content-only", "X-Requested-With": "XMLHttpRequest", "x-csrf-token": csrf };
+        const body = ${JSON.stringify(captcha)} ? { code: ${JSON.stringify(code)}, lang: ${langId}, enableO2: 0, captcha: ${JSON.stringify(captcha)} } : { code: ${JSON.stringify(code)}, lang: ${langId}, enableO2: 0 };
+        const r = await fetch("/fe/api/problem/submit/P1001", { method: "POST", headers, credentials: "include", body: JSON.stringify(body) });
+        const text = await r.text();
+        let j = null;
+        try { j = JSON.parse(text); } catch {}
+        const rid = j && (j.rid || (j.data && j.data.rid) || (j.currentData && j.currentData.rid));
+        return { status: r.status, rid: rid || null, captcha: /Captcha|验证码/.test(text), error: (j && (j.errorMessage || j.errorType)) || text.slice(0, 120) };
+      })()`
+    );
+  const candidates = [28, 34, 33, 30, 3];
+  for (const id of candidates) {
+    let r = await rawSubmit(id, "");
+    let rounds = 0;
+    while (r.captcha && rounds < 3) {
+      const png = await ctx.luogu.fetchCaptchaPng();
+      if (!png) break;
+      const got = await ocr.recognize(png);
+      if (!got.ok) {
+        console.log("LGPROBE-SUBMIT lang=" + id + " ocr 不可用 " + got.reason);
+        break;
+      }
+      fs.writeFileSync(path.join(outDir, "probe-captcha.png"), png);
+      r = await rawSubmit(id, got.text);
+      console.log("LGPROBE-SUBMIT lang=" + id + " ocr=" + got.text + " → status=" + r.status + " captcha=" + r.captcha);
+      rounds++;
+    }
+    console.log("LGPROBE-SUBMIT lang=" + id + " final=" + JSON.stringify(r).slice(0, 260));
+    if (r.ok && r.rid) {
+      await wait(2000);
+      const recCtx = await ctx.luogu.fetchContext("/record/" + r.rid);
+      const s = JSON.stringify(recCtx || {});
+      const names = [...s.matchAll(/"(?:language|lang)"\s*:\s*("?)[A-Za-z0-9+# ()\/\.]{2,30}\1/g)].map((m) => m[0]);
+      console.log("LGPROBE-SUBMIT lang=" + id + " rid=" + r.rid + " recLangHits=" + JSON.stringify(names).slice(0, 400));
+      let status = null;
+      for (let i = 0; i < 30; i++) {
+        await wait(2000);
+        const rc = await ctx.luogu.fetchContext("/record/" + r.rid);
+        const rec = findRecord(rc);
+        if (rec && Number(rec.status) > 1) {
+          status = { status: Number(rec.status), text: STATUS_TEXT[Number(rec.status)] || String(rec.status), score: Number(rec.score) || 0 };
+          break;
+        }
+      }
+      console.log("LGPROBE-SUBMIT lang=" + id + " judge=" + JSON.stringify(status));
+      if (status && status.score === 100) {
+        console.log("LGPROBE-SUBMIT AC-CHAIN-OK id=" + id);
+        return;
+      }
+    }
+  }
+}
+
+/* 仅测试用：抓语言 id→名称映射（题目页 context、记录页 context、真实下拉 UI 三处）。 */
+async function langProbe(ctx, wait) {
+  const problemCtx = await ctx.luogu.fetchContext("/problem/P1001");
+  if (problemCtx && problemCtx.data) {
+    console.log("LGPROBE-CTX problem-keys=" + JSON.stringify(Object.keys(problemCtx.data.problem || {})));
+    console.log("LGPROBE-CTX data-keys=" + JSON.stringify(Object.keys(problemCtx.data)));
+    const dump = (v, depth, path) => {
+      if (depth > 2 || !v || typeof v !== "object") return;
+      for (const [k, val] of Object.entries(v)) {
+        if (/lang/i.test(k)) console.log("LGPROBE-CTX " + path + "." + k + "=" + JSON.stringify(val).slice(0, 1200));
+        else if (val && typeof val === "object" && !Array.isArray(val)) dump(val, depth + 1, path + "." + k);
+      }
+    };
+    dump(problemCtx.data, 0, "data");
+  }
+  const recordCtx = await ctx.luogu.fetchContext("/record/list?user=2286010");
+  if (recordCtx && recordCtx.data) {
+    const dump = (v, depth, path) => {
+      if (depth > 2 || !v || typeof v !== "object") return;
+      for (const [k, val] of Object.entries(v)) {
+        if (/lang/i.test(k)) console.log("LGPROBE-REC " + path + "." + k + "=" + JSON.stringify(val).slice(0, 1500));
+        else if (val && typeof val === "object" && !Array.isArray(val)) dump(val, depth + 1, path + "." + k);
+      }
+    };
+    dump(recordCtx.data, 0, "data");
+  }
+  await ctx.luogu.exec(`(async () => { location.href = "https://www.luogu.com.cn/problem/P1001#submit"; })()`);
+  await wait(6000);
+  const info = await ctx.luogu.exec(`(() => {
+    const out = { selects: [], comboboxes: [], text: [] };
+    for (const s of document.querySelectorAll("select")) {
+      out.selects.push([...s.options].slice(0, 40).map((o) => ({ v: o.value, t: (o.textContent || "").trim().slice(0, 30) })));
+    }
+    for (const b of document.querySelectorAll("button, [role=combobox], [class*=select], [class*=dropdown], [class*=picker]")) {
+      const t = (b.textContent || "").trim().slice(0, 60);
+      if (/C\+\+|语言|Python|Java|Pascal/.test(t)) out.comboboxes.push({ tag: b.tagName, cls: String(b.className).slice(0, 50), t });
+    }
+    out.text = (document.body.innerText || "").split("\n").filter((l) => /C\+\+|语言/.test(l)).slice(0, 10);
+    return out;
+  })()`);
+  console.log("LGPROBE-UI1 " + JSON.stringify(info).slice(0, 3000));
+  await ctx.luogu.exec(`(() => {
+    const el = [...document.querySelectorAll("button, [role=combobox], [class*=select], [class*=dropdown], [class*=picker]")].find((b) => /C\+\+/.test(b.textContent || "") && (b.textContent || "").length < 40);
+    if (el) el.click();
+    return "ok";
+  })()`);
+  await wait(1500);
+  const opts = await ctx.luogu.exec(`(() => {
+    return [...document.querySelectorAll('[role=option], li, [class*=option], [class*=item]')]
+      .map((o) => ({ v: (o.getAttribute && (o.getAttribute("value") || (o.dataset && o.dataset.value))) || "", t: (o.textContent || "").trim().slice(0, 30) }))
+      .filter((o) => o.t && /C|Pascal|Python|Java|Rust|Go|Haskell|PHP|JS|Kotlin/.test(o.t) && o.t.length < 30)
+      .slice(0, 60);
+  })()`);
+  console.log("LGPROBE-UI2 " + JSON.stringify(opts).slice(0, 3000));
+}
+
+/* 仅测试用：抓洛谷新前端 bundle，找提交接口的真实 payload 字段与验证码端点。 */
+async function bundleProbe(ctx, wait) {
+  await ctx.luogu.exec(`(async () => { location.href = "https://www.luogu.com.cn/problem/P1001"; })()`);
+  await wait(4500);
+  const found = await ctx.luogu.exec(
+    `(async () => {
+      const out = { scripts: [], hits: [] };
+      const html = await (await fetch(location.href, { credentials: "include" })).text();
+      const srcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+      out.scripts = srcs.slice(0, 24);
+      const grab = (text, needle, tag) => {
+        let idx = text.indexOf(needle);
+        let n = 0;
+        while (idx !== -1 && n < 6) {
+          out.hits.push({ tag, around: text.slice(Math.max(0, idx - 350), idx + 450) });
+          idx = text.indexOf(needle, idx + 1);
+          n++;
+        }
+      };
+      for (const src of srcs) {
+        try {
+          const url = src.startsWith("http") ? src : new URL(src, location.origin).href;
+          const text = await (await fetch(url, { credentials: "include" })).text();
+          grab(text, "problem/submit", url.slice(-50));
+          grab(text, "verify/captcha", url.slice(-50));
+          grab(text, "lg4/captcha", url.slice(-50));
+        } catch (e) {
+          out.hits.push({ tag: src.slice(-50), err: String(e).slice(0, 80) });
+        }
+      }
+      return out;
+    })()`
+  );
+  console.log("LGBUNDLE scripts=" + JSON.stringify(found.scripts));
+  for (const hit of found.hits.slice(0, 14)) {
+    console.log("LGBUNDLE-HIT " + JSON.stringify(hit).slice(0, 900));
+  }
+}
+
+/* 仅测试用：提交验证码机制探针——绕过产品自动识别，人工读图写答案，
+   打印服务器完整响应，用来区分“识别错误”和“提交机制错误”。 */
+async function submitProbe(ctx, outDir, wait) {
+  const code = "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<std::endl;return 0;}";
+  let result = await ctx.luogu.submitOnce("P1001", code, "C++14");
+  console.log("LGPROBE first=" + JSON.stringify(result));
+  if (!result.captchaRequired) {
+    if (result.ok && result.rid) await pollProbeJudge(ctx, result.rid, wait);
+    return;
+  }
+  const png = await ctx.luogu.fetchCaptchaPng();
+  if (!png) {
+    console.log("LGPROBE captcha=fetch-fail");
+    return;
+  }
+  const capFile = path.join(outDir, "probe-captcha.png");
+  fs.writeFileSync(capFile, png);
+  const ocrRead = await ocr.recognize(png);
+  console.log("LGPROBE_CAPTCHA " + capFile + " ocrRead=" + (ocrRead.ok ? ocrRead.text : "FAIL:" + ocrRead.reason));
+  const answerFile = path.join(outDir, "probe-answer.txt");
+  fs.rmSync(answerFile, { force: true });
+  console.log("LGPROBE 等待人工答案：写入 " + answerFile);
+  let answer = null;
+  for (let i = 0; i < 240; i++) {
+    if (fs.existsSync(answerFile)) {
+      answer = fs.readFileSync(answerFile, "utf8").trim();
+      break;
+    }
+    await wait(1000);
+  }
+  if (!answer) {
+    console.log("LGPROBE 答案等待超时");
+    return;
+  }
+  result = await ctx.luogu.submitOnce("P1001", code, "C++14", answer);
+  console.log("LGPROBE verify=" + JSON.stringify(result));
+  if (result.ok && result.rid) await pollProbeJudge(ctx, result.rid, wait);
+}
+
+async function pollProbeJudge(ctx, rid, wait) {
+  for (let i = 0; i < 30; i++) {
+    await wait(2000);
+    const recordCtx = await ctx.luogu.fetchContext("/record/" + rid);
+    const record = findRecord(recordCtx);
+    if (!record) continue;
+    const status = Number(record.status);
+    if (status === 0 || status === 1) continue;
+    console.log("LGPROBE judge=" + JSON.stringify({ status, statusText: STATUS_TEXT[status] || String(status), score: Number(record.score) || 0 }));
+    return;
+  }
+  console.log("LGPROBE judge=timeout");
 }
 
 async function loginFlow(ctx, wait, outDir) {
@@ -227,12 +727,24 @@ async function loginFlow(ctx, wait, outDir) {
           console.log("LGTEST_FAIL 验证码图获取失败");
           return;
         }
-        const answer = await waitAnswer(240);
-        if (!answer) {
-          console.log("LGTEST_FAIL 等待验证码答案超时");
-          return;
+        let answer = null;
+        if (process.env.LG_SMOKE_CAPTCHA_MANUAL !== "1") {
+          const got = await ocr.recognize(fs.readFileSync(path.join(outDir, "login-captcha.png")));
+          if (got.ok) {
+            answer = got.text;
+            console.log("LGTEST captcha ocr=" + answer + " (attempt " + attempt + ")");
+          } else {
+            console.log("LGTEST captcha ocr 不可用 " + got.reason + "，转人工答题");
+          }
         }
-        console.log("LGTEST captcha answered (attempt " + attempt + ")");
+        if (!answer) {
+          answer = await waitAnswer(240);
+          if (!answer) {
+            console.log("LGTEST_FAIL 等待验证码答案超时");
+            return;
+          }
+          console.log("LGTEST captcha answered (attempt " + attempt + ")");
+        }
         await wc.executeJavaScript(
           fillAndSubmit(`
           const inputs = [...document.querySelectorAll("input")].filter(
@@ -378,6 +890,25 @@ async function loginFlow(ctx, wait, outDir) {
   }
 
   if (process.env.LG_SMOKE_SUBMIT !== "0") {
+    if (process.env.LG_SMOKE_BUNDLE === "1") {
+      await bundleProbe(ctx, wait);
+    } else if (process.env.LG_SMOKE_BUNDLE === "2") {
+      await langProbe(ctx, wait);
+    } else if (process.env.LG_SMOKE_BUNDLE === "4") {
+      await langVueProbe(ctx, wait);
+    } else if (process.env.LG_SMOKE_BUNDLE === "5") {
+      await langSubmitProbe(ctx, wait, outDir);
+    } else if (process.env.LG_SMOKE_BUNDLE === "6") {
+      await captchaFetchProbe(ctx);
+    } else if (process.env.LG_SMOKE_BUNDLE === "7") {
+      await uiSubmitProbe(ctx, wait, outDir);
+    } else if (process.env.LG_SMOKE_BUNDLE === "8") {
+      await interactiveProbe(ctx, wait);
+    } else if (process.env.LG_SMOKE_BUNDLE === "3") {
+      await shapeProbe(ctx, wait);
+    } else if (process.env.LG_SMOKE_SUBMIT_PROBE === "1") {
+      await submitProbe(ctx, outDir, wait);
+    } else {
     // 打开真实提交弹窗，看验证码图的真实端点
     await ctx.luogu.exec(`(async () => { location.href = "https://www.luogu.com.cn/problem/P1001"; })()`);
     await wait(4000);
@@ -396,7 +927,14 @@ async function loginFlow(ctx, wait, outDir) {
     console.log("LGTEST_DIALOG " + JSON.stringify({ dlgClick, dlgInfo }));
     const code = "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<std::endl;return 0;}";
     let result = await ctx.luogu.submit("P1001", code, "C++14");
-    if (result.captchaRequired) {
+    if (result.captchaRequired && result.interactive) {
+      // 洛谷对提交启用的是易盾交互式滑块（反自动化设计），不自动破解：
+      // 验证“页面内提交辅助”链路（打开提交区 + 填代码）后跳过人工答题。
+      console.log("LGTEST submit-captcha=interactive(" + result.interactive + ") 转页面内提交辅助");
+      const assisted = await ctx.views.openSubmitAssist("P1001", code);
+      console.log("LGTEST submit-assist=" + assisted + "（编辑器已填代码）");
+    } else if (result.captchaRequired) {
+      // 走到这里说明产品内自动识别没过（本机没装 ddddocr，或连错 3 次），转人工答题兜底
       const data = await ctx.luogu.exec(
         `(async () => {
           const r = await fetch("/lg4/captcha?_t=" + Date.now(), { credentials: "include" });
@@ -448,6 +986,7 @@ async function loginFlow(ctx, wait, outDir) {
         break;
       }
       console.log("LGTEST judge=" + JSON.stringify(finalRecord));
+    }
     }
   }
 

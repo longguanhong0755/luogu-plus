@@ -5,6 +5,14 @@
    签到用页面内点击（洛谷的打卡本身是前端行为），提交先尝试接口、失败则回退。 */
 const { BrowserWindow, Notification } = require("electron");
 
+/* 验证码识别是可选能力（本机装了 python + ddddocr 才有），懒加载。 */
+let ocrMod = null;
+function captchaOcr(png) {
+  if (!ocrMod) ocrMod = require("./ocr");
+  return ocrMod.recognize(png).catch(() => ({ ok: false, reason: "ocr-crash" }));
+}
+
+
 const QUOTES = [
   "把每一道题，都当成一次新的开始。",
   "慢慢来，比较快。",
@@ -54,18 +62,18 @@ const DIFFICULTY = {
   8: { name: "NOI+/CTSC", color: "#5d6270" },
 };
 
+/* 洛谷 2026-10 新评测机语言 id（真实 UI 抓包实测）：
+   28 = C++14 (GCC 9)，是洛谷提交页的默认语言；旧 id 5（C++14）已失效（400 record.invalid_language_type）。
+   3/4 沿用旧表（在 acceptLanguages 里且能过校验）。其余名字未逐一确认，一律回落 28 ——
+   原生提交只服务 C++ 主路径，其他语言走页面内提交辅助（用户在真实下拉里自选）。 */
 const LANG_IDS = {
+  "C++14": 28,
+  "C++14 (GCC 9)": 28,
+  "C++": 28,
   "C++98": 3,
   "C++11": 4,
-  "C++14": 5,
-  "C++17": 6,
-  "C++20": 7,
-  "C": 2,
-  "Python3": 8,
-  "Python": 8,
-  "Pascal": 1,
-  "Java8": 9,
 };
+const DEFAULT_LANG_ID = 28;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -632,9 +640,73 @@ class LuoguService {
 
   /* ---------- 提交 ---------- */
 
-  async submit(pid, code, lang, verify = "") {
+  async fetchCaptchaPng() {
+    const data = await this.exec(
+      `(async () => {
+        const r = await fetch("/lg4/captcha?_t=" + Date.now(), { credentials: "include" });
+        const b = await r.blob();
+        return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+      })()`
+    );
+    if (!data || typeof data !== "string" || data.indexOf(",") === -1) return null;
+    try {
+      return Buffer.from(String(data).split(",").pop(), "base64");
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchCaptchaPng() {
+    // 提交验证码的图从 /api/verify/captcha 取（洛谷新前端提交重试用的就是这个路由，
+    // 与 /lg4/captcha 是两套；拿错端点的图提交必被拒）
+    const data = await this.exec(
+      `(async () => {
+        const r = await fetch("/api/verify/captcha?_t=" + Date.now(), { credentials: "include" });
+        const b = await r.blob();
+        return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+      })()`
+    );
+    if (!data || typeof data !== "string" || data.indexOf(",") === -1) return null;
+    try {
+      return Buffer.from(String(data).split(",").pop(), "base64");
+    } catch {
+      return null;
+    }
+  }
+
+  async submit(pid, code, lang, captcha = "") {
+    const result = await this.submitOnce(pid, code, lang, captcha);
+    if (result.ok || !result.captchaRequired || captcha) return result;
+    // 交互式挑战（易盾滑块等）是洛谷的反自动化设计，不破解——交给页面内提交辅助。
+    if (result.interactive) return result;
+    // 图片验证码：本机有 ddddocr 时换新图最多再试 3 次；不可用则保持 captchaRequired 语义
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const png = await this.fetchCaptchaPng();
+      if (!png) break;
+      const ocr = await captchaOcr(png);
+      if (!ocr.ok) {
+        console.log("[luogu] 验证码自动识别不可用 " + (ocr.reason || ""));
+        break;
+      }
+      const retry = await this.submitOnce(pid, code, lang, ocr.text);
+      console.log(
+        "[luogu] 提交验证码自动识别 #" +
+          (attempt + 1) +
+          " " +
+          ocr.text +
+          " → " +
+          (retry.ok ? "通过" : "未通过 status=" + retry.status + " detail=" + String(retry.detail || "").slice(0, 100))
+      );
+      if (retry.ok || !retry.captchaRequired) return retry;
+    }
+    return result;
+  }
+
+  async submitOnce(pid, code, lang, captcha = "") {
     const langId = LANG_IDS[lang] || LANG_IDS["C++14"];
-    // CSRF token 在页面 meta[name=csrf-token] 里，随会话轮换，不能拿 cookie 顶替
+    // CSRF token 在页面 meta[name=csrf-token] 里，随会话轮换，不能拿 cookie 顶替。
+    // payload 形状照抄洛谷新前端 columba bundle：{ code, lang: <数字id>, enableO2: 0|1, captcha }；
+    // lang 必须是数字（字符串会被 record.invalid_language_type 拒），验证码字段是 captcha（不是 verify）。
     const script = `(async () => {
       const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
       const headers = { "Content-Type": "application/json", "X-Luogu-Type": "content-only", "X-Requested-With": "XMLHttpRequest", "x-csrf-token": csrf };
@@ -644,33 +716,35 @@ class LuoguService {
           const text = await r.text();
           let json = null;
           try { json = JSON.parse(text); } catch {}
-          return { status: r.status, json, text: text.slice(0, 240) };
+          // interactive 字段在 errorData 末尾，必须在全文上匹配（截断文本里没有）
+          const interactive = (text.match(/"interactive"\\s*:\\s*\\{\\s*"type"\\s*:\\s*"([A-Z]+)"/) || [])[1] || "";
+          return { status: r.status, json, text: text.slice(0, 240), interactive };
         } catch (e) { return { status: 0, error: String(e) }; }
       };
       const ridOf = (j) => j && (j.rid || (j.data && j.data.rid) || (j.currentData && j.currentData.rid));
       const code = ${JSON.stringify(code)};
-      const verify = ${JSON.stringify(String(verify || ""))};
-      const attempts = [
-        { url: "/fe/api/problem/submit/${pid}", body: JSON.stringify(verify ? { code, lang: String(${Number(langId)}), enableO2: false, verify } : { code, lang: String(${Number(langId)}), enableO2: false }) },
-        { url: "/fe/api/problem/submit/${pid}", body: JSON.stringify({ code, lang: ${JSON.stringify(lang)}, enableO2: false }) },
-        { url: "/api/problem/submit", body: JSON.stringify({ code, lang: ${Number(langId)}, enableO2: false }) }
-      ];
-      let last = null;
-      for (const item of attempts) {
-        const res = await tryReq(item.url, item.body);
-        last = res;
-        if (ridOf(res.json)) return { ok: true, rid: ridOf(res.json), url: item.url };
-        const text = String(res.text || "");
-        if (text.indexOf("Captcha") !== -1 || text.indexOf("验证码") !== -1) {
-          return { ok: false, captchaRequired: true, status: res.status, detail: text.slice(0, 160) };
-        }
-        if (res.status !== 404 && text.indexOf("invalid_language") === -1) break;
+      const captcha = ${JSON.stringify(String(captcha || ""))};
+      const body = captcha
+        ? { code, lang: ${Number(langId)}, enableO2: 0, captcha }
+        : { code, lang: ${Number(langId)}, enableO2: 0 };
+      const res = await tryReq("/fe/api/problem/submit/${pid}", JSON.stringify(body));
+      if (ridOf(res.json)) return { ok: true, rid: ridOf(res.json) };
+      const text = String(res.text || "");
+      if (text.indexOf("Captcha") !== -1 || text.indexOf("验证码") !== -1) {
+        return { ok: false, captchaRequired: true, interactive: res.interactive || "", status: res.status, detail: text.slice(0, 200) };
       }
-      return { ok: false, status: last ? last.status : 0, detail: last ? last.text || last.error || "" : "no attempt" };
+      return { ok: false, status: res.status, detail: res.text || res.error || "no response" };
     })()`;
     const result = await this.exec(script);
     if (result && result.captchaRequired) {
-      return { ok: false, captchaRequired: true, message: "本次提交需要图形验证码，已在题目页打开提交区。" };
+      return {
+        ok: false,
+        captchaRequired: true,
+        interactive: result.interactive || "",
+        status: result.status || 0,
+        detail: result.detail || "",
+        message: "本次提交需要图形验证码，已在题目页打开提交区。",
+      };
     }
     if (!result || !result.ok) {
       return {

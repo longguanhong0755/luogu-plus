@@ -48,7 +48,14 @@ LG_SMOKE_AUDIT=1 npm run smoke           # 深色/浅色对比度审计 → ../.
 LG_SMOKE_THEME=light npm run smoke       # 以浅色模式跑同一套
 LG_SMOKE_RAIL=1 npm run smoke            # 侧边栏排序/显隐/自定义链接端到端
 LG_SMOKE_FOLDER=<dir> / LG_SMOKE_WE=<dir> npm run smoke   # 壁纸文件夹 / Wallpaper Engine
+LG_SMOKE_CAPTCHA_MANUAL=1 npm run smoke   # 验证码不自动识别，等人工写答案文件（默认自动 ddddocr）
 ```
+
+**验证码**（可选能力 + 明确边界）：本机装有 Python + `pip install ddddocr` 时，
+**图片验证码**自动识别填写（登录冒烟已实测一次通过）；提交代码遇到的是洛谷反自动化的
+**易盾交互式滑块**，应用不做绕过——转为页面内提交辅助：自动打开题目提交区、把代码填进
+洛谷编辑器，用户完成滑块后自己点“提交评测”。（洛谷在接口响应中声明：评测接口仅供个人
+练习，自动化/商业用途应走其开放平台 docs.lgapi.cn/open。）
 
 ## 设计速览
 

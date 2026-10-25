@@ -48,6 +48,8 @@ const required = [
   "src/main/views.js",
   "src/main/sections.js",
   "src/main/passkey-guard.js",
+  "src/main/ocr.js",
+  "scripts/captcha-ocr.py",
   "src/main/luogu.js",
   "src/main/tray.js",
   "src/main/notify.js",
@@ -155,6 +157,29 @@ if (/addScriptToEvaluateOnNewDocument/.test(viewsSource) && /runImmediately/.tes
 }
 if (/uid > 0/.test(luoguSource)) ok("登录态要求真实 uid（游客 _uid=0 不算登录）");
 else fail("登录态可能把游客误判为已登录");
+
+const ocrSource = read("src/main/ocr.js");
+if (/ddddocr/.test(ocrSource) && /recognize/.test(ocrSource) && /timeout/.test(ocrSource)) {
+  ok("验证码自动识别模块存在且有超时保护");
+} else {
+  fail("ocr.js 缺少 ddddocr/recognize/超时保护");
+}
+if (/captchaOcr/.test(luoguSource) && /fetchCaptchaPng/.test(luoguSource) && /captchaRequired/.test(luoguSource)) {
+  ok("提交验证码自动识别重试已接入产品路径");
+} else {
+  fail("luogu.js 缺少提交验证码自动识别链路");
+}
+if (/interactive/.test(luoguSource) && /YIDUN|易盾/.test(luoguSource)) {
+  ok("易盾交互式挑战不自动破解，交给页面内辅助");
+} else {
+  fail("luogu.js 缺少交互式挑战识别");
+}
+const viewsSource2 = read("src/main/views.js");
+if (/openSubmitAssist/.test(viewsSource2) && /insertText/.test(viewsSource2)) {
+  ok("页面内提交辅助（打开提交区并填代码）存在");
+} else {
+  fail("views.js 缺少页面内提交辅助");
+}
 
 const sectionsSource = read("src/main/sections.js");
 if (/class: \{ label: "课程"/.test(sectionsSource) && /article: \{ label: "文章"/.test(sectionsSource)) {
