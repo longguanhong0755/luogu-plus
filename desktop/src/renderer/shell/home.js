@@ -121,11 +121,11 @@ function buildContest(home, actions) {
   return card;
 }
 
-function buildRecent(home, actions) {
+function buildRecent(home, actions, offline) {
   const card = el("div", "list-card panel");
   const head = el("div", "list-head");
   head.appendChild(el("span", "", "最近提交"));
-  head.appendChild(el("span", "", home.updatedAt ? "刚刚同步" : ""));
+  head.appendChild(el("span", "", home.updatedAt ? (offline ? "离线数据" : "更新于 " + formatWhen(home.updatedAt)) : ""));
   card.appendChild(head);
 
   const list = home.recent || [];
@@ -148,6 +148,45 @@ function buildRecent(home, actions) {
   return card;
 }
 
+function buildQueue(state, actions) {
+  const queue = state.queue;
+  if (!queue || !queue.items || !queue.items.length) return null;
+  const card = el("div", "queue-card panel");
+  const head = el("div", "list-head");
+  head.appendChild(el("span", "", "离线提交队列"));
+  if (queue.count > 0) {
+    const retry = el("button", "q-retry", "全部重试");
+    retry.type = "button";
+    retry.addEventListener("click", () => actions.queueAction({ op: "retry" }));
+    head.appendChild(retry);
+  }
+  card.appendChild(head);
+
+  const STATUS_LABEL = {
+    pending: ["等待联网", "q-pending"],
+    captcha: ["需要验证码", "q-captcha"],
+    failed: ["提交被拒", "q-failed"],
+    done: ["已提交", "q-done"],
+  };
+  for (const item of queue.items.slice(-8)) {
+    const row = el("div", "q-row");
+    row.tabIndex = 0;
+    const label = STATUS_LABEL[item.status] || ["等待联网", "q-pending"];
+    row.appendChild(el("span", "q-status " + label[1], label[0]));
+    row.appendChild(el("span", "sub-pid", item.pid));
+    row.appendChild(el("span", "q-note", item.lastError || ""));
+    row.appendChild(el("span", "sub-time", formatWhen(item.queuedAt)));
+    row.addEventListener("click", () => actions.openProblem(item.pid));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") actions.openProblem(item.pid);
+    });
+    card.appendChild(row);
+  }
+  const note = el("div", "q-note-line", "断网时提交的代码会排在这里，联网后自动重放；点行打开题目。");
+  card.appendChild(note);
+  return card;
+}
+
 export function renderHome(state, actions) {
   const root = document.getElementById("home");
   if (!root) return;
@@ -161,9 +200,15 @@ export function renderHome(state, actions) {
   const wrap = el("div", "home-wrap");
   const home = state.home || {};
   const user = state.user || {};
+  const offline = state.online === false;
 
   const head = el("div", "home-row");
   head.appendChild(el("div", "home-date", formatDate(new Date())));
+  if (offline) {
+    const chip = el("span", "offline-chip", "离线");
+    chip.title = "当前没有网络：浏览缓存数据可用，提交会进入离线队列。";
+    head.appendChild(chip);
+  }
   head.appendChild(el("div", "home-quote", home.quote ? "每日寄语：" + home.quote : ""));
   const refresh = el("button", "home-refresh");
   refresh.type = "button";
@@ -173,6 +218,10 @@ export function renderHome(state, actions) {
   refresh.addEventListener("click", () => actions.refresh());
   head.appendChild(refresh);
   wrap.appendChild(head);
+
+  if (offline && home.updatedAt) {
+    wrap.appendChild(el("div", "offline-note", "离线模式 · 以下为本地数据，更新于 " + formatWhen(home.updatedAt) + "。"));
+  }
 
   if (!user.loggedIn) {
     const card = el("div", "login-card panel");
@@ -211,12 +260,15 @@ export function renderHome(state, actions) {
     wrap.appendChild(sign);
   }
 
+  const queueCard = buildQueue(state, actions);
+  if (queueCard) wrap.appendChild(queueCard);
+
   if (user.loggedIn) {
     wrap.appendChild(buildHeat(home));
   }
   wrap.appendChild(buildContest(home, actions));
   if (user.loggedIn) {
-    wrap.appendChild(buildRecent(home, actions));
+    wrap.appendChild(buildRecent(home, actions, offline));
   }
 
   if (home.error) {

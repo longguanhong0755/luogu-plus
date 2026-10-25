@@ -644,3 +644,19 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
   已失效（400 `record.invalid_language_type`），真实提交 UI 默认发 `lang:28`
   （C++14 (GCC 9)）与 `enableO2:1`。未逐一确认的名字一律回落 28，其余语言走页面内
   提交辅助由用户在真实下拉里自选。
+- **为什么题面快照存“已渲染 DOM”而不是 markdown 源文本**：lentille-context 里
+  的题面是 markdown，离线重放就得自己实现 KaTeX + 代码高亮 + 洛谷排版，必然失真；
+  存洛谷渲染后的 DOM（脚本已剔除）则离线页零渲染成本、公式高亮原样保留。代价是
+  单条几百 KB，用「40 条 LRU + 600KB 截断 + 1.5MB 拒收」约束住。
+- **为什么离线队列重放走与手动提交同一条管线**：队列不是绕过验证的旁路——每条
+  重放都经过 `submit()` 的完整语义（图片验证码 ddddocr 自动识别、易盾交互式
+  转页面辅助）。所以结果分类只有四种：成功/需要验证码（标出等用户处理）/
+  网络未就绪（90 秒退避重试）/服务器明确拒绝（停止重试，保留可查）。
+- **为什么 lgoff:// 要同时注册默认 session 和 persist:luogu 分区**：页面视图
+  全部跑在 `persist:luogu` 自定义分区上，`protocol.handle` 默认只挂默认 session
+  ——漏挂分区的症状是 `ERR_FAILED (-2)` 且页面停在 about:blank（冒烟实测）。
+  `registerSchemesAsPrivileged` 在 ready 之前全局生效，handle 则要两边都挂。
+- **为什么在线状态用「主窗口 navigator.onLine 轮询 + 页面 fetch 失败反馈」双通道**：
+  单靠轮询有 10 秒盲区，断网瞬间列表还会去撞五次重试；fetchContext 每次把页面
+  上下文里的 `navigator.onLine` 顺手带回，能在第一个失败请求就把状态翻成离线，
+  后续请求立即走缓存不再等。恢复在线由轮询翻转触发刷新 + 队列重放。

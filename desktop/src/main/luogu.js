@@ -155,10 +155,204 @@ class LuoguService {
     this.refreshing = false;
     this.lastRefresh = 0;
     this.libCache = new Map();
+    /* 断网可用：在线状态由主窗口 navigator.onLine 轮询 + 页面 fetch 失败反馈共同维护。 */
+    this.online = true;
+    this.onlineTimer = null;
+    this.flushing = false;
+    this.queueTimer = null;
   }
 
   init() {
+    this.hydrate();
     this.refresh(true).catch((err) => console.error("[luogu] init refresh:", err.message));
+    this.startOnlineWatch();
+    // 上次退出时留在队列里的提交，趁启动联网时补交
+    if (this.online) this.flushQueue().catch(() => {});
+  }
+
+  /* 启动即回填：上次成功刷新的主页/身份快照先上屏，再等网络刷新。
+     断网启动时界面不是空的，而是「离线数据」。 */
+  hydrate() {
+    const store = this.ctx.store;
+    if (!store) return;
+    const home = store.get("home");
+    if (home && typeof home === "object" && home.updatedAt) {
+      this.home = Object.assign({}, this.home, home, { error: "" });
+    }
+    const user = store.get("user");
+    if (user && typeof user === "object" && user.uid) {
+      this.user = Object.assign({}, this.user, user);
+    }
+    const queue = store.get("queue");
+    if (Array.isArray(queue) && queue.length) {
+      console.log("[luogu] 启动时发现离线队列 " + queue.length + " 条");
+      this.scheduleQueueRetry(4000);
+    }
+  }
+
+  /* ---------- 在线状态 ---------- */
+
+  startOnlineWatch() {
+    if (this.onlineTimer) return;
+    this.onlineTimer = setInterval(async () => {
+      try {
+        const win = this.ctx.win;
+        if (!win || win.isDestroyed()) return;
+        const online = await win.webContents.executeJavaScript("navigator.onLine");
+        this.setOnline(!!online);
+      } catch {
+        /* 主窗口未就绪时保持现状 */
+      }
+    }, 10000);
+  }
+
+  setOnline(online) {
+    if (this.online === online) return;
+    this.online = online;
+    console.log("[luogu] 网络状态 → " + (online ? "在线" : "离线"));
+    if (this.ctx.emitState) this.ctx.emitState();
+    if (!online) return;
+    this.refresh(true).catch(() => {});
+    this.flushQueue().catch(() => {});
+  }
+
+  /* ---------- 离线提交队列 ---------- */
+
+  queueItems() {
+    const store = this.ctx.store;
+    const list = store ? store.get("queue") : null;
+    return Array.isArray(list) ? list.filter((item) => item && item.pid && item.code) : [];
+  }
+
+  queueState() {
+    const items = this.queueItems();
+    return {
+      count: items.filter((item) => item.status !== "done" && item.status !== "failed").length,
+      items: items.map((item) => ({
+        id: item.id,
+        pid: item.pid,
+        lang: item.lang,
+        status: item.status || "pending",
+        tries: item.tries || 0,
+        queuedAt: item.queuedAt || 0,
+        lastError: String(item.lastError || "").slice(0, 80),
+      })),
+    };
+  }
+
+  async enqueueSubmit(pid, code, lang, reason) {
+    const store = this.ctx.store;
+    if (!store) return { ok: false, message: "本地存储不可用，无法离线排队。" };
+    const queue = this.queueItems();
+    // 同题同码的重复入队直接合并，避免断网期间连点堆积
+    if (queue.some((item) => item.pid === pid && item.code === code && item.status !== "done" && item.status !== "failed")) {
+      return { ok: false, queued: true, message: `已排在离线队列里（${pid}），联网后自动提交。` };
+    }
+    queue.push({
+      id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      pid,
+      code,
+      lang: lang || "C++14",
+      status: "pending",
+      tries: 0,
+      nextTryAt: 0,
+      queuedAt: Date.now(),
+      lastError: String(reason || "").slice(0, 80),
+    });
+    if (queue.length > 20) queue.splice(0, queue.length - 20);
+    store.set("queue", queue, 100);
+    store.flush("queue");
+    if (this.ctx.emitState) this.ctx.emitState();
+    return { ok: false, queued: true, message: `${reason || "当前离线"}，已加入队列（${pid}），联网后自动提交。` };
+  }
+
+  async queueAction(op, id) {
+    const store = this.ctx.store;
+    if (!store) return this.queueState();
+    const queue = this.queueItems();
+    if (op === "clear") {
+      store.set("queue", [], 0);
+      store.flush("queue");
+    } else if (op === "retry") {
+      for (const item of queue) {
+        if (id && item.id !== id) continue;
+        if (item.status === "done") continue;
+        item.status = "pending";
+        item.nextTryAt = 0;
+        item.lastError = "";
+      }
+      store.set("queue", queue, 0);
+      store.flush("queue");
+      this.flushQueue().catch(() => {});
+    } else if (op === "remove" && id) {
+      store.set(
+        "queue",
+        queue.filter((item) => item.id !== id),
+        0
+      );
+      store.flush("queue");
+    }
+    if (this.ctx.emitState) this.ctx.emitState();
+    return this.queueState();
+  }
+
+  scheduleQueueRetry(delayMs = 60000) {
+    if (this.queueTimer) clearTimeout(this.queueTimer);
+    this.queueTimer = setTimeout(() => {
+      this.queueTimer = null;
+      if (this.online) this.flushQueue().catch(() => {});
+      else this.scheduleQueueRetry();
+    }, delayMs);
+  }
+
+  /* 逐条重放：走与手动提交完全相同的 submit 管线（含验证码自动识别与页面辅助语义）。
+     结果分类：ok → 完成；验证码/交互式 → 标记 captcha 等用户处理；
+     status 0（网络层失败）→ 保留待重试；服务器明确拒绝 → failed 停止重试。 */
+  async flushQueue() {
+    if (this.flushing || !this.online) return;
+    const store = this.ctx.store;
+    if (!store) return;
+    this.flushing = true;
+    let mutated = false;
+    try {
+      const queue = this.queueItems();
+      const now = Date.now();
+      for (const item of queue) {
+        if (item.status === "done" || item.status === "failed") continue;
+        if (item.status === "captcha") continue;
+        if (item.nextTryAt && item.nextTryAt > now) continue;
+        const result = await this.submit(item.pid, item.code, item.lang);
+        item.tries = (item.tries || 0) + 1;
+        mutated = true;
+        if (result.ok) {
+          item.status = "done";
+          item.rid = result.rid || "";
+          this.ctx.toast && this.ctx.toast("离线队列", `${item.pid} 已自动提交，评测完成后通知。`);
+        } else if (result.captchaRequired) {
+          item.status = "captcha";
+          item.lastError = "需要验证码，点击「去验证」在页面里完成提交。";
+          this.ctx.toast && this.ctx.toast("离线队列", `${item.pid} 需要验证码，请在题目页完成提交。`);
+        } else if (Number(result.status) === 0 || /网络|离线/.test(String(result.message || ""))) {
+          item.status = "pending";
+          item.lastError = "网络未就绪，稍后重试";
+          item.nextTryAt = Date.now() + 90000;
+        } else {
+          item.status = "failed";
+          item.lastError = String(result.message || result.detail || "提交被拒绝").slice(0, 120);
+          this.ctx.toast && this.ctx.toast("离线队列", `${item.pid} 提交被拒：` + item.lastError);
+        }
+        await delay(1500);
+      }
+      const remaining = queue.filter((item) => item.status === "pending" || item.status === "retry");
+      if (remaining.length) this.scheduleQueueRetry();
+      const cleaned = queue.filter((item) => item.status !== "done").slice(-20);
+      store.set("queue", cleaned, 100);
+      store.flush("queue");
+      if (this.ctx.emitState) this.ctx.emitState();
+    } finally {
+      this.flushing = false;
+    }
+    return mutated;
   }
 
   /* ---------- 隐藏窗口 ---------- */
@@ -227,26 +421,31 @@ class LuoguService {
 
   async fetchContext(pathname) {
     const url = pathname.startsWith("http") ? pathname : "https://www.luogu.com.cn" + pathname;
+    // 离线时页面 fetch 立刻失败，重试五次只是白等——直接走调用方的缓存回退
+    if (!this.online) return null;
     let lastFail = "";
     for (let attempt = 0; attempt < 5; attempt++) {
       const result = await this.exec(
         `(async () => {
           try {
-            const r = await fetch(${JSON.stringify(url)}, { credentials: "include" });
+            const r = await fetch(${JSON.stringify(url)}, { credentials: "include", signal: AbortSignal.timeout(9000) });
             const text = await r.text();
             const m = text.match(/<script[^>]*id=["']lentille-context["'][^>]*>([\\s\\S]*?)<\\/script>/);
-            if (!m) return { ok: false, status: r.status, reason: "no-ctx", len: text.length };
+            if (!m) return { ok: false, status: r.status, reason: "no-ctx", len: text.length, online: navigator.onLine };
             try {
-              return { ok: true, context: JSON.parse(m[1]) };
+              return { ok: true, context: JSON.parse(m[1]), online: navigator.onLine };
             } catch (e) {
-              return { ok: false, status: r.status, reason: "parse", detail: String(e).slice(0, 120) };
+              return { ok: false, status: r.status, reason: "parse", detail: String(e).slice(0, 120), online: navigator.onLine };
             }
           } catch (e) {
-            return { ok: false, error: String(e).slice(0, 120) };
+            return { ok: false, error: String(e).slice(0, 120), online: navigator.onLine };
           }
         })()`
       );
+      // 页面上下文顺手回报 OS 网络状态：轮询之外最快的离线感知途径
+      if (result && typeof result.online === "boolean") this.setOnline(result.online);
       if (result && result.ok && result.context) return result.context;
+      if (result && result.online === false) return null;
       lastFail = JSON.stringify(result);
       await delay(800);
     }
@@ -307,6 +506,26 @@ class LuoguService {
 
   /* ---------- 原生列表 ---------- */
 
+  libStoreKey(cacheKey) {
+    return "lib:" + cacheKey;
+  }
+
+  cachedLib(cacheKey) {
+    const store = this.ctx.store;
+    if (!store) return null;
+    const entry = store.get(this.libStoreKey(cacheKey));
+    return entry && entry.payload ? entry : null;
+  }
+
+  saveLib(cacheKey, payload) {
+    const store = this.ctx.store;
+    if (!store) return;
+    const key = this.libStoreKey(cacheKey);
+    store.set(key, { key, at: Date.now(), payload });
+    // 搜索词会产生无穷多个 key，按时间保留最新 60 份
+    if (store.evict("lib:", 60) > 80) store.evict("lib:", 40);
+  }
+
   async fetchLibrary(kind, options = {}) {
     const page = Math.max(1, Number(options.page) || 1);
     const keyword = String(options.keyword || "").trim();
@@ -322,10 +541,23 @@ class LuoguService {
       if (!login.loggedIn) {
         return Object.assign(base, { needLogin: true });
       }
+    }
+    // 离线时不再碰网络：有缓存出缓存（带 stale 标记），没缓存给离线提示
+    if (!this.online) {
+      const hit = this.cachedLib(cacheKey);
+      if (hit) return Object.assign({}, hit.payload, { stale: true, offline: true });
+      return Object.assign(base, { error: "当前离线，这份列表还没有缓存过。" });
+    }
+    if (kind === "record") {
       const context = await this.fetchContext(
         `/record/list?user=${encodeURIComponent(login.uid || "")}&page=${page}`
       );
-      if (!context) return Object.assign(base, { error: "记录加载失败" });
+      if (!context) {
+        // 网络失败（含刚断网还没被轮询发现）：回退缓存而不是清空列表
+        const hit = this.cachedLib(cacheKey);
+        if (hit) return Object.assign({}, hit.payload, { stale: true, offline: !this.online });
+        return Object.assign(base, { error: "记录加载失败" });
+      }
       const records = this.parseRecords(context);
       const items = records.map((record) => {
         const problem = record.problem || {};
@@ -345,6 +577,7 @@ class LuoguService {
       });
       const payload = Object.assign(base, { items, total: items.length });
       this.libCache.set(cacheKey, { at: Date.now(), payload });
+      this.saveLib(cacheKey, payload);
       return payload;
     }
 
@@ -362,7 +595,11 @@ class LuoguService {
     const pathname = paths[kind];
     if (!pathname) return Object.assign(base, { error: "未知列表" });
     const context = await this.fetchContext(pathname);
-    if (!context) return Object.assign(base, { error: "数据加载失败，请检查网络" });
+    if (!context) {
+      const hit = this.cachedLib(cacheKey);
+      if (hit) return Object.assign({}, hit.payload, { stale: true, offline: !this.online });
+      return Object.assign(base, { error: "数据加载失败，请检查网络" });
+    }
     const data = context.data || {};
     const node =
       kind === "problems"
@@ -453,6 +690,7 @@ class LuoguService {
       categories: categories.map((item) => ({ key: String(item.key || ""), name: String(item.name || "") })),
     });
     this.libCache.set(cacheKey, { at: Date.now(), payload });
+    this.saveLib(cacheKey, payload);
     return payload;
   }
 
@@ -525,7 +763,14 @@ class LuoguService {
   async refresh(force = false) {
     if (this.refreshing) return this.state();
     if (!force && Date.now() - this.lastRefresh < 20000) return this.state();
+    // 离线时保留现有/缓存数据不动，不要用一轮失败的抓取把好数据清掉
+    if (!this.online) {
+      if (this.ctx.emitState) this.ctx.emitState();
+      return this.state();
+    }
     this.refreshing = true;
+    const prev = this.home;
+    let networkFailed = false;
     try {
       const login = await this.loginState();
       this.user = { loggedIn: login.loggedIn, uid: login.uid, name: "", avatar: "" };
@@ -568,6 +813,10 @@ class LuoguService {
             next.error = "登录已过期，请重新登录";
             break;
           }
+          if (!context) {
+            networkFailed = true;
+            break;
+          }
           const pageRecords = this.parseRecords(context);
           if (!pageRecords.length) break;
           records = records.concat(pageRecords);
@@ -582,8 +831,21 @@ class LuoguService {
         if (!this.user.name) this.user.name = "洛谷用户";
       }
 
+      // 抓取中途断网：保留上一次的打卡/热力/最近提交，只更新拿到的部分
+      if (networkFailed) {
+        if (!next.contest && prev.contest) next.contest = prev.contest;
+        if (!next.heat.length && prev.heat && prev.heat.length) next.heat = prev.heat;
+        if (!next.recent.length && prev.recent && prev.recent.length) next.recent = prev.recent;
+        if (next.punched === null && prev.punched !== null) {
+          next.punched = prev.punched;
+          next.streak = prev.streak;
+        }
+        next.updatedAt = prev.updatedAt || next.updatedAt;
+      }
+
       this.home = next;
       this.lastRefresh = Date.now();
+      this.persistSnapshot();
     } catch (err) {
       this.home.error = err.message;
       console.error("[luogu] refresh:", err.message);
@@ -592,6 +854,14 @@ class LuoguService {
       if (this.ctx.emitState) this.ctx.emitState();
     }
     return this.state();
+  }
+
+  /* 主页/身份快照落盘：断网启动时 hydrate() 回填的就是这里写的。 */
+  persistSnapshot() {
+    const store = this.ctx.store;
+    if (!store) return;
+    store.set("home", this.home, 800);
+    store.set("user", this.user, 800);
   }
 
   async readPunchState() {
@@ -613,6 +883,7 @@ class LuoguService {
   }
 
   async checkin() {
+    if (!this.online) return { ok: false, message: "当前离线，签到需要联网后进行。" };
     const punchState = await this.readPunchState();
     if (punchState.punched) return { ok: true, already: true };
     const clickScript = `(() => {
@@ -639,22 +910,6 @@ class LuoguService {
   }
 
   /* ---------- 提交 ---------- */
-
-  async fetchCaptchaPng() {
-    const data = await this.exec(
-      `(async () => {
-        const r = await fetch("/lg4/captcha?_t=" + Date.now(), { credentials: "include" });
-        const b = await r.blob();
-        return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
-      })()`
-    );
-    if (!data || typeof data !== "string" || data.indexOf(",") === -1) return null;
-    try {
-      return Buffer.from(String(data).split(",").pop(), "base64");
-    } catch {
-      return null;
-    }
-  }
 
   async fetchCaptchaPng() {
     // 提交验证码的图从 /api/verify/captcha 取（洛谷新前端提交重试用的就是这个路由，
@@ -786,6 +1041,48 @@ class LuoguService {
     }
   }
 
+  /* ---------- 题目快照（离线阅读） ---------- */
+
+  problemSnapshotUrl(pid) {
+    const store = this.ctx.store;
+    if (!store) return "";
+    const snap = store.get("problem:" + String(pid || "").toUpperCase(), null);
+    return snap && snap.html ? "lgoff://problem/" + encodeURIComponent(String(pid).toUpperCase()) : "";
+  }
+
+  hasProblemSnapshot(pid) {
+    return !!this.problemSnapshotUrl(pid);
+  }
+
+  /* views.js 在题目页渲染稳定后调用：把已渲染的题面 DOM 存下来。
+     存 DOM 而不是 markdown 源文本——洛谷自己渲染的 KaTeX/代码高亮直接保留，
+     离线页零渲染成本；换来的代价是快照比源文本大，靠数量上限约束。 */
+  saveProblemSnapshot(pid, title, html) {
+    const store = this.ctx.store;
+    if (!store || !html || html.length < 200) return false;
+    const key = "problem:" + String(pid || "").toUpperCase();
+    store.set(
+      key,
+      {
+        key,
+        pid: String(pid).toUpperCase(),
+        title: String(title || pid || "").slice(0, 120),
+        html: String(html).slice(0, 600000),
+        url: "https://www.luogu.com.cn/problem/" + String(pid).toUpperCase(),
+        savedAt: Date.now(),
+      },
+      600
+    );
+    store.evict("problem:", 40);
+    return true;
+  }
+
+  problemSnapshot(pid) {
+    const store = this.ctx.store;
+    if (!store) return null;
+    return store.get("problem:" + String(pid || "").toUpperCase(), null);
+  }
+
   async logout() {
     try {
       await this.ctx.session.clearStorageData({ storages: ["cookies"] });
@@ -794,6 +1091,13 @@ class LuoguService {
     }
     this.libCache.clear();
     this.lastRefresh = 0;
+    // 本地快照属于上一个账号，一并清掉（题目快照是公开题面，保留无害但顺手清理列表/主页）
+    const store = this.ctx.store;
+    if (store) {
+      store.delete("home");
+      store.delete("user");
+      for (const entry of store.entries("lib:")) store.delete(entry.key);
+    }
     await this.refresh(true);
   }
 

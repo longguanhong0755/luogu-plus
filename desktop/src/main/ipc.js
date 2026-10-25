@@ -19,6 +19,8 @@ function state(ctx) {
     theme: Object.assign({}, ctx.theme, { wallpaper: publicWallpaper(ctx.wallpaper) }),
     user: ctx.luogu.user,
     home: ctx.luogu.home,
+    online: ctx.luogu.online !== false,
+    queue: ctx.luogu.queueState(),
     page: ctx.views.currentInfo(),
     switcher: ctx.views.listOpen(),
   };
@@ -223,9 +225,20 @@ function registerIpc(ctx) {
     if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid) || !code.trim()) {
       return { ok: false, message: "题目编号或代码为空。" };
     }
+    // 断网提交：不碰网络，进本地队列，联网后自动重放
+    if (ctx.luogu.online === false) {
+      const queued = await ctx.luogu.enqueueSubmit(pid, code, lang, "当前离线");
+      ctx.toast("提交", queued.message);
+      return queued;
+    }
     const result = await ctx.luogu.submit(pid, code, lang);
     if (result.ok) {
       ctx.toast("提交", `已提交 ${pid}，评测完成后会通知你。`);
+    } else if (Number(result.status) === 0) {
+      // 网络层失败（在线状态还没跟上）：排进队列稍后自动重试
+      const queued = await ctx.luogu.enqueueSubmit(pid, code, lang, "网络未就绪");
+      ctx.toast("提交", queued.message);
+      return queued;
     } else {
       // 原生提交没走通（登录过期 / 需要验证码 / 易盾交互式挑战）：
       // 打开题目页提交区并自动填入代码，用户在页面里完成验证后提交。
@@ -239,6 +252,33 @@ function registerIpc(ctx) {
       );
     }
     return result;
+  });
+
+  ipcMain.handle("app:queueAction", async (_event, payload) => {
+    const op = String((payload && payload.op) || "");
+    const id = payload ? String(payload.id || "") : "";
+    if (!["retry", "clear", "remove"].includes(op)) return ctx.luogu.queueState();
+    if (op === "remove" && !id) return ctx.luogu.queueState();
+    return ctx.luogu.queueAction(op, id);
+  });
+
+  ipcMain.handle("app:saveDraft", (_event, payload) => {
+    if (!ctx.store) return { ok: false };
+    const code = String((payload && payload.code) || "");
+    const lang = String((payload && payload.lang) || "C++14");
+    ctx.store.set("draft", { code: code.slice(0, 200000), lang, savedAt: Date.now() }, 800);
+    return { ok: true };
+  });
+
+  ipcMain.handle("app:getDraft", () => {
+    if (!ctx.store) return null;
+    const draft = ctx.store.get("draft");
+    if (!draft || typeof draft !== "object") return null;
+    return {
+      code: String(draft.code || ""),
+      lang: String(draft.lang || "C++14"),
+      savedAt: Number(draft.savedAt) || 0,
+    };
   });
 
   ipcMain.handle("app:checkin", async () => {

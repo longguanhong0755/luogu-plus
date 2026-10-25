@@ -277,6 +277,11 @@ export function initLibrary(actions) {
       renderFoot(state);
       return;
     }
+    if (state.stale) {
+      list.appendChild(
+        el("div", "lib-stale", state.offlineNote ? "离线数据 · 联网后自动更新" : "网络不稳 · 当前显示缓存数据")
+      );
+    }
     for (const item of items) list.appendChild(rowFor(state, item));
     renderFoot(state);
     const shown = state.dom.count;
@@ -467,6 +472,8 @@ export function initLibrary(actions) {
     if (token !== state.token) return;
     state.loading = false;
     if (!res) res = { error: "加载失败" };
+    state.stale = !!res.stale;
+    state.offlineNote = !!res.offline;
     if (res.needLogin) {
       state.needLogin = true;
       state.items = [];

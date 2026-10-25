@@ -44,6 +44,8 @@ function homeKey(state) {
     (home.recent || []).map((item) => [item.pid, item.status, item.time]).join(","),
     home.contest ? [home.contest.id, home.contest.start, home.contest.live].join("|") : "",
     (home.heat || []).length,
+    state.online === false ? "off" : "on",
+    (state.queue && state.queue.items || []).map((item) => [item.id, item.status, item.tries]).join(","),
   ]);
 }
 
@@ -61,6 +63,8 @@ async function boot() {
         code,
         lang,
       }),
+    saveDraft: (payload) => window.lg.saveDraft(payload),
+    loadDraft: () => window.lg.getDraft(),
   });
 
   const homeActions = {
@@ -69,6 +73,7 @@ async function boot() {
     login: () => window.lg.nav("login"),
     nav: (target) => window.lg.nav(target),
     openProblem: (pid) => window.lg.openProblem(pid),
+    queueAction: (payload) => window.lg.queueAction(payload),
   };
 
   const library = initLibrary({

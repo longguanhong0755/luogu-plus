@@ -28,6 +28,10 @@ function isLuoguUrl(raw) {
   }
 }
 
+function isOfflineUrl(raw) {
+  return String(raw || "").startsWith("lgoff://");
+}
+
 function cleanTitle(raw) {
   return String(raw || "")
     .replace(/\s*-\s*洛谷\s*$/, "")
@@ -37,6 +41,10 @@ function cleanTitle(raw) {
 function pidFromUrl(raw) {
   try {
     const url = new URL(raw);
+    if (url.protocol === "lgoff:") {
+      const m = url.pathname.match(/^\/(?:problem\/)?([A-Za-z]{1,4}\d+[A-Za-z0-9]*)\/?$/);
+      return m ? m[1].toUpperCase() : "";
+    }
     const m = url.pathname.match(/^\/problem\/([A-Za-z]{1,4}\d+[A-Za-z0-9]*)/);
     return m ? m[1].toUpperCase() : "";
   } catch {
@@ -142,14 +150,27 @@ class ViewManager {
     if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) return;
     if (this.library) this.returnLib = this.library;
     this.library = null;
+    const luogu = this.ctx.luogu;
+    const onlineUrl = "https://www.luogu.com.cn/problem/" + pid;
+    // 断网时一律开本地 lgoff 页：有快照出题面，没快照出「离线无缓存」提示页（不再是空白+报错）
+    const offline = !!(luogu && luogu.online === false);
+    const offlineUrl = offline ? "lgoff://problem/" + encodeURIComponent(pid) : "";
     const entry = this.ensureEntry({
       key: "problem:" + pid,
       kind: "problem",
       title: pid,
-      url: "https://www.luogu.com.cn/problem/" + pid,
+      url: offlineUrl || onlineUrl,
       pid,
       section: "problems",
     });
+    // 已存在的条目不强制重载（页面里可能有正在编辑的提交代码）；
+    // 只在「网络状态和当前页面不一致」时切换：离线→线上页切快照，恢复在线→快照切回线上页。
+    const current = entry.view.webContents.getURL();
+    if (offline && current.startsWith("https://") && !current.includes("#")) {
+      entry.view.webContents.loadURL(offlineUrl).catch(() => {});
+    } else if (!offline && isOfflineUrl(current)) {
+      entry.view.webContents.loadURL(onlineUrl).catch(() => {});
+    }
     this.evictKind("problem", MAX_PROBLEMS, entry.key);
     this.ideOn = false;
     this.showEntry(entry);
@@ -158,6 +179,11 @@ class ViewManager {
   openDetail(rawUrl, title, key) {
     let url = String(rawUrl || "");
     if (!url) return;
+    if (isOfflineUrl(url)) {
+      const pid = pidFromUrl(url);
+      if (pid) this.openProblem(pid);
+      return;
+    }
     if (url.startsWith("/")) url = "https://www.luogu.com.cn" + url;
     if (!isLuoguUrl(url)) {
       if (/^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -335,6 +361,62 @@ class ViewManager {
     }
     console.log("[luogu] 提交辅助未找到编辑器 " + JSON.stringify(lastProbe));
     return false;
+  }
+
+  /* 题面快照：题目页导航停稳后延迟抓取已渲染 DOM（洛谷自己渲染的公式/代码高亮原样保留）。
+     SPA 水合慢于首次 paint，抓到空壳时再等一轮；#submit 提交区和离线页不抓。 */
+  scheduleProblemCapture(entry, url) {
+    if (!entry || entry.kind !== "problem") return;
+    if (entry.captureTimer) clearTimeout(entry.captureTimer);
+    if (!url || url.includes("#") || isOfflineUrl(url)) return;
+    const luogu = this.ctx.luogu;
+    if (!luogu || luogu.online === false) return;
+    entry.captureTimer = setTimeout(() => {
+      entry.captureTimer = null;
+      this.captureProblem(entry, 0).catch(() => {});
+    }, 4500);
+  }
+
+  async captureProblem(entry, round) {
+    const wc = entry.view.webContents;
+    if (wc.isDestroyed() || round > 2) return;
+    const url = wc.getURL();
+    const pid = entry.pid || pidFromUrl(url);
+    if (!pid || url.includes("#") || isOfflineUrl(url)) return;
+    if (this.ctx.luogu && this.ctx.luogu.online === false) return;
+    let probe = null;
+    try {
+      probe = await wc.executeJavaScript(`(() => {
+        const pick =
+          document.querySelector(".main-container") ||
+          document.querySelector("main") ||
+          document.querySelector("#app") ||
+          document.body;
+        if (!pick) return { ok: false, reason: "no-dom" };
+        const text = (pick.textContent || "").replace(/\\s+/g, " ").trim();
+        if (text.length < 200) return { ok: false, reason: "thin", len: text.length };
+        const clone = pick.cloneNode(true);
+        clone.querySelectorAll("script, noscript, iframe, #lg-boot").forEach((node) => node.remove());
+        const html = clone.innerHTML;
+        if (html.length < 200) return { ok: false, reason: "thin-html" };
+        return {
+          ok: true,
+          title: (document.title || "").split(" - 洛谷")[0],
+          html: html.length > 600000 ? html.slice(0, 600000) : html,
+        };
+      })()`);
+    } catch (err) {
+      console.log("[views] 快照抓取失败 " + String(err && err.message).slice(0, 100));
+      return;
+    }
+    if (probe && probe.ok && this.ctx.luogu) {
+      this.ctx.luogu.saveProblemSnapshot(pid, probe.title, probe.html);
+      return;
+    }
+    // 页面还在水合：5 秒后重试
+    if (probe && (probe.reason === "thin" || probe.reason === "thin-html" || probe.reason === "no-dom")) {
+      setTimeout(() => this.captureProblem(entry, round + 1).catch(() => {}), 5000);
+    }
   }
 
   setIde(on) {
@@ -560,6 +642,7 @@ class ViewManager {
       if (section) entry.section = section;
       this.emit();
       this.ctx.onNavigate && this.ctx.onNavigate(url);
+      if (entry.kind === "problem") this.scheduleProblemCapture(entry, url);
     };
     wc.on("did-navigate", onNavigate);
     wc.on("did-navigate-in-page", onNavigate);
@@ -568,12 +651,22 @@ class ViewManager {
       const current = wc.getURL();
       if (current === "about:blank") return;
       if (!wc.debugger.isAttached()) this.attachGuard(wc);
-      this.injectSkin(entry);
+      if (!isOfflineUrl(current)) this.injectSkin(entry);
       entry.view.setBackgroundColor(this.ctx.theme.colors.bg);
     });
 
     wc.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
       if (!isMainFrame || code === -3 || url === "about:blank") return;
+      // 线上题目页加载失败（断网/网络抖动）：有本地快照就切过去，别给用户一个错误页
+      const pid = pidFromUrl(url) || entry.pid;
+      if (entry.kind === "problem" && pid && !isOfflineUrl(url)) {
+        const offlineUrl = this.ctx.luogu ? this.ctx.luogu.problemSnapshotUrl(pid) : "";
+        if (offlineUrl) {
+          console.log("[views] 题目加载失败，回退离线快照 " + pid);
+          wc.loadURL(offlineUrl).catch(() => {});
+          return;
+        }
+      }
       this.ctx.toast && this.ctx.toast("页面加载失败", `${description}（${code}）`);
       console.error("[views] did-fail-load", url, code, description);
     });
@@ -600,7 +693,10 @@ class ViewManager {
     });
 
     wc.setWindowOpenHandler(({ url }) => {
-      if (isLuoguUrl(url)) {
+      if (isOfflineUrl(url)) {
+        const pid = pidFromUrl(url);
+        if (pid) this.openProblem(pid);
+      } else if (isLuoguUrl(url)) {
         this.openDetail(url, "", "detail:" + url);
       } else {
         shell.openExternal(url);
@@ -609,7 +705,7 @@ class ViewManager {
     });
 
     wc.on("will-navigate", (event, url) => {
-      if (url.startsWith("devtools://") || url.startsWith("about:")) return;
+      if (url.startsWith("devtools://") || url.startsWith("about:") || isOfflineUrl(url)) return;
       if (!isLuoguUrl(url)) {
         event.preventDefault();
         shell.openExternal(url);
@@ -710,6 +806,10 @@ class ViewManager {
   }
 
   destroyEntry(entry) {
+    if (entry.captureTimer) {
+      clearTimeout(entry.captureTimer);
+      entry.captureTimer = null;
+    }
     try {
       if (entry.attached) {
         this.win.contentView.removeChildView(entry.view);
@@ -794,6 +894,8 @@ class ViewManager {
   injectSkin(entry) {
     const wc = entry.view.webContents;
     if (wc.isDestroyed()) return;
+    // 离线快照页有自己的排版与主题，不套洛谷皮肤变量
+    if (isOfflineUrl(wc.getURL())) return;
     let css = "";
     try {
       css = this.skinCss(entry);
