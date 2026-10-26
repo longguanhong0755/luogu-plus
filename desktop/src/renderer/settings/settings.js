@@ -85,6 +85,12 @@ function applyAppearance(state) {
   const pct = ((Number(mat.value) - Number(mat.min || 0)) / (Number(mat.max || 100) - Number(mat.min || 0))) * 100;
   mat.style.setProperty("--fill", pct + "%");
 
+  const glass = $("glass");
+  if (document.activeElement !== glass) glass.value = appearance.glass;
+  $("glass-val").textContent = appearance.glass;
+  const glassPct = ((Number(glass.value) - Number(glass.min || 0)) / (Number(glass.max || 100) - Number(glass.min || 0))) * 100;
+  glass.style.setProperty("--fill", glassPct + "%");
+
   document.querySelectorAll("#accent-row .sw[data-accent]").forEach((btn) => {
     const on = btn.dataset.accent === appearance.accent;
     btn.classList.toggle("on", on);
@@ -366,6 +372,16 @@ function bind() {
     mat.style.setProperty("--fill", pct + "%");
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => api.setAppearance({ material: Number(mat.value) }), 70);
+  });
+
+  const glass = $("glass");
+  let glassTimer = null;
+  glass.addEventListener("input", () => {
+    $("glass-val").textContent = glass.value;
+    const pct = ((Number(glass.value) - Number(glass.min || 0)) / (Number(glass.max || 100) - Number(glass.min || 0))) * 100;
+    glass.style.setProperty("--fill", pct + "%");
+    if (glassTimer) clearTimeout(glassTimer);
+    glassTimer = setTimeout(() => api.setAppearance({ glass: Number(glass.value) }), 70);
   });
 
   document.querySelectorAll("#wp-sources .src").forEach((btn) => {

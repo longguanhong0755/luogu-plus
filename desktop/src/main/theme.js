@@ -2,8 +2,10 @@
    渲染层只消费解析后的颜色，不自己判断深浅。
    材质参数的含义（0.4.0 起内容面始终可读）：
    - panelAlpha：标题栏/侧栏/工具条的不透明度（材质越高越透）
-   - pageScrim：内容画布与洛谷页面壁纸之上的主题色纱层（>= 91%）
-   - cardAlpha：卡片/列表/输入框的不透明度（>= 91%）
+   - glass：「壁纸透出程度」（0.5.1 起），在材质基础上继续压低内容面/页面纱层，
+     各自有可读下限（panel 58 / scrim 50 / card 55）
+   - pageScrim：内容画布与洛谷页面壁纸之上的主题色纱层
+   - cardAlpha：卡片/列表/输入框的不透明度
    - blurPx：玻璃模糊半径（主要作用于外壳与浮层） */
 const { nativeTheme, systemPreferences } = require("electron");
 
@@ -136,11 +138,13 @@ function payload(cfg) {
   colors.highlight = isDark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.85)";
 
   const material = clamp(cfg.appearance.material, 0, 100, 55);
+  const glass = clamp(cfg.appearance.glass, 0, 100, 45);
   const perf = !!(cfg.general && cfg.general.performanceMode);
-  // 内容面始终保持在 91% 以上；材质主要影响外壳与模糊。
-  let panelAlpha = Math.round(94 - material * 0.2);
-  const pageScrim = Math.round(97 - material * 0.06);
-  const cardAlpha = Math.round(99 - material * 0.08);
+  // 内容面 = 94/99 基线（材质滑杆）再按「壁纸透出程度」下调；
+  // 各自有下限：正文再透也不能低于文字可读的底（55/50/58）。
+  let panelAlpha = clamp(Math.round(94 - material * 0.2 - glass * 0.25), 58, 98);
+  const pageScrim = clamp(Math.round(97 - material * 0.06 - glass * 0.42), 50, 99);
+  const cardAlpha = clamp(Math.round(99 - material * 0.08 - glass * 0.32), 55, 99);
   const overlayAlpha = Math.min(98, cardAlpha + 2);
   const blurPx = perf ? 0 : Math.round((6 + material * 0.24) * 10) / 10;
   // 性能模式没有背景模糊，外壳底色要更实一点，避免文字压在壁纸上
@@ -150,6 +154,7 @@ function payload(cfg) {
     isDark,
     colors,
     material,
+    glass,
     panelAlpha,
     panelPct: panelAlpha,
     pageScrim,

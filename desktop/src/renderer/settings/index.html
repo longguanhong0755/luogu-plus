@@ -58,6 +58,13 @@
                 </div>
               </div>
               <div class="setting-row">
+                <div class="setting-label"><span>壁纸透出</span><small>越高壁纸越明显，正文有可读下限</small></div>
+                <div class="setting-control range-control">
+                  <input type="range" id="glass" min="0" max="100" step="1" aria-label="壁纸透出程度" />
+                  <span class="val nums" id="glass-val">45</span>
+                </div>
+              </div>
+              <div class="setting-row">
                 <div class="setting-label"><span>强调色</span><small>选中、链接与高亮</small></div>
                 <div class="setting-control">
                   <div class="swatches" id="accent-row" role="group" aria-label="强调色">
@@ -73,7 +80,7 @@
           <section data-panel="wallpaper" hidden>
             <div class="pane-head">
               <h2 tabindex="-1">壁纸</h2>
-              <p>壁纸作为窗口氛围，内容区会压一层高不透明度画布保证阅读。</p>
+              <p>壁纸作为窗口氛围，正文透出程度在「外观 → 壁纸透出」里调节。</p>
             </div>
             <div class="settings-group">
               <div class="setting-row stacked">

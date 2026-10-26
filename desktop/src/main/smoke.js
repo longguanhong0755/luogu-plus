@@ -1724,6 +1724,36 @@ async function runSmoke(ctx) {
         ctx.luogu.refresh = realRefresh;
       }
 
+      if (process.env.LG_SMOKE_GLASS === "1") {
+        // R55 回归：「壁纸透出」滑杆必须真实改变内容面/纱层透明度，且不低于可读下限
+        const readGlassVars = () =>
+          ctx.win.webContents.executeJavaScript(`(() => ({
+            scrim: getComputedStyle(document.documentElement).getPropertyValue("--page-scrim").trim(),
+            card: getComputedStyle(document.documentElement).getPropertyValue("--card-alpha").trim(),
+            panel: getComputedStyle(document.documentElement).getPropertyValue("--panel-alpha").trim(),
+          }))()`);
+        ctx.cfg.setAppearance({ glass: 0 });
+        await ctx.refreshAppearance({ reschedule: false });
+        await wait(400);
+        const glass0 = await readGlassVars();
+        ctx.cfg.setAppearance({ glass: 100 });
+        await ctx.refreshAppearance({ reschedule: false });
+        await wait(400);
+        const glass100 = await readGlassVars();
+        const pctNum = (value) => Number(String(value).replace("%", "")) || 0;
+        const glassOk =
+          pctNum(glass100.scrim) < pctNum(glass0.scrim) - 20 &&
+          pctNum(glass100.card) < pctNum(glass0.card) - 15 &&
+          pctNum(glass100.scrim) >= 50 &&
+          pctNum(glass100.card) >= 55 &&
+          pctNum(glass100.panel) >= 58;
+        console.log("SMOKE_GLASS " + JSON.stringify({ glass0, glass100, ok: glassOk }));
+        if (!glassOk) console.log("SMOKE_FAIL 壁纸透出滑杆没有生效或击穿可读下限");
+        ctx.cfg.setAppearance({ glass: 45 });
+        await ctx.refreshAppearance({ reschedule: false });
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_AUDIT === "1") {
         await runAudit(ctx, outDir, wait);
       }

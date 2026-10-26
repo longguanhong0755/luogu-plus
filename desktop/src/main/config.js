@@ -13,6 +13,7 @@ const DEFAULTS = {
   appearance: {
     mode: "system", // light | dark | system
     material: 55, // 0 = 纯色不透明, 100 = 强玻璃
+    glass: 45, // 壁纸透出程度 0-100：越高内容面/页面纱层越透，壁纸越明显
     accent: "luogu", // luogu | system | #rrggbb
     wallpaper: "desktop", // desktop | builtin | daily | custom | folder | we
     wallpaperFile: "",
@@ -116,6 +117,7 @@ function sanitize() {
   const a = data.appearance;
   if (!["light", "dark", "system"].includes(a.mode)) a.mode = "system";
   a.material = Math.round(clamp(a.material, 0, 100, 55));
+  a.glass = Math.round(clamp(a.glass, 0, 100, 45));
   if (!WALLPAPERS.includes(a.wallpaper)) a.wallpaper = "desktop";
   if (typeof a.wallpaperFile !== "string") a.wallpaperFile = "";
   if (!a.wallpaperFile && typeof a.customWallpaper === "string" && a.customWallpaper) a.wallpaperFile = a.customWallpaper;

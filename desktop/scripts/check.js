@@ -364,11 +364,16 @@ if (/accentText/.test(themeSource) && /borderStrong/.test(themeSource) && /color
 } else {
   fail("theme.js 缺少 4.0 状态令牌");
 }
-if (/94 - material \* 0\.2/.test(themeSource) && /99 - material \* 0\.08/.test(themeSource)) {
-  ok("内容面不透明度下限 >= 91%");
-} else {
-  fail("material 公式仍会让正文过度透明");
-}
+if (/94 - material \* 0\.2/.test(themeSource) && /99 - material \* 0\.08/.test(themeSource)) ok("内容面公式保留材质基线，壁纸透出在其上继续下调");
+else fail("material 公式被破坏");
+if (/glass \* 0\.42/.test(themeSource) && /glass \* 0\.32/.test(themeSource) && /glass \* 0\.25/.test(themeSource)) ok("「壁纸透出」接入内容面/页面纱层/外壳三层透明度");
+else fail("theme.js 未接入 glass 滑杆");
+if (/, 50, 99\)/.test(themeSource) && /, 55, 99\)/.test(themeSource) && /, 58, 98\)/.test(themeSource)) ok("透明度有可读下限（scrim 50 / card 55 / panel 58）");
+else fail("透明度缺少可读下限");
+if (/glass: 45,/.test(configSource) && /a\.glass = Math\.round/.test(configSource)) ok("「壁纸透出」默认 45 且落盘前收敛");
+else fail("config.js 缺少 glass 默认值/收敛");
+if (/id="glass"/.test(settingsHtml) && /setAppearance\(\{ glass:/.test(read("src/renderer/settings/settings.js"))) ok("设置页提供「壁纸透出」滑杆并即时生效");
+else fail("设置页缺少壁纸透出滑杆");
 
 const shellCss = read("src/renderer/shell/shell.css");
 const baseCss = read("src/renderer/shared/base.css");
@@ -595,7 +600,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.1";
+const EXPECTED_VERSION = "0.5.2";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
