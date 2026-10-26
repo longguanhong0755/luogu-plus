@@ -327,9 +327,25 @@ function buildSign(state, actions) {
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       btn.textContent = "签到中…";
-      await actions.checkin();
+      let res = null;
+      try {
+        res = await actions.checkin();
+      } catch {
+        /* 主进程已 toast 失败原因 */
+      }
       btn.disabled = false;
-      btn.textContent = "今日签到";
+      if (res && res.ok) {
+        btn.textContent = res.already ? "已签到" : "签到成功";
+        setTimeout(() => {
+          btn.textContent = "今日签到";
+        }, 2400);
+      } else {
+        // 失败不能无痕：按钮上留字，主进程同时 toast 具体原因
+        btn.textContent = "签到失败 · 稍后再试";
+        setTimeout(() => {
+          btn.textContent = "今日签到";
+        }, 3600);
+      }
     });
     card.appendChild(btn);
   }

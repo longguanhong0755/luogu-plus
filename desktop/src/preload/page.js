@@ -142,6 +142,62 @@ ipcRenderer.on("lg:motion", (_event, payload) => {
   syncMotion();
 });
 
+/* ---------- 应用轻提示 ----------
+   页面视图盖在外壳之上，外壳的 toast 会被挡住；主进程把同一份 toast
+   也发给当前页面，这里画在页面顶层（颜色跟随皮肤变量，缺失时用深色兜底）。 */
+let pageToastTimer = 0;
+ipcRenderer.on("app:toast", (_event, payload) => {
+  if (!payload || (!payload.title && !payload.body)) return;
+  const hostId = "lg-page-toast";
+  let host = document.getElementById(hostId);
+  if (!host) {
+    host = document.createElement("div");
+    host.id = hostId;
+    host.style.cssText = [
+      "position:fixed",
+      "top:14px",
+      "right:18px",
+      "z-index:2147483647",
+      "max-width:min(360px, calc(100vw - 40px))",
+      "padding:10px 14px",
+      "border-radius:10px",
+      "border:1px solid var(--lg-border-strong, rgba(255,255,255,0.18))",
+      "background:var(--lg-surface, #1d2027)",
+      "color:var(--lg-text, #f2f3f6)",
+      "box-shadow:0 8px 24px rgba(0,0,0,0.35)",
+      "font:13px/1.5 'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI',system-ui,sans-serif",
+      "cursor:pointer",
+      "transition:opacity 160ms ease, transform 160ms ease",
+    ].join(";");
+    host.addEventListener("click", () => dismissPageToast());
+    (document.body || document.documentElement).appendChild(host);
+  }
+  host.textContent = "";
+  const title = document.createElement("b");
+  title.textContent = String(payload.title || "");
+  title.style.cssText = "display:block;font-weight:600";
+  host.appendChild(title);
+  if (payload.body) {
+    const body = document.createElement("span");
+    body.textContent = String(payload.body);
+    host.appendChild(body);
+  }
+  host.style.opacity = "1";
+  host.style.transform = "translateY(0)";
+  if (pageToastTimer) clearTimeout(pageToastTimer);
+  pageToastTimer = setTimeout(dismissPageToast, 5000);
+});
+
+function dismissPageToast() {
+  if (pageToastTimer) clearTimeout(pageToastTimer);
+  pageToastTimer = 0;
+  const host = document.getElementById("lg-page-toast");
+  if (!host) return;
+  host.style.opacity = "0";
+  host.style.transform = "translateY(-6px)";
+  setTimeout(() => host && host.remove(), 200);
+}
+
 /* ---------- 题目链接交给应用 ---------- */
 document.addEventListener(
   "click",

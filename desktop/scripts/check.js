@@ -296,6 +296,12 @@ else fail("index.js 缺少 store 装配/退出落盘");
 if (/离线快照/.test(indexSrc) && /charset=utf-8/.test(indexSrc)) ok("离线页外壳带主题与编码声明");
 else fail("离线页外壳缺少主题或编码声明");
 
+/* R58 反馈可见性 */
+if (/pageWc/.test(indexSrc) && /app:toast/.test(indexSrc)) ok("toast 同步发给当前页面视图（不被页面盖住）");
+else fail("页面在场时 toast 仍会被盖住");
+if (/lg-page-toast/.test(read("src/preload/page.js"))) ok("页面 preload 有顶层 toast 渲染器");
+else fail("page.js 缺少页面内 toast");
+
 const ipcSrc = read("src/main/ipc.js");
 for (const [name, needle] of [
   ["状态含在线状态", /online: ctx\.luogu\.online/],
@@ -306,6 +312,12 @@ for (const [name, needle] of [
   if (needle.test(ipcSrc)) ok("ipc.js " + name);
   else fail("ipc.js 缺少" + name);
 }
+
+const checkinBlock = ipcSrc.split("app:checkin")[1] || "";
+if (/签到没有成功/.test(checkinBlock)) ok("签到失败会 toast 具体原因");
+else fail("签到失败仍被吞掉");
+if (/签到失败 · 稍后再试/.test(read("src/renderer/shell/home.js"))) ok("签到失败在按钮上留字");
+else fail("主页签到按钮无失败反馈");
 
 const editorSrc = read("src/renderer/shell/editor.js");
 if (/loadDraft/.test(editorSrc) && /saveDraft/.test(editorSrc) && /已恢复本题草稿/.test(editorSrc)) {
@@ -621,7 +633,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.4";
+const EXPECTED_VERSION = "0.5.5";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

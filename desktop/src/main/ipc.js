@@ -346,6 +346,7 @@ function registerIpc(ctx) {
   ipcMain.handle("app:checkin", async () => {
     const result = await ctx.luogu.checkin();
     if (result.ok) ctx.toast("签到", result.already ? "今天已经签过了。" : "签到成功。");
+    else ctx.toast("签到没有成功", result.message || "没找到签到入口，稍后再试一次。");
     return result;
   });
 

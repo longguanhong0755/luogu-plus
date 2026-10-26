@@ -222,8 +222,15 @@ function bootstrap() {
     ctx.emitState = () => broadcastState(ctx);
     ctx.toast = (title, body) => {
       ctx.notify.toast(title, body);
+      const payload = { title, body };
       if (ctx.win && !ctx.win.isDestroyed()) {
-        ctx.win.webContents.send("app:toast", { title, body });
+        ctx.win.webContents.send("app:toast", payload);
+      }
+      // 页面视图（题面/详情）盖在外壳之上，外壳里的 toast 会被整个挡住——
+      // 有页面在场时同步发一份给页面，由页面 preload 画在自己的顶层
+      const pageWc = ctx.views && ctx.views.currentWebContents ? ctx.views.currentWebContents() : null;
+      if (pageWc && !pageWc.isDestroyed()) {
+        pageWc.send("app:toast", payload);
       }
     };
     ctx.showWindow = () => {

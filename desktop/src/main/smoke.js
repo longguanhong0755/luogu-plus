@@ -1861,6 +1861,33 @@ async function runSmoke(ctx) {
         await wait(300);
       }
 
+      if (process.env.LG_SMOKE_TOAST === "1") {
+        // R58 回归：页面视图盖住外壳时，toast 必须同步画在页面顶层
+        ctx.views.openProblem("P1001");
+        await wait(1500);
+        const toastPageKind = ctx.views.currentInfo().kind;
+        ctx.toast("提交", "已提交 P1001，评测完成后会通知你。");
+        await wait(600);
+        const shellToast = await ctx.win.webContents.executeJavaScript(`!!document.querySelector("#toasts .toast")`);
+        let pageToast = null;
+        const toastWc = ctx.views.currentWebContents();
+        if (toastWc) {
+          try {
+            pageToast = await toastWc.executeJavaScript(`(() => {
+              const host = document.getElementById("lg-page-toast");
+              return host ? { text: (host.innerText || "").slice(0, 60), visible: getComputedStyle(host).opacity === "1" } : null;
+            })()`);
+          } catch (err) {
+            pageToast = { error: String(err.message).slice(0, 80) };
+          }
+        }
+        const toastOk = !!shellToast && !!pageToast && pageToast.visible === true && /提交/.test(pageToast.text || "");
+        console.log("SMOKE_TOAST " + JSON.stringify({ pageKind: toastPageKind, shellToast, pageToast, ok: toastOk }));
+        if (!toastOk) console.log("SMOKE_FAIL 页面在场时 toast 不可见");
+        ctx.views.showHome();
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_AUDIT === "1") {
         await runAudit(ctx, outDir, wait);
       }
