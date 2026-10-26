@@ -84,7 +84,6 @@ export function initEditor(actions) {
   }
 
   code.value = DEFAULT_CODE;
-  let draftLoaded = false;
   let split = 0.5;
 
   function setStatus(tone, text) {
@@ -113,28 +112,56 @@ export function initEditor(actions) {
     if (actions.setIdeSplit) actions.setIdeSplit(split);
   }
 
-  /* 草稿：上次写到的代码/语言选择在启动时恢复，输入防抖 800ms 落盘 */
-  if (actions.loadDraft) {
-    actions
-      .loadDraft()
-      .then((draft) => {
-        if (draft && draft.code) {
-          code.value = draft.code;
-          if (draft.lang && [...lang.options].some((option) => option.value === draft.lang)) {
-            lang.value = draft.lang;
-          }
-          if (draft.o2 && O2_LANGS.has(lang.value)) o2.checked = true;
-          syncO2();
-          updateGutter();
-          if (draft.savedAt) flashSaved("已恢复上次草稿");
+  /* 草稿按题目隔离：currentPid 是编辑器当前归属的题。
+     - 输入防抖落盘到 draft:<pid>，语言/O2 另存全局偏好；
+     - 切题时先把上一题的输入刷进它的草稿，再装本题的（本题没有草稿 =
+       默认模板 + 全局语言偏好，绝不用其他题的代码）。 */
+  let currentPid = "";
+  let draftLoaded = false;
+
+  async function loadForProblem(pid) {
+    if (!actions.loadDraft) return;
+    try {
+      const draft = await actions.loadDraft({ pid });
+      if (currentPid !== pid) return; // 等待期间又切了题
+      if (draft && draft.code) {
+        code.value = draft.code;
+        if (draft.lang && [...lang.options].some((option) => option.value === draft.lang)) {
+          lang.value = draft.lang;
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        draftLoaded = true;
-      });
-  } else {
-    draftLoaded = true;
+        if (O2_LANGS.has(lang.value)) o2.checked = !!draft.o2;
+        syncO2();
+        updateGutter();
+        flashSaved("已恢复本题草稿");
+      } else {
+        code.value = DEFAULT_CODE;
+        if (draft && draft.lang && draft.lang !== lang.value && [...lang.options].some((option) => option.value === draft.lang)) {
+          lang.value = draft.lang;
+        }
+        if (O2_LANGS.has(lang.value)) o2.checked = !!draft.o2;
+        syncO2();
+        updateGutter();
+      }
+    } catch {
+      /* 草稿读不出来就保持现状，不打断输入 */
+    }
+  }
+
+  function setProblem(pid) {
+    const next = String(pid || "");
+    if (next === currentPid) return;
+    const prev = currentPid;
+    currentPid = next;
+    if (draftTimer) {
+      clearTimeout(draftTimer);
+      draftTimer = null;
+    }
+    if (prev && actions.saveDraft) {
+      actions
+        .saveDraft({ pid: prev, code: code.value, lang: lang.value, o2: !o2.disabled && o2.checked })
+        .catch(() => {});
+    }
+    loadForProblem(next);
   }
 
   let draftTimer = null;
@@ -144,7 +171,7 @@ export function initEditor(actions) {
     draftTimer = setTimeout(() => {
       draftTimer = null;
       actions
-        .saveDraft({ code: code.value, lang: lang.value, o2: !o2.disabled && o2.checked })
+        .saveDraft({ pid: currentPid, code: code.value, lang: lang.value, o2: !o2.disabled && o2.checked })
         .then(() => flashSaved("已保存"))
         .catch(() => {});
     }, 800);
@@ -236,7 +263,7 @@ export function initEditor(actions) {
     if (draftTimer) {
       clearTimeout(draftTimer);
       draftTimer = null;
-      actions.saveDraft({ code: code.value, lang: lang.value, o2: !o2.disabled && o2.checked }).catch(() => {});
+      actions.saveDraft({ pid: currentPid, code: code.value, lang: lang.value, o2: !o2.disabled && o2.checked }).catch(() => {});
     }
     submit.disabled = true;
     setStatus("", "正在提交…");
@@ -255,9 +282,18 @@ export function initEditor(actions) {
   updateGutter();
   syncO2();
   applySplit(0.5);
+  /* 启动时装全局语言偏好（pid 为空 → 只有偏好没有代码），此后跟题切换 */
+  if (actions.loadDraft) {
+    loadForProblem("").finally(() => {
+      draftLoaded = true;
+    });
+  } else {
+    draftLoaded = true;
+  }
 
   return {
     show(on) {
+      const wasHidden = pane.hidden;
       pane.hidden = !on;
       if (resizer) {
         resizer.hidden = !on;
@@ -266,7 +302,8 @@ export function initEditor(actions) {
         resizer.setAttribute("aria-orientation", "vertical");
         resizer.setAttribute("aria-label", "调整编辑器和题目宽度");
       }
-      if (on) code.focus();
+      if (on && wasHidden) code.focus(); // 只在真正展开时抢焦点，状态广播不抢
     },
+    setProblem,
   };
 }

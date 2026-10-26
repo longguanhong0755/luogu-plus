@@ -291,11 +291,15 @@ for (const [name, needle] of [
 }
 
 const editorSrc = read("src/renderer/shell/editor.js");
-if (/loadDraft/.test(editorSrc) && /saveDraft/.test(editorSrc) && /已恢复上次草稿/.test(editorSrc)) {
-  ok("编辑器草稿恢复与防抖保存");
+if (/loadDraft/.test(editorSrc) && /saveDraft/.test(editorSrc) && /已恢复本题草稿/.test(editorSrc)) {
+  ok("编辑器草稿恢复与防抖保存（按题提示）");
 } else {
   fail("编辑器缺少草稿持久化");
 }
+if (/setProblem/.test(editorSrc) && /currentPid/.test(editorSrc) && /draft:" \+ pid/.test(ipcSrc)) ok("草稿按题目隔离（draft:<pid>），切题即换草稿");
+else fail("草稿仍是全局单份，存在跨题泄漏");
+if (/editorPrefs/.test(ipcSrc)) ok("语言/O2 记为全局偏好（本题无草稿时沿用）");
+else fail("语言偏好未持久化");
 
 const homeSrc = read("src/renderer/shell/home.js");
 if (/offline-chip/.test(homeSrc) && /queue-card/.test(homeSrc) && /buildQueue/.test(homeSrc)) {
@@ -600,7 +604,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.2";
+const EXPECTED_VERSION = "0.5.3";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

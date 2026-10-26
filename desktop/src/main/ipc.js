@@ -302,22 +302,43 @@ function registerIpc(ctx) {
 
   ipcMain.handle("app:saveDraft", (_event, payload) => {
     if (!ctx.store) return { ok: false };
+    const pid = String((payload && payload.pid) || "").toUpperCase();
     const code = String((payload && payload.code) || "");
     const lang = String((payload && payload.lang) || "C++14 (GCC 9)");
     const o2 = !!(payload && payload.o2);
-    ctx.store.set("draft", { code: code.slice(0, 200000), lang, o2, savedAt: Date.now() }, 800);
+    // 语言/O2 是全局偏好：下一道题沿用上一次的选择
+    ctx.store.set("editorPrefs", { lang, o2, savedAt: Date.now() }, 0);
+    // 草稿按题目隔离：A 题的代码永远不会出现在 B 题的编辑器里
+    if (pid && /^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) {
+      const key = "draft:" + pid;
+      ctx.store.set(key, { key, pid, code: code.slice(0, 200000), lang, o2, savedAt: Date.now() }, 800);
+    }
     return { ok: true };
   });
 
-  ipcMain.handle("app:getDraft", () => {
+  ipcMain.handle("app:getDraft", (_event, payload) => {
     if (!ctx.store) return null;
-    const draft = ctx.store.get("draft");
-    if (!draft || typeof draft !== "object") return null;
+    const pid = String((payload && payload.pid) || "").toUpperCase();
+    if (pid && /^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) {
+      const draft = ctx.store.get("draft:" + pid);
+      if (draft && typeof draft === "object") {
+        return {
+          pid,
+          code: String(draft.code || ""),
+          lang: String(draft.lang || "C++14 (GCC 9)"),
+          o2: !!draft.o2,
+          savedAt: Number(draft.savedAt) || 0,
+        };
+      }
+    }
+    // 本题还没有草稿：只带全局语言偏好，绝不带其他题的代码
+    const prefs = ctx.store.get("editorPrefs");
     return {
-      code: String(draft.code || ""),
-      lang: String(draft.lang || "C++14 (GCC 9)"),
-      o2: !!draft.o2,
-      savedAt: Number(draft.savedAt) || 0,
+      pid,
+      code: "",
+      lang: prefs && prefs.lang ? String(prefs.lang) : "C++14 (GCC 9)",
+      o2: !!(prefs && prefs.o2),
+      savedAt: 0,
     };
   });
 

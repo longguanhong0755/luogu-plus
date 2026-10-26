@@ -98,7 +98,7 @@ async function boot() {
         o2: !!o2,
       }),
     saveDraft: (payload) => window.lg.saveDraft(payload),
-    loadDraft: () => window.lg.getDraft(),
+    loadDraft: (payload) => window.lg.getDraft(payload),
     setIdeSplit: (ratio) => window.lg.setIdeSplit(ratio),
   });
 
@@ -183,6 +183,8 @@ async function boot() {
     }
     library.update(state);
     editor.show(!state.page.home && !!state.page.isProblem && !!state.page.ide);
+    // 草稿跟题走：换题即切换草稿（编辑器内部去重同题调用）
+    if (state.page && state.page.pid) editor.setProblem(state.page.pid);
     syncWallpaper();
   }
 

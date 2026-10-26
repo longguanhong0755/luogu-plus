@@ -1754,6 +1754,63 @@ async function runSmoke(ctx) {
         await wait(300);
       }
 
+      if (process.env.LG_SMOKE_DRAFT === "1") {
+        // R56 回归：草稿按题目隔离，A 题的代码绝不漏进 B 题的编辑器
+        await ctx.win.webContents.executeJavaScript(
+          `window.lg.saveDraft({ pid: "P1001", code: "DRAFT_A_MARKER", lang: "C++17", o2: true })`
+        );
+        const draftA = await ctx.win.webContents.executeJavaScript(`window.lg.getDraft({ pid: "P1001" })`);
+        const draftB = await ctx.win.webContents.executeJavaScript(`window.lg.getDraft({ pid: "P1002" })`);
+        const ipcOk =
+          draftA.code === "DRAFT_A_MARKER" &&
+          draftA.lang === "C++17" &&
+          draftA.o2 === true &&
+          draftB.code === "" &&
+          draftB.lang === "C++17"; // 无草稿的题只继承语言偏好
+        console.log(
+          "SMOKE_DRAFT_IPC " +
+            JSON.stringify({
+              a: { code: draftA.code, lang: draftA.lang, o2: draftA.o2 },
+              bEmpty: draftB.code === "",
+              bLang: draftB.lang,
+              ok: ipcOk,
+            })
+        );
+        if (!ipcOk) console.log("SMOKE_FAIL 草稿 IPC 隔离失败");
+
+        // UI 级：P1001 的 IDE 里输入 → 切到 P1002 → 编辑器必须是默认模板
+        ctx.views.openProblem("P1001");
+        await wait(1500);
+        ctx.views.setIde(true);
+        await wait(500);
+        await ctx.win.webContents.executeJavaScript(`(() => {
+          const ta = document.querySelector("#ide-pane .ide-code");
+          const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+          set.call(ta, "UI_DRAFT_A_MARKER");
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+          return "typed";
+        })()`);
+        await wait(1300); // 防抖 800ms + 落盘
+        ctx.views.openProblem("P1002");
+        await wait(1500);
+        ctx.views.setIde(true);
+        await wait(900);
+        const draftUi = await ctx.win.webContents.executeJavaScript(`(() => {
+          const ta = document.querySelector("#ide-pane .ide-code");
+          const langSel = document.querySelector("#ide-pane .ide-lang");
+          return {
+            leaked: ta.value.indexOf("DRAFT_A_MARKER") !== -1,
+            isDefault: ta.value.indexOf("int a, b;") !== -1,
+            lang: langSel ? langSel.value : "",
+          };
+        })()`);
+        console.log("SMOKE_DRAFT_UI " + JSON.stringify(draftUi));
+        if (draftUi.leaked || !draftUi.isDefault) console.log("SMOKE_FAIL 切题后编辑器没有换成本题草稿/默认模板");
+        ctx.views.setIde(false);
+        ctx.views.showHome();
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_AUDIT === "1") {
         await runAudit(ctx, outDir, wait);
       }

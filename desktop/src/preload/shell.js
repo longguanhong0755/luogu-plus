@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld("lg", {
   submit: (payload) => ipcRenderer.invoke("app:submit", payload),
   queueAction: (payload) => ipcRenderer.invoke("app:queueAction", payload),
   saveDraft: (payload) => ipcRenderer.invoke("app:saveDraft", payload),
-  getDraft: () => ipcRenderer.invoke("app:getDraft"),
+  getDraft: (payload) => ipcRenderer.invoke("app:getDraft", payload),
   checkin: () => ipcRenderer.invoke("app:checkin"),
   refreshHome: () => ipcRenderer.invoke("app:refreshHome"),
   logout: () => ipcRenderer.invoke("app:logout"),
