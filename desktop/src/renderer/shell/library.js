@@ -121,6 +121,7 @@ export function initLibrary(actions) {
       loadingVisible: false,
       error: "",
       needLogin: false,
+      hasMore: false,
       categories: [],
       token: 0,
       scroll: 0,
@@ -404,6 +405,11 @@ export function initLibrary(actions) {
       row.setAttribute("role", "option");
       row.setAttribute("aria-selected", index === state.activeIndex ? "true" : "false");
       row.tabIndex = -1;
+      // 鼠标左键直接打开（此前只有键盘 Enter 能开，行却有 pointer/hover 样式——纯误导）
+      row.addEventListener("click", () => {
+        setActive(state, index, false);
+        open(item);
+      });
       if (index === state.activeIndex) row.classList.add("active");
       list.appendChild(row);
     });
@@ -413,7 +419,8 @@ export function initLibrary(actions) {
     const filtered = (state.kind === "contest" || state.kind === "record") && state.filter !== "all";
     const shown = state.dom.count;
     if (shown) {
-      if (filtered) shown.textContent = `${visible} / ${fmtNum(state.total)}`;
+      if (state.hasMore) shown.textContent = `${state.items.length}+`;
+      else if (filtered) shown.textContent = `${visible} / ${fmtNum(state.total)}`;
       else if (state.items.length < state.total) shown.textContent = `${state.items.length} / ${fmtNum(state.total)}`;
       else shown.textContent = fmtNum(state.total);
     }
@@ -429,7 +436,8 @@ export function initLibrary(actions) {
       foot.appendChild(el("span", "lib-loading", "加载中…"));
       return;
     }
-    const hasMore = !state.error && !state.needLogin && state.items.length < state.total && state.page > 0;
+    const hasMore =
+      !state.error && !state.needLogin && (state.hasMore || state.items.length < state.total) && state.page > 0;
     if (hasMore) {
       const btn = el("button", "lib-more", "加载更多");
       btn.type = "button";
@@ -600,6 +608,7 @@ export function initLibrary(actions) {
     if (!res) res = { error: "加载失败" };
     state.stale = !!res.stale;
     state.offlineNote = !!res.offline;
+    state.hasMore = !!res.hasMore;
     if (res.needLogin) {
       state.needLogin = true;
       state.items = [];

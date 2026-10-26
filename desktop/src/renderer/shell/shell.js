@@ -90,11 +90,12 @@ async function boot() {
 
   const editor = initEditor({
     canSubmit: () => !!(stateBox.data && stateBox.data.user && stateBox.data.user.loggedIn),
-    submit: (code, lang) =>
+    submit: (code, lang, o2) =>
       window.lg.submit({
         pid: stateBox.data && stateBox.data.page ? stateBox.data.page.pid : "",
         code,
         lang,
+        o2: !!o2,
       }),
     saveDraft: (payload) => window.lg.saveDraft(payload),
     loadDraft: () => window.lg.getDraft(),

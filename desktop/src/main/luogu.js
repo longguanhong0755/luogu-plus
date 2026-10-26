@@ -62,18 +62,9 @@ const DIFFICULTY = {
   8: { name: "NOI+/CTSC", color: "#5d6270" },
 };
 
-/* 洛谷 2026-10 新评测机语言 id（真实 UI 抓包实测）：
-   28 = C++14 (GCC 9)，是洛谷提交页的默认语言；旧 id 5（C++14）已失效（400 record.invalid_language_type）。
-   3/4 沿用旧表（在 acceptLanguages 里且能过校验）。其余名字未逐一确认，一律回落 28 ——
-   原生提交只服务 C++ 主路径，其他语言走页面内提交辅助（用户在真实下拉里自选）。 */
-const LANG_IDS = {
-  "C++14": 28,
-  "C++14 (GCC 9)": 28,
-  "C++": 28,
-  "C++98": 3,
-  "C++11": 4,
-};
-const DEFAULT_LANG_ID = 28;
+/* 语言 id 表在 ./langs（/_lfe/config 实测）。这里只消费 resolveLangId：
+   不认识的语言返回 null → 拒绝提交并转页面内提交辅助，绝不悄悄换成默认语言。 */
+const { resolveLangId } = require("./langs");
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -259,7 +250,7 @@ class LuoguService {
     };
   }
 
-  async enqueueSubmit(pid, code, lang, reason) {
+  async enqueueSubmit(pid, code, lang, reason, o2 = false) {
     const store = this.ctx.store;
     if (!store) return { ok: false, message: "本地存储不可用，无法离线排队。" };
     const queue = this.queueItems();
@@ -271,7 +262,8 @@ class LuoguService {
       id: "q" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       pid,
       code,
-      lang: lang || "C++14",
+      lang: lang || "C++14 (GCC 9)",
+      o2: !!o2,
       status: "pending",
       tries: 0,
       nextTryAt: 0,
@@ -340,7 +332,7 @@ class LuoguService {
         if (item.status === "done" || item.status === "failed") continue;
         if (item.status === "captcha") continue;
         if (item.nextTryAt && item.nextTryAt > now) continue;
-        const result = await this.submit(item.pid, item.code, item.lang);
+        const result = await this.submit(item.pid, item.code, item.lang, "", item.o2);
         item.tries = (item.tries || 0) + 1;
         mutated = true;
         if (result.ok) {
@@ -579,6 +571,21 @@ class LuoguService {
         return Object.assign(base, { error: "记录加载失败" });
       }
       const records = this.parseRecords(context);
+      // 记录列表的分页元数据：登录态下 data.records 是 { result, count, perPage }；
+      // 拿不到 count 时用「整页（20 条）→ 可能还有下一页」的保守启发，别让翻页按钮消失
+      const node = findObject(
+        context,
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          !Array.isArray(item) &&
+          Array.isArray(item.result) &&
+          typeof item.count === "number" &&
+          typeof item.perPage === "number"
+      );
+      const countKnown = !!(node && Number(node.count) > 0);
+      const perPage = node ? Number(node.perPage) || 0 : 0;
+      const full = records.length >= (perPage || 20);
       const items = records.map((record) => {
         const problem = record.problem || {};
         const status = Number(record.status);
@@ -595,7 +602,13 @@ class LuoguService {
           language: String(record.languageName || record.language || ""),
         };
       });
-      const payload = Object.assign(base, { items, total: items.length });
+      const payload = Object.assign(base, {
+        items,
+        perPage: perPage || (full ? 20 : 0),
+        // count 未知时不虚报总数；library 靠 hasMore 决定要不要出「加载更多」
+        total: countKnown ? Number(node.count) : items.length,
+        hasMore: !countKnown && full,
+      });
       this.libCache.set(cacheKey, { at: Date.now(), payload });
       this.saveLib(cacheKey, payload);
       return payload;
@@ -945,8 +958,8 @@ class LuoguService {
     }
   }
 
-  async submit(pid, code, lang, captcha = "") {
-    const result = await this.submitOnce(pid, code, lang, captcha);
+  async submit(pid, code, lang, captcha = "", o2 = false) {
+    const result = await this.submitOnce(pid, code, lang, captcha, o2);
     if (result.ok || !result.captchaRequired || captcha) return result;
     // 交互式挑战（易盾滑块等）是洛谷的反自动化设计，不破解——交给页面内提交辅助。
     if (result.interactive) return result;
@@ -959,7 +972,7 @@ class LuoguService {
         console.log("[luogu] 验证码自动识别不可用 " + (ocr.reason || ""));
         break;
       }
-      const retry = await this.submitOnce(pid, code, lang, ocr.text);
+      const retry = await this.submitOnce(pid, code, lang, ocr.text, o2);
       console.log(
         "[luogu] 提交验证码自动识别 #" +
           (attempt + 1) +
@@ -973,11 +986,24 @@ class LuoguService {
     return result;
   }
 
-  async submitOnce(pid, code, lang, captcha = "") {
-    const langId = LANG_IDS[lang] || LANG_IDS["C++14"];
+  async submitOnce(pid, code, lang, captcha = "", o2 = false) {
+    const langInfo = resolveLangId(lang);
+    if (!langInfo) {
+      // 不认识的语言不能悄悄按 C++14 交上去（那是数据事故）——转页面内提交辅助，
+      // 用户在洛谷真实下拉里自选语言。
+      return {
+        ok: false,
+        fallback: true,
+        unsupportedLang: true,
+        message: `暂不支持的语言「${lang || "未指定"}」，请在题目页的提交区选择语言提交。`,
+      };
+    }
+    const langId = langInfo.id;
     // CSRF token 在页面 meta[name=csrf-token] 里，随会话轮换，不能拿 cookie 顶替。
     // payload 形状照抄洛谷新前端 columba bundle：{ code, lang: <数字id>, enableO2: 0|1, captcha }；
     // lang 必须是数字（字符串会被 record.invalid_language_type 拒），验证码字段是 captcha（不是 verify）。
+    // enableO2 只对 canO2 的语言有效（C/C++/Pascal/Rust/Haskell/OCaml），其余语言传 0。
+    const enableO2 = o2 && langInfo.o2 ? 1 : 0;
     const script = `(async () => {
       const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
       const headers = { "Content-Type": "application/json", "X-Luogu-Type": "content-only", "X-Requested-With": "XMLHttpRequest", "x-csrf-token": csrf };
@@ -996,8 +1022,8 @@ class LuoguService {
       const code = ${JSON.stringify(code)};
       const captcha = ${JSON.stringify(String(captcha || ""))};
       const body = captcha
-        ? { code, lang: ${Number(langId)}, enableO2: 0, captcha }
-        : { code, lang: ${Number(langId)}, enableO2: 0 };
+        ? { code, lang: ${Number(langId)}, enableO2: ${Number(enableO2)}, captcha }
+        : { code, lang: ${Number(langId)}, enableO2: ${Number(enableO2)} };
       const res = await tryReq("/fe/api/problem/submit/${pid}", JSON.stringify(body));
       if (ridOf(res.json)) return { ok: true, rid: ridOf(res.json) };
       const text = String(res.text || "");

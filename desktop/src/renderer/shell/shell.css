@@ -1158,6 +1158,45 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump:hover .rj-icon {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.ide-o2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--h-sm);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.ide-o2:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ide-o2:has(input:checked) {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.ide-o2:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+.ide-o2 input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.ide-o2:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 
 .ide-body {
   flex: 1;

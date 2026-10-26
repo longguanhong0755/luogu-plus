@@ -283,8 +283,8 @@ const ipcSrc = read("src/main/ipc.js");
 for (const [name, needle] of [
   ["状态含在线状态", /online: ctx\.luogu\.online/],
   ["状态含队列", /queue: ctx\.luogu\.queueState/],
-  ["断网入队", /enqueueSubmit\(pid, code, lang, "当前离线"\)/],
-  ["网络失败入队", /enqueueSubmit\(pid, code, lang, "网络未就绪"\)/],
+  ["断网入队", /enqueueSubmit\(pid, code, lang, "当前离线", o2\)/],
+  ["网络失败入队", /enqueueSubmit\(pid, code, lang, "网络未就绪", o2\)/],
 ]) {
   if (needle.test(ipcSrc)) ok("ipc.js " + name);
   else fail("ipc.js 缺少" + name);
@@ -531,14 +531,73 @@ if (/74ch/.test(indexSrc2) && /--accent-text/.test(indexSrc2) && /border-radius:
   fail("离线阅读页未复用 4.0 排版");
 }
 
+/* ---------- R54 提交语言正确性 + 列表鼠标点击 ---------- */
+
+try {
+  const { LANGS, resolveLangId } = require(path.join(ROOT, "src", "main", "langs.js"));
+  const expect = {
+    "C++14 (GCC 9)": 28,
+    "C++14": 11,
+    "C++17": 12,
+    "C++20": 27,
+    "C++23": 34,
+    "C++11": 4,
+    "C++98": 3,
+    C: 2,
+    "Python 3": 7,
+    Pascal: 1,
+    "Java 8": 8,
+    "Java 21": 33,
+    Rust: 15,
+    Go: 14,
+  };
+  const bad = Object.entries(expect).filter(([name, id]) => {
+    const got = resolveLangId(name);
+    return !got || got.id !== id;
+  });
+  if (!bad.length && LANGS.length >= 20) ok(`语言表 ${LANGS.length} 项且关键映射正确（C++17→12、C++20→27、Python 3→7）`);
+  else fail("语言表映射错误", JSON.stringify(bad));
+  if (resolveLangId("Brainfuck") === null && resolveLangId("") === null) ok("未知语言返回 null（不允许静默回落默认语言）");
+  else fail("未知语言没有返回 null");
+  const o2Lang = resolveLangId("C++17");
+  if (o2Lang && o2Lang.o2 === true && resolveLangId("Python 3").o2 === false) ok("O2 能力标记随语言表提供");
+  else fail("语言表缺少 o2 能力标记");
+} catch (err) {
+  fail("langs.js 加载失败", String(err && err.message).slice(0, 120));
+}
+
+if (/resolveLangId/.test(luoguSource) && !/LANG_IDS\[lang\]\s*\|\|/.test(luoguSource)) ok("提交按语言表解析，无静默回落");
+else fail("luogu.js 仍存在静默语言回落");
+
+if (/enableO2:\s*\$\{/.test(luoguSource)) ok("enableO2 由提交参数决定（不再硬编码 0）");
+else fail("enableO2 仍硬编码");
+if (/enqueueSubmit\(pid, code, lang, reason, o2/.test(luoguSource)) ok("离线队列携带 O2 标记");
+else fail("离线队列丢失 O2 标记");
+if (/payload && payload\.o2/.test(ipcSource)) ok("app:submit 透传 O2 开关");
+else fail("app:submit 未透传 O2");
+const editorSource = read("src/renderer/shell/editor.js");
+if (/ide-o2-box/.test(editorSource) && /O2_LANGS/.test(editorSource)) ok("编辑器提供 O2 开关并按语言置灰");
+else fail("编辑器缺少 O2 开关");
+if (/<option>C\+\+14 \(GCC 9\)<\/option>/.test(editorSource) && /<option>Python 3<\/option>/.test(editorSource)) ok("编辑器语言名与站内一致（含 C++14 (GCC 9)/Python 3）");
+else fail("编辑器语言名与站点不一致");
+
+const libraryClick = read("src/renderer/shell/library.js");
+if (/row\.addEventListener\("click"/.test(libraryClick)) ok("列表行有鼠标点击打开处理器");
+else fail("列表行仍不可鼠标点击");
+if (/state\.hasMore/.test(libraryClick)) ok("列表支持 count 未知时的 hasMore 分页");
+else fail("列表未接入 hasMore 分页");
+if (/hasMore:\s*!countKnown && full/.test(luoguSource)) ok("记录列表在 count 未知时按整页推断 hasMore");
+else fail("记录列表 total 仍写死 items.length");
+
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";
 } catch {
   /* 已在上面报错 */
 }
-if (pkgVersion === "0.5.0") ok("版本号 0.5.0");
-else fail("package.json 版本号不是 0.5.0（当前 " + pkgVersion + "）");
+const EXPECTED_VERSION = "0.5.1";
+if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
+else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
 console.log("");
 console.log(`check: ${checks} 项通过, ${failures} 项失败`);

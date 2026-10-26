@@ -12,6 +12,23 @@ int main() {
 }
 `;
 
+/* 与主进程 src/main/langs.js 的 o2 字段保持一致：这些语言支持洛谷的 O2 优化。
+   其余语言（Python/Java/Go…）选 O2 无效，开关置灰。 */
+const O2_LANGS = new Set([
+  "C++14 (GCC 9)",
+  "C++14",
+  "C++17",
+  "C++20",
+  "C++23",
+  "C++11",
+  "C++98",
+  "C",
+  "Pascal",
+  "Rust",
+  "Haskell",
+  "OCaml",
+]);
+
 export function initEditor(actions) {
   const pane = document.getElementById("ide-pane");
   const workspace = document.getElementById("workspace");
@@ -20,15 +37,24 @@ export function initEditor(actions) {
     <div class="ide-head">
       <span class="ide-file"><span class="ide-dot"></span>main.cpp</span>
       <select class="ide-lang" aria-label="语言">
+        <option>C++14 (GCC 9)</option>
         <option>C++14</option>
         <option>C++17</option>
         <option>C++20</option>
+        <option>C++23</option>
         <option>C++11</option>
         <option>C++98</option>
         <option>C</option>
-        <option>Python3</option>
+        <option>Python 3</option>
         <option>Pascal</option>
+        <option>Java 8</option>
+        <option>Java 21</option>
+        <option>Rust</option>
+        <option>Go</option>
       </select>
+      <label class="ide-o2" title="开启洛谷的 O2 优化（仅 C/C++/Pascal/Rust 等语言有效）">
+        <input type="checkbox" class="ide-o2-box" />O2
+      </label>
     </div>
     <div class="ide-body">
       <div class="ide-gutter" aria-hidden="true"></div>
@@ -44,10 +70,18 @@ export function initEditor(actions) {
   const code = pane.querySelector(".ide-code");
   const gutter = pane.querySelector(".ide-gutter");
   const lang = pane.querySelector(".ide-lang");
+  const o2 = pane.querySelector(".ide-o2-box");
   const stateEl = pane.querySelector(".ide-state");
   const result = pane.querySelector(".ide-result");
   const saved = pane.querySelector(".ide-saved");
   const submit = pane.querySelector(".btn-accent");
+
+  /* O2 只对支持的语言有效：切到 Python/Java 等自动置灰并取消勾选 */
+  function syncO2() {
+    const canO2 = O2_LANGS.has(lang.value);
+    o2.disabled = !canO2;
+    if (!canO2) o2.checked = false;
+  }
 
   code.value = DEFAULT_CODE;
   let draftLoaded = false;
@@ -89,6 +123,8 @@ export function initEditor(actions) {
           if (draft.lang && [...lang.options].some((option) => option.value === draft.lang)) {
             lang.value = draft.lang;
           }
+          if (draft.o2 && O2_LANGS.has(lang.value)) o2.checked = true;
+          syncO2();
           updateGutter();
           if (draft.savedAt) flashSaved("已恢复上次草稿");
         }
@@ -108,7 +144,7 @@ export function initEditor(actions) {
     draftTimer = setTimeout(() => {
       draftTimer = null;
       actions
-        .saveDraft({ code: code.value, lang: lang.value })
+        .saveDraft({ code: code.value, lang: lang.value, o2: !o2.disabled && o2.checked })
         .then(() => flashSaved("已保存"))
         .catch(() => {});
     }, 800);
@@ -150,7 +186,11 @@ export function initEditor(actions) {
       submit.click();
     }
   });
-  lang.addEventListener("change", saveDraft);
+  lang.addEventListener("change", () => {
+    syncO2();
+    saveDraft();
+  });
+  o2.addEventListener("change", saveDraft);
 
   function beginDrag(event) {
     event.preventDefault();
@@ -196,12 +236,12 @@ export function initEditor(actions) {
     if (draftTimer) {
       clearTimeout(draftTimer);
       draftTimer = null;
-      actions.saveDraft({ code: code.value, lang: lang.value }).catch(() => {});
+      actions.saveDraft({ code: code.value, lang: lang.value, o2: !o2.disabled && o2.checked }).catch(() => {});
     }
     submit.disabled = true;
     setStatus("", "正在提交…");
     try {
-      const res = await actions.submit(code.value, lang.value);
+      const res = await actions.submit(code.value, lang.value, !o2.disabled && o2.checked);
       if (res && res.ok) setStatus("ok", "已提交 · 记录号 " + (res.rid || "—"));
       else if (res && res.queued) setStatus("queued", res.message || "已加入离线队列。");
       else setStatus("bad", (res && res.message) || "提交失败");
@@ -213,6 +253,7 @@ export function initEditor(actions) {
   });
 
   updateGutter();
+  syncO2();
   applySplit(0.5);
 
   return {
