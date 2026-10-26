@@ -535,6 +535,16 @@ body,
 #app .stat-value {
   color: var(--lg-text) !important;
 }
+/* 深色可读性（R63 实测审计）：站点写死的 #333/#404040 灰字在暗底上只有 1.5:1 */
+#app .l-flex-info-row,
+#app .l-flex-info-row .right,
+#app .l-flex-info-row time {
+  color: var(--lg-text-2) !important;
+}
+#app .colored-link-selector .name,
+#app .colored-link-selector a {
+  color: var(--lg-text) !important;
+}
 
 /* ---- 列表标题/摘要 ---- */
 #app .l-card .row.title a,
