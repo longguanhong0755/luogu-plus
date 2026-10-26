@@ -532,6 +532,16 @@ for (const [name, needle] of [
   else fail("library.js 缺少" + name);
 }
 
+/* R60 便利性契约 */
+if (/"r"\)\) command = "reload"/.test(viewsSource) && /"closepage"/.test(viewsSource) && /"ArrowLeft"\) command = "back"/.test(viewsSource)) ok("页面内 F5/Ctrl+R/Alt+方向键/Ctrl+W 浏览器基本键齐全");
+else fail("views.js 缺少浏览器基本键绑定");
+if (/closePage\(\)/.test(viewsSource) && /wc\.on\("context-menu"/.test(viewsSource)) ok("Ctrl+W 关页面（进最近关闭栈）+ 页面右键菜单存在");
+else fail("缺少 closePage 或页面右键菜单");
+if (/name === "closepage"/.test(indexSrc)) ok("主进程命令路由支持 closepage/back/forward/reload");
+else fail("index.js 命令路由缺 closepage");
+if (/quiet: true/.test(librarySrc) && /loadedAt/.test(librarySrc)) ok("列表回访超 3 分钟后台刷新且不重置滚动");
+else fail("列表回访刷新缺失");
+
 const editorSrc2 = read("src/renderer/shell/editor.js");
 if (/ide-gutter/.test(editorSrc2) && /updateGutter/.test(editorSrc2) && /setIdeSplit/.test(editorSrc2)) {
   ok("IDE 行号槽 + 可拖拽分栏 + 状态栏");
@@ -638,7 +648,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.6";
+const EXPECTED_VERSION = "0.5.7";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

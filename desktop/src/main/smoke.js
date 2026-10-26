@@ -1888,6 +1888,43 @@ async function runSmoke(ctx) {
         await wait(300);
       }
 
+      if (process.env.LG_SMOKE_KEYS === "1") {
+        // R60 回归：Ctrl+W 关页面回来源列表、Alt+← 后退——用真实合成键盘事件
+        //（键发给当前页面视图的 webContents）。强制离线让页面落 lgoff:// 单条历史，
+        // 保证 Alt+← 走 returnLib 分支（联网时页面自身的 SPA 跳转会先吃掉一次后退）。
+        if (ctx.luogu.onlineTimer) {
+          clearInterval(ctx.luogu.onlineTimer);
+          ctx.luogu.onlineTimer = null;
+        }
+        ctx.luogu.setOnline(false);
+        ctx.views.showLibrary("problems");
+        await wait(400);
+        ctx.views.openProblem("P1001");
+        await wait(900);
+        let pageWc = ctx.views.currentWebContents();
+        if (pageWc) pageWc.sendInputEvent({ type: "keyDown", keyCode: "w", modifiers: ["control"] });
+        await wait(700);
+        const afterClose = ctx.views.currentInfo();
+        ctx.views.openProblem("P1001");
+        await wait(900);
+        pageWc = ctx.views.currentWebContents();
+        if (pageWc) pageWc.sendInputEvent({ type: "keyDown", keyCode: "Left", modifiers: ["alt"] });
+        await wait(700);
+        const afterBack = ctx.views.currentInfo();
+        const keysOk =
+          afterClose.kind === "library" &&
+          afterClose.library === "problems" &&
+          afterBack.kind === "library" &&
+          afterBack.library === "problems";
+        console.log(
+          "SMOKE_KEYS " + JSON.stringify({ afterClose: afterClose.kind, afterBack: afterBack.kind, ok: keysOk })
+        );
+        if (!keysOk) console.log("SMOKE_FAIL 键盘关闭/后退没有生效");
+        ctx.luogu.online = true; // 恢复在线标志（不触发 refresh/flushQueue 副作用）
+        ctx.views.showHome();
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_AUDIT === "1") {
         await runAudit(ctx, outDir, wait);
       }

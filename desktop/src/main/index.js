@@ -306,6 +306,22 @@ function bootstrap() {
         ctx.views.reopenClosed();
         return;
       }
+      if (name === "reload") {
+        ctx.views.reload();
+        return;
+      }
+      if (name === "back") {
+        ctx.views.back();
+        return;
+      }
+      if (name === "forward") {
+        ctx.views.forward();
+        return;
+      }
+      if (name === "closepage") {
+        ctx.views.closePage();
+        return;
+      }
       if (name === "fullscreen") {
         ctx.win.setFullScreen(!ctx.win.isFullScreen());
         return;

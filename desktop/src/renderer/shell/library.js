@@ -122,6 +122,7 @@ export function initLibrary(actions) {
       error: "",
       needLogin: false,
       hasMore: false,
+      loadedAt: 0,
       categories: [],
       token: 0,
       scroll: 0,
@@ -624,9 +625,10 @@ export function initLibrary(actions) {
       state.total = res.total || 0;
       state.categories = res.categories || [];
       state.items = options.append ? state.items.concat(res.items || []) : res.items || [];
+      state.loadedAt = Date.now();
     }
     renderRows(state);
-    if (!options.append && currentKind === state.kind) root.scrollTop = 0;
+    if (!options.append && currentKind === state.kind && !options.quiet) root.scrollTop = 0;
   }
 
   function show(kind, appState) {
@@ -654,6 +656,14 @@ export function initLibrary(actions) {
     }
     if (!state.items.length && !state.loading && !state.error && !state.needLogin) {
       load(state, 1);
+    } else if (
+      state.loadedAt &&
+      !state.loading &&
+      (!appState || appState.online !== false) &&
+      Date.now() - state.loadedAt > 180000
+    ) {
+      // 回访后台刷新：先照旧显示旧数据，超过 3 分钟才拉新（不打断滚动位置）
+      load(state, 1, { quiet: true });
     } else {
       renderRows(state);
     }

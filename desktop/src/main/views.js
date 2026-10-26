@@ -6,7 +6,7 @@
    玻璃化：页面内注入一个与窗口同坐标的壁纸复刻层，卡片/输入框按材质半透明。 */
 const fs = require("node:fs");
 const path = require("node:path");
-const { WebContentsView, shell, screen } = require("electron");
+const { WebContentsView, shell, screen, Menu, clipboard } = require("electron");
 const { PRELOAD, SKIN_DIR, RENDERER } = require("./paths");
 const { TITLE_H, RAIL_W, RAIL_COLLAPSED_W, TOOLBAR_H } = require("./window");
 const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
@@ -419,6 +419,24 @@ class ViewManager {
       entry.view.webContents.reload();
     } else if (this.library) {
       this.emit();
+    }
+  }
+
+  /* 关闭当前页面：页本身销毁（进最近关闭栈，可 Ctrl+Shift+T 找回），
+     有来源列表回列表，否则回主页。不会像浏览器关标签那样退出应用。 */
+  closePage() {
+    const entry = this.currentEntry();
+    if (!entry) {
+      this.showHome();
+      return;
+    }
+    const from = this.returnLib;
+    this.destroyEntry(entry);
+    if (from) {
+      this.returnLib = null;
+      this.showLibrary(from);
+    } else {
+      this.showHome();
     }
   }
 
@@ -877,14 +895,20 @@ class ViewManager {
     wc.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown") return;
       const ctrl = input.control || input.meta;
+      const key = input.key.toLowerCase();
       let command = "";
-      if (ctrl && !input.shift && input.key.toLowerCase() === "k") command = "palette";
-      else if (ctrl && !input.shift && input.key.toLowerCase() === "l") command = "jump";
+      if (ctrl && !input.shift && key === "k") command = "palette";
+      else if (ctrl && !input.shift && key === "l") command = "jump";
       else if (ctrl && input.key === "Tab") command = "switcher";
-      else if (ctrl && input.shift && input.key.toLowerCase() === "t") command = "reopen";
+      else if (ctrl && input.shift && key === "t") command = "reopen";
       else if (ctrl && (input.key === "," || input.key === "，")) command = "settings";
       else if (input.key === "F11") command = "fullscreen";
       else if (input.key === "F12") command = "devtools";
+      // 浏览器基本键：刷新 / 后退 / 前进 / 关页面（与浏览器同键位）
+      else if (input.key === "F5" || (ctrl && !input.shift && key === "r")) command = "reload";
+      else if (input.alt && input.key === "ArrowLeft") command = "back";
+      else if (input.alt && input.key === "ArrowRight") command = "forward";
+      else if (ctrl && !input.shift && key === "w") command = "closepage";
       if (!command) return;
       event.preventDefault();
       this.ctx.command && this.ctx.command(command);
@@ -900,6 +924,46 @@ class ViewManager {
         shell.openExternal(url);
       }
       return { action: "deny" };
+    });
+
+    /* 页面右键菜单：链接/编辑/导航/外部打开/检查 */
+    wc.on("context-menu", (_event, params) => {
+      const items = [];
+      if (params.linkURL) {
+        items.push({ label: "打开链接", click: () => this.openDetail(params.linkURL, "") });
+        items.push({ label: "复制链接地址", click: () => clipboard.writeText(params.linkURL) });
+        items.push({ type: "separator" });
+      }
+      if (params.selectionText && params.editFlags.canCopy) items.push({ role: "copy", label: "复制" });
+      if (params.isEditable) {
+        if (params.editFlags.canPaste) items.push({ role: "paste", label: "粘贴" });
+        if (params.editFlags.canSelectAll) items.push({ role: "selectAll", label: "全选" });
+      }
+      if (items.length && items[items.length - 1].type !== "separator") items.push({ type: "separator" });
+      try {
+        items.push({ label: "后退", enabled: wc.navigationHistory.canGoBack(), click: () => this.back() });
+        items.push({ label: "前进", enabled: wc.navigationHistory.canGoForward(), click: () => this.forward() });
+      } catch {
+        /* ignore */
+      }
+      items.push({ label: "刷新", click: () => wc.reload() });
+      items.push({ type: "separator" });
+      items.push({
+        label: "在浏览器打开此页",
+        click: () => {
+          try {
+            shell.openExternal(wc.getURL());
+          } catch {
+            /* ignore */
+          }
+        },
+      });
+      items.push({ label: "检查", click: () => this.ctx.command && this.ctx.command("devtools") });
+      try {
+        Menu.buildFromTemplate(items).popup({ window: this.win });
+      } catch {
+        /* ignore */
+      }
     });
 
     wc.on("will-navigate", (event, url) => {
