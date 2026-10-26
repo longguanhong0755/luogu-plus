@@ -108,6 +108,7 @@ async function boot() {
     login: () => window.lg.nav("login"),
     nav: (target) => window.lg.nav(target),
     openProblem: (pid) => window.lg.openProblem(pid),
+    openDetail: (payload) => window.lg.openDetail(payload),
     queueAction: (payload) => window.lg.queueAction(payload),
   };
 

@@ -170,7 +170,11 @@ function buildContest(home, actions) {
   card.tabIndex = 0;
   card.setAttribute("role", "button");
   card.setAttribute("aria-label", "打开比赛页面：" + contest.name);
-  const open = () => actions.nav("contest");
+  // 点卡片进这场比赛本身；没有 id（异常数据）才退回比赛列表
+  const open = () => {
+    if (contest.id) actions.openDetail({ url: "/contest/" + contest.id, title: contest.name });
+    else actions.nav("contest");
+  };
   card.addEventListener("click", open);
   card.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {

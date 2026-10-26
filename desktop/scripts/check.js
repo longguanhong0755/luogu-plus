@@ -515,6 +515,11 @@ for (const [name, needle] of [
   if (needle.test(homeSrc2)) ok("home.js " + name);
   else fail("home.js 缺少" + name);
 }
+/* R59 显示修复 */
+if (/actions\.openDetail\(\{ url: "\/contest\/" \+ contest\.id/.test(homeSrc2)) ok("主页比赛卡点击进比赛本身（而非列表）");
+else fail("主页比赛卡仍跳比赛列表");
+if (/openDetail: \(payload\) => window\.lg\.openDetail\(payload\)/.test(read("src/renderer/shell/shell.js"))) ok("主页动作具备 openDetail 通道");
+else fail("homeActions 缺少 openDetail");
 
 const librarySrc = read("src/renderer/shell/library.js");
 for (const [name, needle] of [
@@ -633,7 +638,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.5";
+const EXPECTED_VERSION = "0.5.6";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
