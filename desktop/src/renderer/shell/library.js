@@ -74,7 +74,7 @@ function fmtTime(ms) {
   if (diff >= 0 && diff < 86400000) return Math.floor(diff / 3600000) + " 小时前";
   if (diff >= 0 && diff < 172800000) return "昨天";
   if (d.getFullYear() === new Date().getFullYear()) return `${d.getMonth() + 1}-${pad(d.getDate())}`;
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${pad(d.getDate())}`;
 }
 
 function fmtDateTime(ms) {
@@ -118,17 +118,19 @@ export function initLibrary(actions) {
       difficulty: "",
       filter: "all",
       loading: false,
+      loadingVisible: false,
       error: "",
       needLogin: false,
       categories: [],
       token: 0,
       scroll: 0,
+      activeIndex: 0,
       built: false,
       dom: {},
       lastUser: null,
+      meta,
     };
     store.set(kind, state);
-    if (meta) state.meta = meta;
     return state;
   }
 
@@ -139,14 +141,16 @@ export function initLibrary(actions) {
     const titleRow = el("div", "lib-title-row");
     const title = el("h1", "lib-title", state.meta.title);
     const count = el("span", "lib-count", "");
+    count.setAttribute("aria-live", "polite");
     const spacer = el("span", "lib-spacer");
     titleRow.appendChild(title);
     titleRow.appendChild(count);
     titleRow.appendChild(spacer);
 
     let search = null;
+    let clear = null;
     if (state.meta.search) {
-      search = el("label", "lib-search");
+      search = el("div", "lib-search");
       search.innerHTML = icon("search");
       const input = document.createElement("input");
       input.type = "text";
@@ -154,7 +158,9 @@ export function initLibrary(actions) {
       input.autocomplete = "off";
       input.spellcheck = false;
       input.value = state.keyword;
+      input.setAttribute("aria-label", "搜索题目");
       input.addEventListener("input", () => {
+        search.classList.toggle("has-value", !!input.value);
         if (searchTimer) clearTimeout(searchTimer);
         const value = input.value.trim();
         searchTimer = setTimeout(() => {
@@ -162,7 +168,28 @@ export function initLibrary(actions) {
           load(state, 1, { force: true });
         }, 320);
       });
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        input.value = "";
+        search.classList.remove("has-value");
+        state.keyword = "";
+        load(state, 1, { force: true });
+      });
+      clear = el("button", "lib-search-clear");
+      clear.type = "button";
+      clear.title = "清除搜索";
+      clear.setAttribute("aria-label", "清除搜索");
+      clear.innerHTML = icon("close");
+      clear.addEventListener("click", () => {
+        input.value = "";
+        search.classList.remove("has-value");
+        state.keyword = "";
+        load(state, 1, { force: true });
+        input.focus();
+      });
       search.appendChild(input);
+      search.appendChild(clear);
+      search.classList.toggle("has-value", !!state.keyword);
       titleRow.appendChild(search);
     }
 
@@ -185,7 +212,35 @@ export function initLibrary(actions) {
     head.appendChild(filters);
 
     const list = el("div", "lib-list");
-    list.setAttribute("role", "list");
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", state.meta.title + "列表");
+    list.tabIndex = 0;
+    list.addEventListener("keydown", (event) => {
+      const items = visibleItems(state);
+      if (!items.length) return;
+      if (["ArrowDown", "ArrowUp", "Home", "End", "Enter", " "].includes(event.key)) {
+        list.classList.add("keyboard");
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActive(state, state.activeIndex + 1, true);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActive(state, state.activeIndex - 1, true);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        setActive(state, 0, true);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setActive(state, items.length - 1, true);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        if (items[state.activeIndex]) open(items[state.activeIndex]);
+      }
+    });
+
+    list.addEventListener("blur", () => list.classList.remove("keyboard"));
+
     const foot = el("div", "lib-foot");
 
     wrap.appendChild(head);
@@ -193,7 +248,7 @@ export function initLibrary(actions) {
     wrap.appendChild(foot);
     root.appendChild(wrap);
 
-    state.dom = { count, filters, list, foot, search, titleRow, refresh, web };
+    state.dom = { count, filters, list, foot, search, clear, titleRow, refresh, web };
     state.built = true;
     renderFilters(state);
   }
@@ -213,6 +268,7 @@ export function initLibrary(actions) {
       chip.type = "button";
       const active = state.kind === "problems" ? state.difficulty === value : state.filter === value;
       if (active) chip.classList.add("on");
+      chip.setAttribute("aria-pressed", active ? "true" : "false");
       chip.addEventListener("click", () => {
         if (state.kind === "problems") {
           if (state.difficulty === value) return;
@@ -221,6 +277,7 @@ export function initLibrary(actions) {
         } else {
           if (state.filter === value) return;
           state.filter = value;
+          state.activeIndex = 0;
           renderFilters(state);
           renderRows(state);
         }
@@ -239,12 +296,55 @@ export function initLibrary(actions) {
     return state.items;
   }
 
+  function banner(kind, text) {
+    const node = el("div", kind === "error" ? "lib-banner" : "lib-stale");
+    node.innerHTML = icon(kind === "error" ? "alert" : "wifiOff");
+    node.appendChild(el("span", "", text));
+    return node;
+  }
+
+  function skeletonRows() {
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < 8; i++) {
+      const row = el("div", "lib-row skeleton-row");
+      row.appendChild(el("span", "skeleton sk-pid"));
+      const main = el("div", "sk-main");
+      main.appendChild(el("span", "skeleton sk-title"));
+      main.appendChild(el("span", "skeleton sk-meta"));
+      row.appendChild(main);
+      row.appendChild(el("span", "skeleton sk-tail"));
+      frag.appendChild(row);
+    }
+    return frag;
+  }
+
+  function setActive(state, index, scroll) {
+    const items = visibleItems(state);
+    if (!items.length) {
+      state.activeIndex = 0;
+      return;
+    }
+    state.activeIndex = Math.max(0, Math.min(items.length - 1, index));
+    const rows = state.dom.list ? [...state.dom.list.querySelectorAll(".lib-row:not(.skeleton-row)")] : [];
+    rows.forEach((row, i) => {
+      const on = i === state.activeIndex;
+      row.classList.toggle("active", on);
+      row.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const active = rows[state.activeIndex];
+    if (!active) return;
+    state.dom.list.setAttribute("aria-activedescendant", active.id);
+    if (scroll) active.scrollIntoView({ block: "nearest" });
+  }
+
   function renderRows(state) {
     const list = state.dom.list;
     if (!list) return;
     list.textContent = "";
+    list.setAttribute("aria-busy", state.loading ? "true" : "false");
+
     if (state.loading && !state.items.length) {
-      list.appendChild(el("div", "lib-state", "正在加载…"));
+      if (state.loadingVisible) list.appendChild(skeletonRows());
       renderFoot(state);
       return;
     }
@@ -260,9 +360,11 @@ export function initLibrary(actions) {
       renderFoot(state);
       return;
     }
-    if (state.error) {
+    if (state.error && !state.items.length) {
       const box = el("div", "lib-state");
-      box.appendChild(el("div", "", state.error));
+      box.innerHTML = icon("alert");
+      box.appendChild(el("strong", "", "加载失败"));
+      box.appendChild(el("span", "", state.error));
       const btn = el("button", "lib-retry", "重试");
       btn.type = "button";
       btn.addEventListener("click", () => load(state, 1, { force: true }));
@@ -271,23 +373,47 @@ export function initLibrary(actions) {
       renderFoot(state);
       return;
     }
+
     const items = visibleItems(state);
     if (!items.length) {
-      list.appendChild(el("div", "lib-state", state.items.length ? "当前筛选没有结果" : state.meta.empty));
+      const box = el("div", "lib-state");
+      box.innerHTML = icon("inbox");
+      box.appendChild(el("strong", "", state.items.length ? "当前筛选没有结果" : state.meta.empty));
+      box.appendChild(el("span", "", state.items.length ? "换一个筛选条件试试。" : "联网后这里会自动更新。"));
+      list.appendChild(box);
       renderFoot(state);
       return;
     }
+
     if (state.stale) {
       list.appendChild(
-        el("div", "lib-stale", state.offlineNote ? "离线数据 · 联网后自动更新" : "网络不稳 · 当前显示缓存数据")
+        banner("stale", state.offlineNote ? "离线数据 · 联网后自动更新" : "网络不稳 · 当前显示缓存数据")
       );
     }
-    for (const item of items) list.appendChild(rowFor(state, item));
+    if (state.error) list.appendChild(banner("error", state.error));
+
+    if (state.activeIndex >= items.length) state.activeIndex = 0;
+    items.forEach((item, index) => {
+      const row = rowFor(state, item);
+      row.id = "lib-opt-" + state.kind + "-" + index;
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", index === state.activeIndex ? "true" : "false");
+      row.tabIndex = -1;
+      if (index === state.activeIndex) row.classList.add("active");
+      list.appendChild(row);
+    });
     renderFoot(state);
+
+    const visible = items.length;
+    const filtered = (state.kind === "contest" || state.kind === "record") && state.filter !== "all";
     const shown = state.dom.count;
     if (shown) {
-      shown.textContent = state.items.length < state.total ? `${state.items.length} / ${fmtNum(state.total)}` : fmtNum(state.total);
+      if (filtered) shown.textContent = `${visible} / ${fmtNum(state.total)}`;
+      else if (state.items.length < state.total) shown.textContent = `${state.items.length} / ${fmtNum(state.total)}`;
+      else shown.textContent = fmtNum(state.total);
     }
+    const active = list.querySelector(".lib-row.active");
+    if (active) list.setAttribute("aria-activedescendant", active.id);
   }
 
   function renderFoot(state) {
@@ -309,16 +435,6 @@ export function initLibrary(actions) {
 
   function rowFor(state, item) {
     const row = el("div", "lib-row lib-" + item.type);
-    row.tabIndex = 0;
-    row.setAttribute("role", "link");
-    const go = () => open(item);
-    row.addEventListener("click", go);
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        go();
-      }
-    });
 
     if (item.type === "problem") {
       row.appendChild(el("span", "lib-pid", item.pid));
@@ -451,11 +567,14 @@ export function initLibrary(actions) {
   async function load(state, page, options = {}) {
     const token = ++state.token;
     state.loading = true;
+    state.loadingVisible = false;
     state.error = "";
-    if (!options.append) {
-      state.items = state.items.length ? state.items : [];
-    }
     renderRows(state);
+    const skeletonTimer = setTimeout(() => {
+      if (token !== state.token || !state.loading || state.items.length) return;
+      state.loadingVisible = true;
+      renderRows(state);
+    }, 150);
     const payload = {
       kind: state.kind,
       page,
@@ -469,8 +588,10 @@ export function initLibrary(actions) {
     } catch (err) {
       res = { error: err.message || "加载失败" };
     }
+    clearTimeout(skeletonTimer);
     if (token !== state.token) return;
     state.loading = false;
+    state.loadingVisible = false;
     if (!res) res = { error: "加载失败" };
     state.stale = !!res.stale;
     state.offlineNote = !!res.offline;
@@ -483,6 +604,7 @@ export function initLibrary(actions) {
       state.error = res.error;
     } else {
       state.needLogin = false;
+      state.error = "";
       state.page = page;
       state.perPage = res.perPage || 0;
       state.total = res.total || 0;

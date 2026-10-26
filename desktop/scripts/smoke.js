@@ -36,7 +36,9 @@ const result = spawnSync(electron, [".", "--smoke"], {
 if (result.stdout) process.stdout.write(result.stdout);
 if (result.stderr) process.stderr.write(result.stderr);
 
-const shots = [...String(result.stdout || "").matchAll(/SMOKE_SHOT \S+ (.+)/g)].map((m) => m[1].trim());
+const shots = [...String(result.stdout || "").matchAll(/SMOKE_SHOT \S+ (.+)/g)]
+  .map((m) => m[1].trim())
+  .filter((file) => !/SKIPPED/.test(file));
 const badShots = shots.filter((file) => !fs.existsSync(file) || fs.statSync(file).size <= 5000);
 const ok =
   result.status === 0 &&

@@ -76,6 +76,7 @@ class ViewManager {
     this.library = null;
     this.returnLib = null;
     this.ideOn = false;
+    this.ideSplit = 0.5;
     this.overlayOpen = false;
     this.skinSource = "";
     this.skinMtime = 0;
@@ -379,7 +380,7 @@ class ViewManager {
 
   async captureProblem(entry, round) {
     const wc = entry.view.webContents;
-    if (wc.isDestroyed() || round > 2) return;
+    if (wc.isDestroyed() || round > 4) return;
     const url = wc.getURL();
     const pid = entry.pid || pidFromUrl(url);
     if (!pid || url.includes("#") || isOfflineUrl(url)) return;
@@ -395,6 +396,17 @@ class ViewManager {
         if (!pick) return { ok: false, reason: "no-dom" };
         const text = (pick.textContent || "").replace(/\\s+/g, " ").trim();
         if (text.length < 200) return { ok: false, reason: "thin", len: text.length };
+        // 站点 SPA 水合前会把 markdown 源文本直接放在 DOM 里；抓到这种状态就继续等，
+        // 否则离线快照会显示满屏 ** 和 $。正文类不存在也说明还没水合。
+        const marked = pick.querySelector(".lfe-marked");
+        if (!marked) return { ok: false, reason: "no-marked" };
+        const markedText = (marked.textContent || "").slice(0, 8000);
+        if (markedText.replace(/\\s+/g, " ").trim().length < 120) {
+          return { ok: false, reason: "thin-marked" };
+        }
+        if (/\\*\\*[^*\\n]{1,120}\\*\\*/.test(markedText) && !marked.querySelector("strong, em, .katex")) {
+          return { ok: false, reason: "raw-markdown" };
+        }
         const clone = pick.cloneNode(true);
         clone.querySelectorAll("script, noscript, iframe, #lg-boot").forEach((node) => node.remove());
         const html = clone.innerHTML;
@@ -414,7 +426,15 @@ class ViewManager {
       return;
     }
     // 页面还在水合：5 秒后重试
-    if (probe && (probe.reason === "thin" || probe.reason === "thin-html" || probe.reason === "no-dom")) {
+    if (
+      probe &&
+      (probe.reason === "thin" ||
+        probe.reason === "thin-html" ||
+        probe.reason === "no-dom" ||
+        probe.reason === "no-marked" ||
+        probe.reason === "thin-marked" ||
+        probe.reason === "raw-markdown")
+    ) {
       setTimeout(() => this.captureProblem(entry, round + 1).catch(() => {}), 5000);
     }
   }
@@ -425,6 +445,13 @@ class ViewManager {
     this.ideOn = !!on;
     this.layout();
     this.emit();
+  }
+
+  setIdeSplit(value) {
+    const ratio = Number(value);
+    if (!Number.isFinite(ratio)) return;
+    this.ideSplit = Math.min(0.7, Math.max(0.35, ratio));
+    if (this.ideOn) this.layout();
   }
 
   setOverlay(open) {
@@ -551,6 +578,7 @@ class ViewManager {
         sandbox: false,
         session: this.ctx.session,
         spellcheck: false,
+        backgroundThrottling: !this.ctx.smoke,
         additionalArguments: [
           "--lg-boot-bg=" + encodeURIComponent(t.colors.bg),
           "--lg-view-x=" + RAIL_W,
@@ -650,6 +678,11 @@ class ViewManager {
     wc.on("dom-ready", () => {
       const current = wc.getURL();
       if (current === "about:blank") return;
+      // 插入的 CSS 随文档销毁；新文档必须重新注入静态规则
+      entry.skinKey = null;
+      entry.varsKey = null;
+      entry.skinMtime = 0;
+      entry.skinPending = false;
       if (!wc.debugger.isAttached()) this.attachGuard(wc);
       if (!isOfflineUrl(current)) this.injectSkin(entry);
       entry.view.setBackgroundColor(this.ctx.theme.colors.bg);
@@ -775,7 +808,7 @@ class ViewManager {
     let width = Math.max(320, bounds.width - RAIL_W);
     const height = Math.max(240, bounds.height - TITLE_H - TOOLBAR_H);
     if (this.ideOn && entry.kind === "problem") {
-      width = Math.max(320, Math.floor(width / 2));
+      width = Math.max(320, Math.floor(width * (1 - this.ideSplit)));
     }
     const rect = { x, y, width, height };
     const serialized = JSON.stringify(rect);
@@ -840,7 +873,7 @@ class ViewManager {
 
   /* ---------- 统一皮肤 + 壁纸复刻 ---------- */
 
-  skinCss(entry) {
+  skinStatic() {
     const file = path.join(SKIN_DIR, "luogu-skin.css");
     try {
       const stat = fs.statSync(file);
@@ -851,6 +884,10 @@ class ViewManager {
     } catch {
       this.skinSource = "";
     }
+    return this.skinSource;
+  }
+
+  skinVars(entry) {
     const t = this.ctx.theme;
     const c = t.colors;
     const wall = this.ctx.wallpaper || {};
@@ -864,21 +901,40 @@ class ViewManager {
       `--lg-surface:${c.surface}`,
       `--lg-surface-2:${c.surface2}`,
       `--lg-border:${c.border}`,
+      `--lg-border-strong:${c.borderStrong}`,
+      `--lg-divider:${c.divider}`,
       `--lg-text:${c.text}`,
       `--lg-text-2:${c.text2}`,
       `--lg-text-3:${c.text3}`,
       `--lg-accent:${c.accent}`,
+      `--lg-accent-text:${c.accentText}`,
       `--lg-accent-soft:${c.accentSoft}`,
       `--lg-accent-fill:${c.accentFill}`,
       `--lg-on-accent:${c.onAccent}`,
+      `--lg-hover:${c.hover}`,
+      `--lg-pressed:${c.pressed}`,
+      `--lg-shadow:${c.shadow}`,
+      `--lg-highlight:${c.highlight}`,
       `--lg-green:${c.green}`,
       `--lg-red:${c.red}`,
       `--lg-orange:${c.orange}`,
       `--lg-material:${t.material}`,
       `--lg-panel-alpha:${t.panelAlpha}%`,
       `--lg-card-alpha:${t.cardAlpha}%`,
+      `--lg-overlay-alpha:${t.overlayAlpha}%`,
       `--lg-scrim:${t.pageScrim}%`,
       `--lg-blur:${t.blurPx}px`,
+      `--lg-font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace`,
+      `--lg-radius-sm:6px`,
+      `--lg-radius-md:8px`,
+      `--lg-radius-lg:12px`,
+      `--lg-fs-xs:12px`,
+      `--lg-fs-sm:13px`,
+      `--lg-fs-md:14px`,
+      `--lg-fs-lg:16px`,
+      `--lg-fs-xl:20px`,
+      `--lg-dur:120ms`,
+      `--lg-ease:cubic-bezier(.2,0,0,1)`,
       `--lg-wall-image:${backdrop}`,
       `--lg-wall-left:-${rect.x}px`,
       `--lg-wall-top:-${rect.y}px`,
@@ -888,7 +944,7 @@ class ViewManager {
       `--lg-motion:${wall.motion ? 1 : 0}`,
       `--lg-zoom-on:${wall.zoom ? 1 : 0}`,
     ].join(";");
-    return `:root{${vars}}\n` + this.skinSource;
+    return `:root{${vars}}`;
   }
 
   injectSkin(entry) {
@@ -896,18 +952,42 @@ class ViewManager {
     if (wc.isDestroyed()) return;
     // 离线快照页有自己的排版与主题，不套洛谷皮肤变量
     if (isOfflineUrl(wc.getURL())) return;
-    let css = "";
+    let vars = "";
     try {
-      css = this.skinCss(entry);
+      vars = this.skinVars(entry);
     } catch {
       return;
     }
-    if (!css.trim()) return;
+    if (!vars.trim()) return;
+    let source = "";
     try {
-      if (entry.skinKey) wc.removeInsertedCSS(entry.skinKey).catch(() => {});
-      wc.insertCSS(css).then((key) => {
-        entry.skinKey = key;
-      }).catch(() => {});
+      source = this.skinStatic();
+    } catch {
+      source = "";
+    }
+    try {
+      // 静态规则只在首次或文件变更时注入；主题/材质变化只替换变量表。
+      if (source.trim() && !entry.skinPending && (!entry.skinKey || entry.skinMtime !== this.skinMtime)) {
+        entry.skinPending = true;
+        const oldKey = entry.skinKey;
+        entry.skinKey = null;
+        if (oldKey) wc.removeInsertedCSS(oldKey).catch(() => {});
+        wc.insertCSS(source)
+          .then((key) => {
+            entry.skinPending = false;
+            entry.skinKey = key;
+            entry.skinMtime = this.skinMtime;
+          })
+          .catch(() => {
+            entry.skinPending = false;
+          });
+      }
+      if (entry.varsKey) wc.removeInsertedCSS(entry.varsKey).catch(() => {});
+      wc.insertCSS(vars)
+        .then((key) => {
+          entry.varsKey = key;
+        })
+        .catch(() => {});
     } catch {
       /* 页面还在加载中，dom-ready 会再试 */
     }

@@ -1,8 +1,9 @@
 /* 外壳入口：装配导航、主页、原生列表、编辑器、覆盖层，并转发键盘快捷键。
    壁纸运动与洛谷页面共用同一个 Date.now 相位公式，保证两侧边缘不错位。 */
 import { applyTheme } from "../shared/theme.js";
+import { icon } from "./icons.js";
 import { initChrome } from "./chrome.js";
-import { renderHome } from "./home.js";
+import { renderHome, disposeHome } from "./home.js";
 import { initLibrary } from "./library.js";
 import { initOverlays } from "./overlays.js";
 import { initEditor } from "./editor.js";
@@ -10,23 +11,54 @@ import { initEditor } from "./editor.js";
 const stateBox = { data: null };
 let homeSignature = "";
 
+const TOAST_ICONS = {
+  success: "checkCircle",
+  error: "xCircle",
+  warning: "alert",
+  info: "info",
+};
+
 function toast(payload) {
   const host = document.getElementById("toasts");
   if (!host || !payload) return;
+  const kind = TOAST_ICONS[payload.kind] ? payload.kind : "info";
   const item = document.createElement("div");
-  item.className = "toast";
+  item.className = "toast " + kind;
+  item.setAttribute("role", kind === "error" ? "alert" : "status");
+
+  const glyph = document.createElement("span");
+  glyph.className = "toast-icon";
+  glyph.innerHTML = icon(TOAST_ICONS[kind]);
+  item.appendChild(glyph);
+
+  const wrap = document.createElement("div");
+  wrap.className = "toast-body-wrap";
   const title = document.createElement("div");
   title.className = "toast-title";
   title.textContent = payload.title || "";
-  item.appendChild(title);
+  wrap.appendChild(title);
   if (payload.body) {
     const body = document.createElement("div");
     body.className = "toast-body";
     body.textContent = payload.body;
-    item.appendChild(body);
+    wrap.appendChild(body);
   }
+  item.appendChild(wrap);
   host.appendChild(item);
-  setTimeout(() => item.remove(), 4200);
+
+  while (host.children.length > 3) host.firstElementChild.remove();
+
+  let timer = setTimeout(dismiss, kind === "error" ? 8000 : 5000);
+  function dismiss() {
+    clearTimeout(timer);
+    item.classList.add("removing");
+    setTimeout(() => item.remove(), 180);
+  }
+  item.addEventListener("mouseenter", () => clearTimeout(timer));
+  item.addEventListener("mouseleave", () => {
+    timer = setTimeout(dismiss, 1800);
+  });
+  item.addEventListener("click", dismiss);
 }
 
 function homeKey(state) {
@@ -65,6 +97,7 @@ async function boot() {
       }),
     saveDraft: (payload) => window.lg.saveDraft(payload),
     loadDraft: () => window.lg.getDraft(),
+    setIdeSplit: (ratio) => window.lg.setIdeSplit(ratio),
   });
 
   const homeActions = {
@@ -136,31 +169,63 @@ async function boot() {
         homeSignature = key;
         renderHome(state, homeActions);
       }
+    } else {
+      disposeHome();
     }
     library.update(state);
     editor.show(!state.page.home && !!state.page.isProblem && !!state.page.ide);
+    syncWallpaper();
   }
 
-  /* 壁纸运动：与页面 preload 的公式一致 */
-  function tickWallpaper() {
-    const state = stateBox.data;
-    if (state) {
-      const wall = (state.theme && state.theme.wallpaper) || {};
-      const style = document.documentElement.style;
-      const t = Date.now();
-      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (wall.motion && !reduced) {
-        style.setProperty("--lg-pan-x", (Math.sin(t / 11000) * 6).toFixed(2) + "px");
-        style.setProperty("--lg-pan-y", (Math.cos(t / 15000) * 4).toFixed(2) + "px");
-      } else {
-        style.setProperty("--lg-pan-x", "0px");
-        style.setProperty("--lg-pan-y", "0px");
-      }
-      style.setProperty("--lg-zoom", wall.zoom && !reduced ? (1.055 + Math.sin(t / 19000) * 0.012).toFixed(4) : "1");
-    }
-    requestAnimationFrame(tickWallpaper);
+  /* 壁纸运动：与页面 preload 的公式一致；关闭运动时停止 rAF。 */
+  let wallRaf = 0;
+  function stopWallpaper() {
+    if (wallRaf) cancelAnimationFrame(wallRaf);
+    wallRaf = 0;
+    const style = document.documentElement.style;
+    style.setProperty("--lg-pan-x", "0px");
+    style.setProperty("--lg-pan-y", "0px");
+    style.setProperty("--lg-zoom", "1");
   }
-  requestAnimationFrame(tickWallpaper);
+
+  function tickWallpaper() {
+    wallRaf = 0;
+    const state = stateBox.data;
+    if (!state) return;
+    const wall = (state.theme && state.theme.wallpaper) || {};
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if ((!wall.motion && !wall.zoom) || reduced) {
+      stopWallpaper();
+      return;
+    }
+    const style = document.documentElement.style;
+    const t = Date.now();
+    if (wall.motion) {
+      style.setProperty("--lg-pan-x", (Math.sin(t / 11000) * 6).toFixed(2) + "px");
+      style.setProperty("--lg-pan-y", (Math.cos(t / 15000) * 4).toFixed(2) + "px");
+    } else {
+      style.setProperty("--lg-pan-x", "0px");
+      style.setProperty("--lg-pan-y", "0px");
+    }
+    style.setProperty("--lg-zoom", wall.zoom ? (1.055 + Math.sin(t / 19000) * 0.012).toFixed(4) : "1");
+    wallRaf = requestAnimationFrame(tickWallpaper);
+  }
+
+  function syncWallpaper() {
+    const state = stateBox.data;
+    if (!state) return;
+    const wall = (state.theme && state.theme.wallpaper) || {};
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduced && (wall.motion || wall.zoom)) {
+      if (!wallRaf) wallRaf = requestAnimationFrame(tickWallpaper);
+    } else {
+      stopWallpaper();
+    }
+  }
+
+  window
+    .matchMedia("(prefers-reduced-motion: reduce)")
+    .addEventListener("change", () => syncWallpaper());
 
   window.lg.onState(apply);
   window.lg.onCommand((name) => {

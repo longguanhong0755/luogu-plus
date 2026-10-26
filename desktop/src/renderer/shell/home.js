@@ -1,5 +1,5 @@
-/* 主页：日期 + 每日寄语 + 签到 + 打卡网格 + 比赛倒计时 + 最近提交。
-   数据全部来自主进程，这里只负责呈现；无动画、无骨架屏。 */
+/* 主页：两栏仪表盘。数据全部来自主进程，这里只负责呈现。
+   左栏是打卡与最近提交，右栏是签到、比赛和离线队列。 */
 import { icon } from "./icons.js";
 
 let countdownTimer = null;
@@ -45,11 +45,23 @@ function resClass(status) {
   return "mid";
 }
 
-function buildHeat(home) {
-  const card = el("div", "heat-card panel");
-  const head = el("div", "heat-head");
-  head.appendChild(el("span", "", "打卡记录 · 近 20 周"));
+function cardHead(title, iconName, extra) {
+  const head = el("div", "card-head");
+  const titleNode = el("span", "card-title");
+  titleNode.innerHTML = icon(iconName);
+  titleNode.appendChild(document.createTextNode(title));
+  head.appendChild(titleNode);
+  if (extra !== undefined && extra !== null) {
+    const extraNode = el("span", "card-extra");
+    if (typeof extra === "string") extraNode.textContent = extra;
+    else extraNode.appendChild(extra);
+    head.appendChild(extraNode);
+  }
+  return head;
+}
 
+function buildHeat(home) {
+  const card = el("div", "heat-card card");
   const counts = new Map();
   for (const item of home.heat || []) counts.set(item.date, item.count);
 
@@ -60,6 +72,7 @@ function buildHeat(home) {
 
   let monthDays = 0;
   const grid = el("div", "heat");
+  grid.setAttribute("role", "img");
   for (let i = 0; i < 140; i++) {
     const day = new Date(start);
     day.setDate(start.getDate() + i);
@@ -77,19 +90,56 @@ function buildHeat(home) {
     if (count > 0 && day.getMonth() === today.getMonth()) monthDays++;
     grid.appendChild(cell);
   }
+  grid.setAttribute("aria-label", `近 20 周打卡热力图，本月 ${monthDays} 天有提交`);
 
-  const cur = el("span", "cur");
-  cur.textContent = `本月 ${monthDays} 天`;
-  head.appendChild(cur);
-  card.appendChild(head);
-  card.appendChild(grid);
+  const days = el("div", "heat-days");
+  for (let i = 0; i < 7; i++) days.appendChild(el("span", "", WEEK[i]));
+
+  const months = el("div", "heat-months");
+  const runs = [];
+  for (let week = 0; week < 20; week++) {
+    const weekStart = new Date(start);
+    weekStart.setDate(start.getDate() + week * 7);
+    const month = weekStart.getMonth();
+    if (!runs.length || runs[runs.length - 1].month !== month) runs.push({ month, weeks: 1 });
+    else runs[runs.length - 1].weeks++;
+  }
+  for (const run of runs) {
+    const label = el("span", "", `${run.month + 1} 月`);
+    label.style.width = `${run.weeks * 16 - 2}px`;
+    months.appendChild(label);
+  }
+
+  const legend = el("div", "heat-legend");
+  legend.appendChild(el("span", "lg-label", "少"));
+  for (const level of ["", "l1", "l2", "l3", "l4"]) {
+    const swatch = el("span", "hc " + level);
+    legend.appendChild(swatch);
+  }
+  legend.appendChild(el("span", "lg-label", "多"));
+
+  const foot = el("div", "heat-foot");
+  foot.appendChild(el("span", "card-sub", "近 20 周"));
+  foot.appendChild(legend);
+
+  const heatColumn = el("div", "heat-col");
+  heatColumn.appendChild(months);
+  heatColumn.appendChild(grid);
+  const wrap = el("div", "heat-wrap");
+  wrap.appendChild(days);
+  wrap.appendChild(heatColumn);
+
+  card.appendChild(cardHead("打卡记录", "calendarCheck", `本月 ${monthDays} 天`));
+  card.appendChild(wrap);
+  card.appendChild(foot);
   return card;
 }
 
 function buildContest(home, actions) {
   const contest = home.contest;
-  const card = el("div", "contest-card panel");
-  card.appendChild(el("span", "cc-label", contest ? (contest.live ? "正在进行" : "下一场比赛") : "比赛"));
+  const card = el("div", "contest-card card");
+  card.appendChild(cardHead("比赛", "contest"));
+  card.appendChild(el("span", "cc-label", contest ? (contest.live ? "正在进行" : "下一场比赛") : "赛程"));
 
   if (!contest) {
     card.appendChild(el("span", "cc-empty", "暂无比赛信息"));
@@ -100,8 +150,7 @@ function buildContest(home, actions) {
   card.appendChild(name);
 
   if (contest.live) {
-    const chip = el("span", "cc-chip cc-live", "进行中");
-    card.appendChild(chip);
+    card.appendChild(el("span", "cc-chip cc-live", "进行中"));
   } else {
     const start = new Date(contest.start);
     card.appendChild(
@@ -117,16 +166,25 @@ function buildContest(home, actions) {
   };
   tick();
   countdownTimer = setInterval(tick, 1000);
-  card.addEventListener("click", () => actions.nav("contest"));
+
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.setAttribute("aria-label", "打开比赛页面：" + contest.name);
+  const open = () => actions.nav("contest");
+  card.addEventListener("click", open);
+  card.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      open();
+    }
+  });
   return card;
 }
 
 function buildRecent(home, actions, offline) {
-  const card = el("div", "list-card panel");
-  const head = el("div", "list-head");
-  head.appendChild(el("span", "", "最近提交"));
-  head.appendChild(el("span", "", home.updatedAt ? (offline ? "离线数据" : "更新于 " + formatWhen(home.updatedAt)) : ""));
-  card.appendChild(head);
+  const card = el("div", "list-card card");
+  const updated = home.updatedAt ? (offline ? "离线数据" : "更新于 " + formatWhen(home.updatedAt)) : "";
+  card.appendChild(cardHead("最近提交", "clock", updated));
 
   const list = home.recent || [];
   if (!list.length) {
@@ -136,13 +194,22 @@ function buildRecent(home, actions, offline) {
 
   for (const item of list) {
     const row = el("div", "sub-row");
-    row.style.cursor = "pointer";
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", `${item.pid} ${item.title || ""}`);
     const res = el("span", "res " + resClass(item.status), item.statusText || "—");
     row.appendChild(res);
     row.appendChild(el("span", "sub-pid", item.pid));
     row.appendChild(el("span", "sub-name", item.title || ""));
     row.appendChild(el("span", "sub-time", item.time ? formatWhen(item.time) : ""));
-    row.addEventListener("click", () => actions.openProblem(item.pid));
+    const open = () => actions.openProblem(item.pid);
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
     card.appendChild(row);
   }
   return card;
@@ -151,16 +218,15 @@ function buildRecent(home, actions, offline) {
 function buildQueue(state, actions) {
   const queue = state.queue;
   if (!queue || !queue.items || !queue.items.length) return null;
-  const card = el("div", "queue-card panel");
-  const head = el("div", "list-head");
-  head.appendChild(el("span", "", "离线提交队列"));
+  const card = el("div", "queue-card list-card card");
+  const extra = el("span");
   if (queue.count > 0) {
     const retry = el("button", "q-retry", "全部重试");
     retry.type = "button";
     retry.addEventListener("click", () => actions.queueAction({ op: "retry" }));
-    head.appendChild(retry);
+    extra.appendChild(retry);
   }
-  card.appendChild(head);
+  card.appendChild(cardHead("离线提交队列", "wifiOff", extra));
 
   const STATUS_LABEL = {
     pending: ["等待联网", "q-pending"],
@@ -176,24 +242,111 @@ function buildQueue(state, actions) {
     row.appendChild(el("span", "sub-pid", item.pid));
     row.appendChild(el("span", "q-note", item.lastError || ""));
     row.appendChild(el("span", "sub-time", formatWhen(item.queuedAt)));
-    row.addEventListener("click", () => actions.openProblem(item.pid));
+    const open = () => actions.openProblem(item.pid);
+    row.addEventListener("click", open);
     row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") actions.openProblem(item.pid);
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
     });
     card.appendChild(row);
   }
-  const note = el("div", "q-note-line", "断网时提交的代码会排在这里，联网后自动重放；点行打开题目。");
-  card.appendChild(note);
+  card.appendChild(el("div", "q-note-line", "断网时提交的代码会排在这里，联网后自动重放；点行打开题目。"));
   return card;
+}
+
+function buildStats(home) {
+  const counts = new Map();
+  for (const item of home.heat || []) counts.set(item.date, item.count);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay() - 19 * 7);
+  let monthDays = 0;
+  let total = 0;
+  for (let i = 0; i < 140; i++) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
+    if (day > today) continue;
+    const key = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+    const count = counts.get(key) || 0;
+    total += count;
+    if (count > 0 && day.getMonth() === today.getMonth()) monthDays++;
+  }
+
+  const card = el("div", "stats-card card");
+  card.appendChild(cardHead("学习概览", "record"));
+  const grid = el("div", "stats-grid");
+  const stats = [
+    [home.streak || 0, "连续签到"],
+    [monthDays, "本月打卡"],
+    [total, "近 20 周提交"],
+  ];
+  for (const [value, label] of stats) {
+    const cell = el("div", "stat");
+    cell.appendChild(el("span", "stat-value nums", String(value)));
+    cell.appendChild(el("span", "stat-label", label));
+    grid.appendChild(cell);
+  }
+  card.appendChild(grid);
+  return card;
+}
+
+function buildSign(state, actions) {
+  const user = state.user || {};
+  if (!user.loggedIn) {
+    const card = el("div", "login-card card");
+    const text = el("div", "login-text");
+    text.appendChild(el("span", "login-title", "登录洛谷"));
+    text.appendChild(document.createTextNode("登录后查看签到、打卡记录和最近提交。"));
+    card.appendChild(text);
+    const btn = el("button", "sign-btn", "登录洛谷");
+    btn.type = "button";
+    btn.addEventListener("click", () => actions.login());
+    card.appendChild(btn);
+    return card;
+  }
+
+  const home = state.home || {};
+  const card = el("div", "sign-card card");
+  const copy = el("div", "sign-copy");
+  copy.appendChild(el("span", "sign-title", "今日签到"));
+  const note = home.streak ? `连续 ${home.streak} 天` : user.name ? `欢迎回来，${user.name}` : "";
+  copy.appendChild(el("span", "sign-note", note));
+  card.appendChild(copy);
+
+  if (home.punched) {
+    const ok = el("span", "sign-state");
+    ok.innerHTML = icon("check");
+    ok.appendChild(document.createTextNode("今日已签"));
+    card.appendChild(ok);
+  } else {
+    const btn = el("button", "sign-btn", "今日签到");
+    btn.type = "button";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.textContent = "签到中…";
+      await actions.checkin();
+      btn.disabled = false;
+      btn.textContent = "今日签到";
+    });
+    card.appendChild(btn);
+  }
+  return card;
+}
+
+export function disposeHome() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
 }
 
 export function renderHome(state, actions) {
   const root = document.getElementById("home");
   if (!root) return;
-  if (countdownTimer) {
-    clearInterval(countdownTimer);
-    countdownTimer = null;
-  }
+  disposeHome();
   const scrollTop = root.scrollTop;
   root.textContent = "";
 
@@ -204,12 +357,12 @@ export function renderHome(state, actions) {
 
   const head = el("div", "home-row");
   head.appendChild(el("div", "home-date", formatDate(new Date())));
+  if (home.quote) head.appendChild(el("div", "home-quote", "每日寄语：" + home.quote));
   if (offline) {
     const chip = el("span", "offline-chip", "离线");
     chip.title = "当前没有网络：浏览缓存数据可用，提交会进入离线队列。";
     head.appendChild(chip);
   }
-  head.appendChild(el("div", "home-quote", home.quote ? "每日寄语：" + home.quote : ""));
   const refresh = el("button", "home-refresh");
   refresh.type = "button";
   refresh.title = "刷新";
@@ -223,56 +376,35 @@ export function renderHome(state, actions) {
     wrap.appendChild(el("div", "offline-note", "离线模式 · 以下为本地数据，更新于 " + formatWhen(home.updatedAt) + "。"));
   }
 
-  if (!user.loggedIn) {
-    const card = el("div", "login-card panel");
-    const text = el("div", "login-text");
-    text.appendChild(el("span", "login-title", "登录洛谷"));
-    text.appendChild(
-      document.createTextNode("登录后，这里会显示你的签到、打卡记录、比赛倒计时和最近提交。")
-    );
-    card.appendChild(text);
-    const btn = el("button", "sign-btn", "登录洛谷");
-    btn.type = "button";
-    btn.addEventListener("click", () => actions.login());
-    card.appendChild(btn);
-    wrap.appendChild(card);
+  const grid = el("div", "home-grid");
+  const main = el("div", "home-main");
+  const side = el("div", "home-side");
+
+  if (user.loggedIn) {
+    main.appendChild(buildHeat(home));
+    main.appendChild(buildRecent(home, actions, offline));
   } else {
-    const sign = el("div", "sign-row");
-    if (home.punched) {
-      const ok = el("span", "sign-state");
-      ok.innerHTML = icon("check");
-      ok.appendChild(document.createTextNode("今日已签"));
-      sign.appendChild(ok);
-      if (home.streak) sign.appendChild(el("span", "sign-note", `连续 ${home.streak} 天`));
-    } else {
-      const btn = el("button", "sign-btn", "今日签到");
-      btn.type = "button";
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        btn.textContent = "签到中…";
-        await actions.checkin();
-        btn.disabled = false;
-        btn.textContent = "今日签到";
-      });
-      sign.appendChild(btn);
-      sign.appendChild(el("span", "sign-note", user.name ? `欢迎回来，${user.name}` : ""));
-    }
-    wrap.appendChild(sign);
+    grid.classList.add("single");
   }
 
+  side.appendChild(buildSign(state, actions));
+  if (user.loggedIn) side.appendChild(buildStats(home));
+  side.appendChild(buildContest(home, actions));
   const queueCard = buildQueue(state, actions);
-  if (queueCard) wrap.appendChild(queueCard);
+  if (queueCard) side.appendChild(queueCard);
 
-  if (user.loggedIn) {
-    wrap.appendChild(buildHeat(home));
-  }
-  wrap.appendChild(buildContest(home, actions));
-  if (user.loggedIn) {
-    wrap.appendChild(buildRecent(home, actions, offline));
-  }
+  if (main.childElementCount) grid.appendChild(main);
+  grid.appendChild(side);
+  wrap.appendChild(grid);
 
   if (home.error) {
-    wrap.appendChild(el("div", "empty-line", "数据同步失败：" + home.error));
+    const card = el("div", "card");
+    const stateBox = el("div", "lib-state");
+    stateBox.innerHTML = icon("alert");
+    stateBox.appendChild(el("strong", "", "数据同步失败"));
+    stateBox.appendChild(el("span", "", home.error));
+    card.appendChild(stateBox);
+    wrap.appendChild(card);
   }
 
   root.appendChild(wrap);

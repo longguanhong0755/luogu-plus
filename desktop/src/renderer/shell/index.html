@@ -18,9 +18,8 @@
     <div id="app">
       <header id="titlebar">
         <img class="tb-mark" src="../../assets/icon-32.png" alt="" draggable="false" />
-        <span class="tb-name">洛谷桌面版</span>
-        <span class="tb-sep"></span>
         <span id="tb-title">主页</span>
+        <span class="tb-drag" aria-hidden="true"></span>
         <button id="tb-avatar" type="button" title="个人主页" aria-label="个人主页">洛</button>
       </header>
 
@@ -32,7 +31,7 @@
             <circle cx="11" cy="11" r="6.5"></circle>
             <path d="m16 16 4.5 4.5"></path>
           </svg>
-          <input id="rail-jump-input" type="text" maxlength="12" placeholder="题号" spellcheck="false" aria-label="按题号跳转" />
+          <input id="rail-jump-input" type="text" maxlength="12" placeholder="题号跳转" spellcheck="false" aria-label="按题号跳转" />
         </form>
         <div id="rail-bottom"></div>
       </nav>
@@ -45,38 +44,43 @@
           <div id="toolbar"></div>
           <div id="workspace">
             <div id="view-host"></div>
+            <div id="ide-resizer" hidden aria-hidden="true"></div>
             <aside id="ide-pane" hidden></aside>
           </div>
         </section>
+      </main>
 
-        <div id="overlay" hidden>
-          <div id="scrim"></div>
+      <div id="overlay" hidden>
+        <div id="scrim"></div>
 
-          <div id="palette" class="overlay-card" hidden>
-            <div class="pal-head">
-              <span class="pal-icon"></span>
-              <input
-                id="pal-input"
-                type="text"
-                placeholder="输入题号、题名或功能…"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <span class="pal-esc">Esc</span>
-            </div>
-            <div id="pal-list" class="pal-list"></div>
-            <div class="pal-foot"><span>↑↓ 选择</span><span>↵ 打开</span><span>Esc 关闭</span></div>
+        <div id="palette" class="overlay-card" role="dialog" aria-modal="true" aria-label="命令面板" tabindex="-1" hidden>
+          <div class="pal-head">
+            <span class="pal-icon"></span>
+            <input
+              id="pal-input"
+              type="text"
+              placeholder="输入题号、题名或功能…"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="搜索题号、题名或功能"
+              role="combobox"
+              aria-controls="pal-list"
+              aria-expanded="true"
+            />
+            <span class="pal-esc">Esc</span>
           </div>
-
-          <div id="switcher" class="overlay-card" hidden>
-            <div class="sw-head">打开的页面</div>
-            <div id="sw-list" class="sw-list"></div>
-            <div class="sw-foot">↑↓ 选择 · ↵ 切换 · Esc 关闭</div>
-          </div>
+          <div id="pal-list" class="pal-list" role="listbox" aria-label="搜索结果"></div>
+          <div class="pal-foot"><span>↑↓ 选择</span><span>↵ 打开</span><span>Esc 关闭</span></div>
         </div>
 
-        <div id="toasts" aria-live="polite"></div>
-      </main>
+        <div id="switcher" class="overlay-card" role="dialog" aria-modal="true" aria-label="页面切换器" tabindex="-1" hidden>
+          <div class="sw-head">打开的页面</div>
+          <div id="sw-list" class="sw-list" role="listbox" aria-label="打开的页面"></div>
+          <div class="sw-foot">↑↓ 选择 · ↵ 切换 · Esc 关闭</div>
+        </div>
+      </div>
+
+      <div id="toasts" aria-live="polite" aria-atomic="false"></div>
     </div>
 
     <script type="module" src="shell.js"></script>

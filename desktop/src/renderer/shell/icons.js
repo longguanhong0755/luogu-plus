@@ -1,6 +1,7 @@
-/* 应用图标集：24×24 线性图标，stroke 跟随 currentColor。 */
+/* 应用图标集：24×24 线性图标，1.6px 视觉线宽（non-scaling-stroke 保证
+   在 16/20/24 三种渲染尺寸下粗细一致），颜色跟随 currentColor。 */
 const S = (body) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" aria-hidden="true">${body}</svg>`;
 
 export const ICONS = {
   home: S('<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/>'),
@@ -45,6 +46,12 @@ export const ICONS = {
   list: S('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>'),
   close: S('<path d="m6 6 12 12M18 6 6 18"/>'),
   check: S('<path d="m4 12.5 5 5L20 6.5"/>'),
+  checkCircle: S('<circle cx="12" cy="12" r="8.5"/><path d="m8 12.3 2.6 2.6L16 9.5"/>'),
+  xCircle: S('<circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6M15 9l-6 6"/>'),
+  alert: S('<path d="M12 4 3.5 19h17z"/><path d="M12 9v4"/><circle cx="12" cy="16.4" r=".6" fill="currentColor" stroke="none"/>'),
+  info: S('<circle cx="12" cy="12" r="8.5"/><path d="M12 10.5V17"/><circle cx="12" cy="7.6" r=".6" fill="currentColor" stroke="none"/>'),
+  inbox: S('<path d="M4 5h16v14H4z"/><path d="M4 13h5l1.5 2h3L15 13h5"/>'),
+  wifiOff: S('<path d="m4 4 16 16"/><path d="M8.5 15.5a5 5 0 0 1 7 0"/><path d="M5 12a10 10 0 0 1 3.5-2.3"/><path d="M15.5 9.7A10 10 0 0 1 19 12"/><circle cx="12" cy="19" r=".8" fill="currentColor" stroke="none"/>'),
   calendarCheck: S(
     '<rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/><path d="m9 15 2 2 4-4"/>'
   ),
@@ -58,6 +65,10 @@ export const ICONS = {
   monitor: S('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4"/>'),
   clock: S('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
   star: S('<path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/>'),
+  palette: S('<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.4 0 2-1 1.4-2.1-.7-1.3.2-2.4 1.7-2.4h1.3A3.6 3.6 0 0 0 20 12.4 8.9 8.9 0 0 0 12 3.5"/><circle cx="8" cy="9" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16" cy="9" r="1"/>'),
+  sidebar: S('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/><path d="M5.8 8h1M5.8 11h1M5.8 14h1"/>'),
+  fileCode: S('<path d="M6 3.5h7l5 5V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M13 3.5V9h5"/><path d="m10 12-2 2 2 2M14 12l2 2-2 2"/>'),
+  play: S('<path d="M8 5.5 18 12 8 18.5z"/>'),
 };
 
 export function icon(name) {

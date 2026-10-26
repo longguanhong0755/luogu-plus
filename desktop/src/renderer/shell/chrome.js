@@ -17,6 +17,7 @@ export function initChrome(actions) {
 
   let data = null;
   let railSignature = "";
+  let toolbarSignature = "";
   let buttons = new Map();
 
   function navButton(item) {
@@ -27,6 +28,10 @@ export function initChrome(actions) {
     btn.setAttribute("aria-label", item.label);
     btn.dataset.id = item.id;
     btn.innerHTML = icon(item.icon) || icon("dot");
+    const label = document.createElement("span");
+    label.className = "rail-label";
+    label.textContent = item.label;
+    btn.appendChild(label);
     btn.addEventListener("click", () => {
       if (item.kind === "custom") actions.custom(item.url, item.label);
       else if (item.kind === "action") actions.settings();
@@ -98,25 +103,45 @@ export function initChrome(actions) {
     browseEl.hidden = page.home || !!page.library;
 
     for (const [id, btn] of buttons) {
-      btn.classList.toggle("active", id === active);
+      const on = id === active;
+      btn.classList.toggle("active", on);
+      if (on) btn.setAttribute("aria-current", "page");
+      else btn.removeAttribute("aria-current");
     }
     avatar.classList.toggle("active", page.kind === "profile");
     updateAvatar(next.user);
 
     if (!page.home && !page.library) renderToolbar(page);
-    else toolbar.textContent = "";
+    else {
+      toolbar.textContent = "";
+      toolbarSignature = "";
+    }
   }
 
   function renderToolbar(page) {
+    const signature = JSON.stringify([
+      page.title,
+      !!page.canBack,
+      !!page.canForward,
+      !!page.isProblem,
+      page.pid || "",
+      !!page.ide,
+    ]);
+    if (signature === toolbarSignature) return;
+    toolbarSignature = signature;
     toolbar.textContent = "";
 
+    const nav = document.createElement("div");
+    nav.className = "tb-nav";
     const back = iconButton("back", "后退", () => actions.view("back"));
     back.disabled = !page.canBack;
     const forward = iconButton("forward", "前进", () => actions.view("forward"));
     forward.disabled = !page.canForward;
-    toolbar.appendChild(back);
-    toolbar.appendChild(forward);
-    toolbar.appendChild(iconButton("refresh", "刷新", () => actions.view("reload")));
+    const reload = iconButton("refresh", "刷新", () => actions.view("reload"));
+    nav.appendChild(back);
+    nav.appendChild(forward);
+    nav.appendChild(reload);
+    toolbar.appendChild(nav);
 
     const sep = document.createElement("span");
     sep.className = "tb-sep-v";
@@ -125,14 +150,23 @@ export function initChrome(actions) {
     const crumbs = document.createElement("div");
     crumbs.id = "crumbs";
     crumbs.textContent = page.title || "";
+    crumbs.title = page.title || "";
     toolbar.appendChild(crumbs);
 
     if (page.isProblem) {
-      toolbar.appendChild(textButton(icon("list") + "提交记录", () => actions.problem({ action: "records", pid: page.pid })));
-      toolbar.appendChild(textButton(icon("article") + "题解", () => actions.problem({ action: "solutions", pid: page.pid })));
+      const group = document.createElement("div");
+      group.className = "tb-actions";
+      group.appendChild(textButton(icon("list") + "提交记录", () => actions.problem({ action: "records", pid: page.pid })));
+      group.appendChild(textButton(icon("article") + "题解", () => actions.problem({ action: "solutions", pid: page.pid })));
       const ide = textButton(icon("code") + "IDE", () => actions.ide(!page.ide));
-      if (page.ide) ide.classList.add("primary");
-      toolbar.appendChild(ide);
+      if (page.ide) {
+        ide.classList.add("primary");
+        ide.setAttribute("aria-pressed", "true");
+      } else {
+        ide.setAttribute("aria-pressed", "false");
+      }
+      group.appendChild(ide);
+      toolbar.appendChild(group);
     }
 
     toolbar.appendChild(iconButton("external", "在浏览器打开", () => actions.view("external")));

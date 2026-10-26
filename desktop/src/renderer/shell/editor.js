@@ -14,9 +14,11 @@ int main() {
 
 export function initEditor(actions) {
   const pane = document.getElementById("ide-pane");
+  const workspace = document.getElementById("workspace");
+  const resizer = document.getElementById("ide-resizer");
   pane.innerHTML = `
     <div class="ide-head">
-      <span class="ide-file">main.cpp</span>
+      <span class="ide-file"><span class="ide-dot"></span>main.cpp</span>
       <select class="ide-lang" aria-label="语言">
         <option>C++14</option>
         <option>C++17</option>
@@ -28,20 +30,54 @@ export function initEditor(actions) {
         <option>Pascal</option>
       </select>
     </div>
-    <textarea class="ide-code" spellcheck="false" aria-label="代码"></textarea>
+    <div class="ide-body">
+      <div class="ide-gutter" aria-hidden="true"></div>
+      <textarea class="ide-code" spellcheck="false" aria-label="代码"></textarea>
+    </div>
     <div class="ide-foot">
-      <span class="ide-result"></span>
+      <span class="ide-state"><span class="ide-status-dot"></span><span class="ide-result">就绪</span></span>
+      <span class="ide-saved"></span>
       <button class="btn-accent" type="button">提交</button>
     </div>
   `;
 
   const code = pane.querySelector(".ide-code");
+  const gutter = pane.querySelector(".ide-gutter");
   const lang = pane.querySelector(".ide-lang");
+  const stateEl = pane.querySelector(".ide-state");
   const result = pane.querySelector(".ide-result");
+  const saved = pane.querySelector(".ide-saved");
   const submit = pane.querySelector(".btn-accent");
 
   code.value = DEFAULT_CODE;
   let draftLoaded = false;
+  let split = 0.5;
+
+  function setStatus(tone, text) {
+    stateEl.className = "ide-state" + (tone ? " " + tone : "");
+    result.textContent = text;
+  }
+
+  let savedTimer = null;
+  function flashSaved(text) {
+    saved.textContent = text;
+    if (savedTimer) clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => {
+      saved.textContent = "";
+    }, 1800);
+  }
+
+  function updateGutter() {
+    const lines = code.value.split("\n").length;
+    gutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
+    gutter.scrollTop = code.scrollTop;
+  }
+
+  function applySplit(value) {
+    split = Math.min(0.7, Math.max(0.35, value));
+    workspace.style.setProperty("--ide-split", String(split));
+    if (actions.setIdeSplit) actions.setIdeSplit(split);
+  }
 
   /* 草稿：上次写到的代码/语言选择在启动时恢复，输入防抖 800ms 落盘 */
   if (actions.loadDraft) {
@@ -53,7 +89,8 @@ export function initEditor(actions) {
           if (draft.lang && [...lang.options].some((option) => option.value === draft.lang)) {
             lang.value = draft.lang;
           }
-          result.textContent = draft.savedAt ? "已恢复上次草稿。" : "";
+          updateGutter();
+          if (draft.savedAt) flashSaved("已恢复上次草稿");
         }
       })
       .catch(() => {})
@@ -70,15 +107,89 @@ export function initEditor(actions) {
     if (draftTimer) clearTimeout(draftTimer);
     draftTimer = setTimeout(() => {
       draftTimer = null;
-      actions.saveDraft({ code: code.value, lang: lang.value }).catch(() => {});
+      actions
+        .saveDraft({ code: code.value, lang: lang.value })
+        .then(() => flashSaved("已保存"))
+        .catch(() => {});
     }, 800);
   };
-  code.addEventListener("input", saveDraft);
+
+  code.addEventListener("input", () => {
+    updateGutter();
+    saveDraft();
+  });
+  code.addEventListener("scroll", () => {
+    gutter.scrollTop = code.scrollTop;
+  });
+  code.addEventListener("keydown", (event) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      const start = code.selectionStart;
+      const end = code.selectionEnd;
+      const pad = "    ";
+      code.value = code.value.slice(0, start) + pad + code.value.slice(end);
+      code.selectionStart = code.selectionEnd = start + pad.length;
+      updateGutter();
+      saveDraft();
+      return;
+    }
+    if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+      const start = code.selectionStart;
+      const lineStart = code.value.lastIndexOf("\n", start - 1) + 1;
+      const indent = (code.value.slice(lineStart, start).match(/^\s+/) || [""])[0];
+      if (!indent) return;
+      event.preventDefault();
+      code.value = code.value.slice(0, start) + "\n" + indent + code.value.slice(code.selectionEnd);
+      code.selectionStart = code.selectionEnd = start + 1 + indent.length;
+      updateGutter();
+      saveDraft();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      submit.click();
+    }
+  });
   lang.addEventListener("change", saveDraft);
+
+  function beginDrag(event) {
+    event.preventDefault();
+    resizer.setPointerCapture(event.pointerId);
+    resizer.classList.add("dragging");
+    document.body.classList.add("resizing");
+  }
+
+  let splitRaf = 0;
+  let nextSplit = 0.5;
+  resizer.addEventListener("pointerdown", beginDrag);
+  resizer.addEventListener("pointermove", (event) => {
+    if (!resizer.classList.contains("dragging")) return;
+    const rect = workspace.getBoundingClientRect();
+    if (!rect.width) return;
+    nextSplit = 1 - (event.clientX - rect.left) / rect.width;
+    if (!splitRaf) {
+      splitRaf = requestAnimationFrame(() => {
+        splitRaf = 0;
+        applySplit(nextSplit);
+      });
+    }
+  });
+  const endDrag = () => {
+    resizer.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+  };
+  resizer.addEventListener("pointerup", endDrag);
+  resizer.addEventListener("pointercancel", endDrag);
+  resizer.addEventListener("dblclick", () => applySplit(0.5));
+  resizer.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    applySplit(split + (event.key === "ArrowLeft" ? 0.03 : -0.03));
+  });
 
   submit.addEventListener("click", async () => {
     if (!actions.canSubmit()) {
-      result.textContent = "请先登录洛谷。";
+      setStatus("bad", "请先登录洛谷。");
       return;
     }
     saveDraft();
@@ -88,22 +199,32 @@ export function initEditor(actions) {
       actions.saveDraft({ code: code.value, lang: lang.value }).catch(() => {});
     }
     submit.disabled = true;
-    result.textContent = "正在提交…";
+    setStatus("", "正在提交…");
     try {
       const res = await actions.submit(code.value, lang.value);
-      if (res && res.ok) result.textContent = "已提交，记录号 " + (res.rid || "—");
-      else if (res && res.queued) result.textContent = res.message || "已加入离线队列。";
-      else result.textContent = (res && res.message) || "提交失败";
+      if (res && res.ok) setStatus("ok", "已提交 · 记录号 " + (res.rid || "—"));
+      else if (res && res.queued) setStatus("queued", res.message || "已加入离线队列。");
+      else setStatus("bad", (res && res.message) || "提交失败");
     } catch (err) {
-      result.textContent = "提交失败：" + err.message;
+      setStatus("bad", "提交失败：" + err.message);
     } finally {
       submit.disabled = false;
     }
   });
 
+  updateGutter();
+  applySplit(0.5);
+
   return {
     show(on) {
       pane.hidden = !on;
+      if (resizer) {
+        resizer.hidden = !on;
+        resizer.setAttribute("tabindex", on ? "0" : "-1");
+        resizer.setAttribute("role", "separator");
+        resizer.setAttribute("aria-orientation", "vertical");
+        resizer.setAttribute("aria-label", "调整编辑器和题目宽度");
+      }
       if (on) code.focus();
     },
   };

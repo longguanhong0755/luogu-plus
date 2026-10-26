@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("lg", {
   viewAction: (action) => ipcRenderer.invoke("app:viewAction", action),
   problemAction: (payload) => ipcRenderer.invoke("app:problemAction", payload),
   setIde: (on2) => ipcRenderer.invoke("app:setIde", on2),
+  setIdeSplit: (ratio) => ipcRenderer.invoke("app:setIdeSplit", ratio),
   overlay: (open) => ipcRenderer.invoke("app:overlay", open),
   submit: (payload) => ipcRenderer.invoke("app:submit", payload),
   queueAction: (payload) => ipcRenderer.invoke("app:queueAction", payload),

@@ -5,7 +5,7 @@ const { BrowserWindow, app, screen } = require("electron");
 const { PRELOAD, RENDERER, ASSETS } = require("./paths");
 
 const TITLE_H = 40;
-const RAIL_W = 72;
+const RAIL_W = 208;
 const TOOLBAR_H = 44;
 
 function sanitizeBounds(saved) {
@@ -56,6 +56,8 @@ function createMainWindow(ctx) {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
+      // 冒烟窗口是不可见的；关闭后台节流才能稳定截到刚切换的面板
+      backgroundThrottling: !ctx.smoke,
     },
   });
 
@@ -107,10 +109,10 @@ function createSettingsWindow(ctx) {
   }
   const t = ctx.theme;
   const win = new BrowserWindow({
-    width: 780,
-    height: 620,
-    minWidth: 680,
-    minHeight: 520,
+    width: 860,
+    height: 640,
+    minWidth: 760,
+    minHeight: 560,
     show: false,
     parent: ctx.win && !ctx.win.isDestroyed() ? ctx.win : undefined,
     backgroundColor: t.colors.bg,

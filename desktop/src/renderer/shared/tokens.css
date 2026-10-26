@@ -1,0 +1,99 @@
+/* 设计令牌：所有界面只消费这里和主题派生变量。
+   规则：4px 基线；中文最小 12px；圆角只用 4/6/8/12/999；
+   正文内容面 >= 91% 不透明，玻璃只用于外壳与临时浮层。 */
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
+
+  /* 字号：11 仅用于英文/数字/快捷键 */
+  --fs-2xs: 11px;
+  --lh-2xs: 14px;
+  --fs-xs: 12px;
+  --lh-xs: 18px;
+  --fs-sm: 13px;
+  --lh-sm: 20px;
+  --fs-md: 14px;
+  --lh-md: 22px;
+  --fs-lg: 16px;
+  --lh-lg: 24px;
+  --fs-xl: 20px;
+  --lh-xl: 28px;
+  --fs-2xl: 24px;
+  --lh-2xl: 32px;
+
+  /* 间距：4px 基线，8px 节奏 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* 圆角 */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* 控件与行高 */
+  --h-sm: 28px;
+  --h-md: 32px;
+  --h-lg: 36px;
+  --h-bar: 44px;
+  --row-list: 56px;
+  --row-compact: 44px;
+  --row-settings: 52px;
+
+  /* 布局 */
+  --title-h: 40px;
+  --toolbar-h: 44px;
+  --sidebar-w: 208px;
+  --content-max: 1080px;
+  --page-pad: 32px;
+
+  /* 动效 */
+  --dur-1: 100ms;
+  --dur-2: 160ms;
+  --dur-3: 220ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* 状态（颜色由 theme.js 覆盖，这里给深色兜底） */
+  --hover: rgba(255, 255, 255, 0.06);
+  --pressed: rgba(255, 255, 255, 0.1);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  --shadow-color: rgba(0, 0, 0, 0.45);
+  --glass-highlight: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --accent-text: var(--accent);
+
+  /* 深色兜底，避免首帧白闪 */
+  --bg: #16181d;
+  --rail: #15171c;
+  --title: #17191e;
+  --surface: #1d2027;
+  --surface-2: #23262f;
+  --editor: #17191e;
+  --border: rgba(255, 255, 255, 0.1);
+  --text: #f2f3f6;
+  --text-2: #a8adb8;
+  --text-3: #8b909c;
+  --accent: #5b8cff;
+  --accent-soft: rgba(91, 140, 255, 0.14);
+  --accent-line: rgba(91, 140, 255, 0.65);
+  --accent-fill: #4b71cc;
+  --on-accent: #ffffff;
+  --green: #3fb950;
+  --red: #f85149;
+  --orange: #d29922;
+  --panel-alpha: 83%;
+  --card-alpha: 95%;
+  --overlay-alpha: 97%;
+  --page-scrim: 94%;
+  --blur: 19.2px;
+  --mat: 55;
+}

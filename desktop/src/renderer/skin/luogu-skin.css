@@ -1,7 +1,6 @@
-/* 洛谷页面统一皮肤（玻璃版）。
-   核心：页面里铺一层与窗口同坐标、同运动相位的壁纸复刻；所有承载面改成
-   半透明卡片，让壁纸真正透过内容，而不是只在外壳两侧露一点。
-   站点的语义色（难度、AC/WA、标签）尽量保留。 */
+/* 洛谷页面统一皮肤（4.0）。
+   规则：壁纸只作为页面底纹；承载面用高不透明度卡片，正文不在模糊上；
+   阅读排版 14/1.8，卡片 12px 圆角，按钮/表单 32px 高，焦点环 2px。 */
 
 :root {
   color-scheme: var(--lg-color-scheme, dark);
@@ -14,10 +13,14 @@ html {
 body {
   background: transparent !important;
   color: var(--lg-text) !important;
+  font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "Microsoft YaHei", system-ui, sans-serif !important;
+  font-size: 14px;
+  line-height: 1.8;
+  font-synthesis: none;
 }
 
-/* 壁纸 + 主题色纱层。层尺寸=整个窗口，负偏移=视图在窗口中的位置，
-   因此与外壳壁纸逐像素对齐；transform 与外壳共用同一组变量。 */
+/* 壁纸 + 主题色纱层。层尺寸=整个窗口，负偏移=视图在窗口中的位置。 */
 body::before {
   content: "";
   position: fixed;
@@ -29,8 +32,8 @@ body::before {
   background-color: var(--lg-bg);
   background-image:
     linear-gradient(
-      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 69%), transparent),
-      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 69%), transparent)
+      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 94%), transparent),
+      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 94%), transparent)
     ),
     var(--lg-wall-image, none);
   background-size: 100% 100%, cover;
@@ -52,29 +55,14 @@ body,
   --theme-body-image: none !important;
   --theme-body-mid-mask: transparent !important;
   --theme-body-color-filter: none !important;
-  --theme-card-background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 77%), transparent) !important;
-  --theme-card-backdrop-filter: blur(var(--lg-blur, 11px)) saturate(1.18) !important;
-  --theme-navi-back: color-mix(in srgb, var(--lg-title) var(--lg-panel-alpha, 73%), transparent) !important;
+  --theme-card-background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
+  --theme-card-backdrop-filter: none !important;
+  --theme-navi-back: color-mix(in srgb, var(--lg-title) var(--lg-panel-alpha, 83%), transparent) !important;
   --theme-navi-fore: var(--lg-text) !important;
   --theme-navi-logo: var(--lg-accent) !important;
-  --theme-dropdown: color-mix(in srgb, var(--lg-surface) 94%, transparent) !important;
-  --theme-tooltip: color-mix(in srgb, var(--lg-surface) 94%, transparent) !important;
+  --theme-dropdown: color-mix(in srgb, var(--lg-surface) var(--lg-overlay-alpha, 97%), transparent) !important;
+  --theme-tooltip: color-mix(in srgb, var(--lg-surface) var(--lg-overlay-alpha, 97%), transparent) !important;
   background: transparent !important;
-}
-
-body,
-input,
-textarea,
-select,
-button,
-.theme-page,
-.lfe-body {
-  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif !important;
-}
-
-body {
-  font-size: 14px;
-  line-height: 1.65;
 }
 
 /* ---- 站点外壳交给应用 ---- */
@@ -101,100 +89,356 @@ body {
   color: var(--lg-text) !important;
 }
 
-#app .lfe-h1,
-#app .lfe-h2,
-#app .lfe-h3,
-#app .lfe-h4,
-#app .lfe-h5,
-#app .lfe-h6,
 #app h1,
 #app h2,
 #app h3,
 #app h4,
 #app h5,
-#app h6 {
+#app h6,
+#app .lfe-h1,
+#app .lfe-h2,
+#app .lfe-h3,
+#app .lfe-h4 {
   color: var(--lg-text) !important;
+  letter-spacing: 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+#app h1,
+#app .lfe-h1 {
+  font-size: 24px;
+  line-height: 32px;
+  margin: 0 0 16px;
+}
+#app h2,
+#app .lfe-h2 {
+  font-size: 20px;
+  line-height: 28px;
+  margin: 28px 0 10px;
+}
+#app h3,
+#app .lfe-h3 {
+  font-size: 16px;
+  line-height: 24px;
+  margin: 22px 0 8px;
+}
+#app h4,
+#app .lfe-h4 {
+  font-size: 14px;
+  line-height: 22px;
+  margin: 18px 0 6px;
 }
 
 #app a {
-  color: var(--lg-accent);
+  color: var(--lg-accent-text, var(--lg-accent)) !important;
+  text-underline-offset: 2px;
 }
 #app a:hover {
-  color: color-mix(in srgb, var(--lg-accent) 78%, var(--lg-text));
+  color: var(--lg-accent-text, var(--lg-accent)) !important;
+  text-decoration: underline;
+}
+
+#app .lfe-marked,
+#app .markdown,
+#app .article-content,
+#app .problem-content,
+#app .lfe-problem-content,
+#app .lfe-markdown {
+  color: var(--lg-text) !important;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+#app .lfe-marked p,
+#app .markdown p,
+#app .article-content p,
+#app .problem-content p {
+  max-width: 74ch;
+  margin: 0 0 12px;
+}
+
+#app .lfe-marked ul,
+#app .lfe-marked ol,
+#app .markdown ul,
+#app .markdown ol {
+  padding-left: 24px;
+  margin: 0 0 12px;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--lg-accent) 32%, transparent);
+  background: var(--lg-accent-soft);
+  color: var(--lg-text);
 }
 
-/* ---- 承载面：卡片、面板、侧栏、列表、表格 ---- */
+/* ---- 承载面：只给顶层卡片，不给表格行/正文再叠模糊 ---- */
 #app .l-card,
 #app .lfe-card,
 #app .card,
+#app .header-card,
+#app .user-header-top,
 #app .lfe-panel,
 #app .panel,
 #app .box,
 #app .lfe-box,
 #app .side,
 #app .lfe-side,
-#app .lfe-table,
-#app .am-table,
-#app .table,
-#app .lfe-list,
 #app .list,
+#app .lfe-list,
 #app .comment,
 #app .am-comment,
-#app .lfe-comment,
-#app .markdown,
-#app .lfe-markdown,
-#app .article-content,
-#app .problem-content,
-#app .lfe-problem-content {
-  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 77%), transparent) !important;
+#app .lfe-comment {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
   border: 1px solid var(--lg-border) !important;
-  border-radius: 9px !important;
-  -webkit-backdrop-filter: blur(var(--lg-blur, 11px)) saturate(1.18);
-  backdrop-filter: blur(var(--lg-blur, 11px)) saturate(1.18);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow:
+    0 1px 2px var(--lg-shadow),
+    0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent),
+    inset 0 1px 0 var(--lg-highlight) !important;
 }
 
-#app .l-card {
-  border-radius: 10px !important;
-  overflow: hidden;
+#app .l-card::before,
+#app .lfe-card::before,
+#app .l-card::after {
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 #app .lfe-card-header,
 #app .card-header,
 #app .lfe-card-head {
   background: color-mix(in srgb, var(--lg-text) 4%, transparent) !important;
-  border-bottom: 1px solid var(--lg-border) !important;
+  border-bottom: 1px solid var(--lg-divider) !important;
   color: var(--lg-text) !important;
 }
 
-/* 表格 */
-#app table {
+/* ---- 表格 ---- */
+#app table,
+#app .cute-table,
+#app .mtable {
   background: transparent !important;
   border-color: var(--lg-border) !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
 }
+
 #app thead,
 #app thead tr,
-#app th {
-  background: color-mix(in srgb, var(--lg-text) 6%, transparent) !important;
+#app th,
+#app .cute-table th,
+#app .mtable th {
+  background: color-mix(in srgb, var(--lg-text) 5%, transparent) !important;
   color: var(--lg-text-2) !important;
-  border-color: var(--lg-border) !important;
-}
-#app tbody,
-#app tr,
-#app td {
-  background: transparent !important;
-  color: var(--lg-text) !important;
-  border-color: var(--lg-border) !important;
-}
-#app tbody tr:hover {
-  background: color-mix(in srgb, var(--lg-text) 4%, transparent) !important;
+  border-color: var(--lg-divider) !important;
 }
 
-/* 下拉、弹层、提示 */
+#app th,
+#app .cute-table th,
+#app .mtable th {
+  height: 38px;
+  padding: 0 12px !important;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+#app tbody,
+#app tr,
+#app td,
+#app .cute-table td,
+#app .mtable td {
+  background: transparent !important;
+  color: var(--lg-text) !important;
+  border-color: var(--lg-divider) !important;
+}
+
+#app td,
+#app .cute-table td,
+#app .mtable td {
+  height: 42px;
+  padding: 10px 12px !important;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+#app tbody tr:hover {
+  background: var(--lg-hover) !important;
+}
+
+/* ---- 表单 ---- */
+#app input:not([type="checkbox"]):not([type="radio"]),
+#app textarea,
+#app select {
+  background: color-mix(in srgb, var(--lg-surface-2) 84%, transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+  box-shadow: none !important;
+  font-size: 13px;
+  line-height: 20px;
+  outline: none;
+  transition:
+    border-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    box-shadow var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+
+#app input:not([type="checkbox"]):not([type="radio"]),
+#app select {
+  min-height: 32px;
+  padding: 0 10px !important;
+}
+
+#app textarea {
+  min-height: 96px;
+  padding: 8px 10px !important;
+  line-height: 1.6;
+}
+
+#app input:not([type="checkbox"]):not([type="radio"]):hover,
+#app textarea:hover,
+#app select:hover {
+  border-color: var(--lg-border-strong) !important;
+}
+
+#app input:focus,
+#app textarea:focus,
+#app select:focus {
+  border-color: var(--lg-accent) !important;
+  box-shadow: 0 0 0 3px var(--lg-accent-soft) !important;
+}
+
+#app input:focus-visible,
+#app textarea:focus-visible,
+#app select:focus-visible {
+  outline: 2px solid var(--lg-accent) !important;
+  outline-offset: 1px !important;
+}
+
+#app input::placeholder,
+#app textarea::placeholder {
+  color: var(--lg-text-3) !important;
+}
+
+#app .refined-input,
+#app .refined-input.text,
+#app .lfe-search,
+#app .search-input {
+  background: color-mix(in srgb, var(--lg-surface-2) 84%, transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+}
+#app .refined-input input,
+#app .refined-input textarea {
+  color: var(--lg-text) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ---- 按钮 ---- */
+#app .l-button,
+#app [class*="l-button"],
+#app .lfe-button,
+#app .btn,
+#app .am-btn,
+#app button.solid,
+#app button.lg-plain {
+  min-height: 32px;
+  padding: 0 12px !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+  border: 1px solid var(--lg-border);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--lg-text);
+  background: color-mix(in srgb, var(--lg-surface-2) 68%, transparent);
+  transition:
+    background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    border-color var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+
+#app .l-button:hover,
+#app .lfe-button:hover,
+#app .btn:hover,
+#app .am-btn:hover {
+  background: var(--lg-hover) !important;
+  border-color: var(--lg-border-strong) !important;
+}
+
+#app .l-button:active,
+#app .lfe-button:active,
+#app .btn:active,
+#app .am-btn:active {
+  background: var(--lg-pressed) !important;
+}
+
+#app .lfe-button.primary,
+#app .am-btn-primary,
+#app .btn-primary,
+#app .l-button.primary,
+#app button.solid {
+  background: var(--lg-accent-fill, var(--lg-accent)) !important;
+  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
+  color: var(--lg-on-accent, #fff) !important;
+}
+
+#app .lfe-button.primary:hover,
+#app .am-btn-primary:hover,
+#app .btn-primary:hover,
+#app .l-button.primary:hover,
+#app button.solid:hover {
+  filter: brightness(1.07);
+}
+
+/* ---- 代码 ---- */
+#app pre,
+#app pre code,
+#app .lfe-code,
+#app [class*="code-block"],
+#app .code-container,
+#app .cm-editor {
+  background: color-mix(in srgb, var(--lg-surface-2) 82%, transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-md, 8px) !important;
+  font-family: var(--lg-font-mono) !important;
+}
+
+#app pre {
+  padding: 12px 14px !important;
+  overflow: auto !important;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+#app code:not(pre code) {
+  background: color-mix(in srgb, var(--lg-text) 8%, transparent) !important;
+  color: var(--lg-text) !important;
+  border-radius: 4px !important;
+  padding: 1px 5px !important;
+  font-family: var(--lg-font-mono) !important;
+  font-size: 0.94em;
+}
+
+#app pre code {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+#app blockquote {
+  border-left: 2px solid var(--lg-accent) !important;
+  background: color-mix(in srgb, var(--lg-accent) 8%, transparent) !important;
+  color: var(--lg-text-2) !important;
+  margin-left: 0 !important;
+  padding: 8px 14px !important;
+  border-radius: 0 var(--lg-radius-sm, 6px) var(--lg-radius-sm, 6px) 0;
+}
+
+/* ---- 下拉、弹层、提示 ---- */
 #app .dropdown,
 #app .dropdown-menu,
 #app .lfe-dropdown,
@@ -208,71 +452,21 @@ body {
 #app .lfe-tooltip,
 #app [role="dialog"],
 #app [role="menu"] {
-  background: color-mix(in srgb, var(--lg-surface) 95%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-overlay-alpha, 97%), transparent) !important;
   color: var(--lg-text) !important;
   border: 1px solid var(--lg-border) !important;
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.32) !important;
-  -webkit-backdrop-filter: blur(calc(var(--lg-blur, 11px) + 6px));
-  backdrop-filter: blur(calc(var(--lg-blur, 11px) + 6px));
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow:
+    0 2px 6px color-mix(in srgb, var(--lg-shadow) 45%, transparent),
+    0 24px 64px color-mix(in srgb, var(--lg-shadow) 80%, transparent) !important;
 }
+
 #app .dropdown-item:hover,
 #app .lfe-dropdown-item:hover,
 #app .am-dropdown-content > li:hover,
 #app [role="menuitem"]:hover {
-  background: color-mix(in srgb, var(--lg-accent) 16%, transparent) !important;
+  background: var(--lg-accent-soft) !important;
   color: var(--lg-text) !important;
-}
-
-/* ---- 表单 ---- */
-input:not([type="checkbox"]):not([type="radio"]),
-textarea,
-select {
-  background: color-mix(in srgb, var(--lg-surface-2) 86%, transparent) !important;
-  color: var(--lg-text) !important;
-  border: 1px solid var(--lg-border) !important;
-  border-radius: 6px !important;
-  box-shadow: none !important;
-}
-input:focus,
-textarea:focus,
-select:focus {
-  border-color: var(--lg-accent) !important;
-  outline: none !important;
-}
-input::placeholder,
-textarea::placeholder {
-  color: var(--lg-text-3) !important;
-}
-button {
-  color: var(--lg-text);
-}
-
-/* ---- 代码 ---- */
-pre,
-pre code,
-.lfe-code,
-[class*="code-block"] {
-  background: color-mix(in srgb, var(--lg-surface-2) 88%, transparent) !important;
-  color: var(--lg-text) !important;
-  border: 1px solid var(--lg-border) !important;
-  border-radius: 8px !important;
-}
-code:not(pre code) {
-  background: color-mix(in srgb, var(--lg-text) 8%, transparent) !important;
-  color: var(--lg-text) !important;
-  border-radius: 4px !important;
-  padding: 1px 5px !important;
-}
-pre code {
-  border: 0 !important;
-  background: transparent !important;
-}
-
-blockquote {
-  border-left: 2px solid var(--lg-accent) !important;
-  background: color-mix(in srgb, var(--lg-accent) 10%, transparent) !important;
-  color: var(--lg-text-2) !important;
-  margin-left: 0 !important;
 }
 
 /* ---- 分页 ---- */
@@ -282,9 +476,15 @@ blockquote {
 }
 #app .pagination > *,
 #app .lfe-pagination > * {
+  min-width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: color-mix(in srgb, var(--lg-surface) 70%, transparent) !important;
   color: var(--lg-text-2) !important;
   border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
 }
 #app .pagination > .active,
 #app .lfe-pagination > .active {
@@ -293,38 +493,20 @@ blockquote {
   color: var(--lg-on-accent, #fff) !important;
 }
 
-/* 站点主按钮：统一到可读的强调色填充 */
-#app .lfe-button.primary,
-#app .am-btn-primary,
-#app .btn-primary {
-  background: var(--lg-accent-fill, var(--lg-accent)) !important;
-  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
-  color: var(--lg-on-accent, #fff) !important;
+/* ---- 站点页头 / 用户页 ---- */
+#app .header-card,
+#app .top-row,
+#app .bottom-row {
+  color: var(--lg-text) !important;
 }
-
-/* ---- 滚动条与焦点 ---- */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+#app .user-header-top,
+#app .user-header,
+#app .user-header-bottom,
+#app .profile-header {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
+  border-color: var(--lg-border) !important;
+  color: var(--lg-text) !important;
 }
-::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--lg-text-3) 55%, transparent);
-  border-radius: 5px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-:focus-visible {
-  outline: 1px solid var(--lg-accent) !important;
-  outline-offset: 1px;
-}
-
-/* ================= 深色审计修补 ================= */
-
-/* 登录页 / 用户页使用自己的容器底色，必须显式透明 */
 #app .main-wrapper,
 #app .lcolor-bg-background,
 #app .lcolor-bg-background.main,
@@ -344,21 +526,6 @@ blockquote {
   background: transparent !important;
   color: var(--lg-text-3) !important;
 }
-
-/* 用户页头部白色横条 */
-#app .user-header,
-#app .user-header-bottom,
-#app .profile-header,
-#app .user-header .lcolor-bg-background {
-  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 77%), transparent) !important;
-  border-color: var(--lg-border) !important;
-  color: var(--lg-text) !important;
-}
-#app .lcolor-bg-background {
-  color: var(--lg-text) !important;
-}
-
-/* 统计条：站点在深色下仍用 #333 的硬编码色 */
 #app .stat-text,
 #app .stat-text.name,
 #app .stat-name {
@@ -369,7 +536,7 @@ blockquote {
   color: var(--lg-text) !important;
 }
 
-/* 文章 / 讨论列表里的深色标题与摘要 */
+/* ---- 列表标题/摘要 ---- */
 #app .l-card .row.title a,
 #app .l-card .title a,
 #app .l-card .row.title,
@@ -392,58 +559,31 @@ blockquote {
   color: var(--lg-text-2) !important;
   border-color: var(--lg-border) !important;
 }
-#app .colored-link-selector .name,
-#app .section-item .name,
-#app .l-card.collections .name,
-#app .content-right .name,
-#app .row-space-between.top .name {
-  color: var(--lg-text-2) !important;
-}
 
-/* 搜索/筛选控件（文章广场的 refined-input 是 div，不是 input） */
-#app .refined-input,
-#app .refined-input.text,
-#app .lfe-search,
-#app .search-input {
-  background: color-mix(in srgb, var(--lg-surface-2) 88%, transparent) !important;
-  color: var(--lg-text) !important;
-  border: 1px solid var(--lg-border) !important;
-  border-radius: 7px !important;
-}
-#app .refined-input input,
-#app .refined-input textarea {
-  color: var(--lg-text) !important;
-}
-
-/* 中性按钮；保留站点的主色/语义按钮 */
-#app .lfe-button:not([class*="primary"]):not([class*="danger"]):not([class*="success"]):not([class*="warning"]):not([class*="blue"]):not([class*="green"]):not([class*="red"]),
-#app .btn:not([class*="primary"]):not([class*="danger"]):not([class*="success"]):not([class*="warning"]):not([class*="blue"]):not([class*="green"]):not([class*="red"]),
-#app .am-btn:not([class*="primary"]):not([class*="danger"]):not([class*="success"]):not([class*="warning"]) {
-  background: color-mix(in srgb, var(--lg-surface) 74%, transparent) !important;
-  color: var(--lg-text) !important;
-  border-color: var(--lg-border) !important;
-}
-
-/* 中性标签；难度/语义色标签不动 */
+/* ---- 标签 / 热力图 ---- */
 #app .lfe-tag:not([class*="difficulty"]):not([class*="color"]):not([class*="level"]),
 #app .tag:not([class*="difficulty"]):not([class*="color"]),
 #app .badge:not([class*="difficulty"]):not([class*="color"]) {
-  background: color-mix(in srgb, var(--lg-text) 8%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-text) 7%, transparent) !important;
   color: var(--lg-text-2) !important;
-  border-color: var(--lg-border) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: 4px !important;
+  padding: 1px 6px !important;
+  font-size: 11px;
+  line-height: 16px;
 }
 
-/* 用户页热力图：浅灰格子改成语义玻璃 */
 #app .heat-map-cell {
   background: color-mix(in srgb, var(--lg-text) 7%, transparent) !important;
+  border-radius: 3px !important;
 }
 #app .heat-map-cell.level-1,
 #app .heat-map-cell[class*="level-1"] {
-  background: color-mix(in srgb, var(--lg-accent) 26%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-accent) 24%, transparent) !important;
 }
 #app .heat-map-cell.level-2,
 #app .heat-map-cell[class*="level-2"] {
-  background: color-mix(in srgb, var(--lg-accent) 46%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-accent) 44%, transparent) !important;
 }
 #app .heat-map-cell.level-3,
 #app .heat-map-cell[class*="level-3"] {
@@ -454,7 +594,32 @@ blockquote {
   background: var(--lg-accent) !important;
 }
 
-/* 代码高亮：站点主题在深色下仍是浅色 token */
+/* ---- 滚动条与焦点 ---- */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--lg-text-3) 45%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--lg-text-3) 70%, transparent);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--lg-accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* ---- 代码高亮（深色）---- */
 @media (prefers-color-scheme: dark) {
   #app .token.comment,
   #app .token.prolog,
@@ -496,11 +661,10 @@ blockquote {
   #app .token.keyword,
   #app .token.directive,
   #app .token.directive.keyword {
-    color: #c792ea !important;
+    color: color-mix(in srgb, var(--lg-accent) 55%, #c792ea) !important;
   }
   #app .token.regex,
   #app .token.important {
     color: var(--lg-orange) !important;
   }
 }
-

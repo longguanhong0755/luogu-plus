@@ -34,30 +34,59 @@ export function initOverlays(actions) {
   let swRows = [];
   let swSelected = 0;
   let queryToken = 0;
+  let lastFocus = null;
+
+  function rowId(prefix, index) {
+    return `${prefix}-opt-${index}`;
+  }
+
+  function loadingRow(text, kind = "pal") {
+    const row = document.createElement("div");
+    row.className = (kind === "sw" ? "sw-row" : "pal-row") + " empty";
+    row.textContent = text;
+    return row;
+  }
 
   function openPalette() {
+    lastFocus = document.activeElement;
     mode = "palette";
     overlay.hidden = false;
     palette.hidden = false;
     switcher.hidden = true;
     input.value = "";
     selected = 0;
+    rows = [];
+    palList.textContent = "";
+    palList.appendChild(loadingRow("正在搜索…"));
     actions.overlay(true);
     input.focus();
     runQuery("");
   }
 
   function openSwitcher() {
+    lastFocus = document.activeElement;
     mode = "switcher";
     overlay.hidden = false;
     switcher.hidden = false;
     palette.hidden = true;
     actions.overlay(true);
     swSelected = 0;
-    actions.listPages().then((list) => {
-      swRows = Array.isArray(list) ? list : [];
-      renderSwitcher();
-    });
+    swRows = [];
+    swList.textContent = "";
+    swList.appendChild(loadingRow("正在读取页面…", "sw"));
+    switcher.focus();
+    actions
+      .listPages()
+      .then((list) => {
+        if (mode !== "switcher") return;
+        swRows = Array.isArray(list) ? list : [];
+      })
+      .catch(() => {
+        swRows = [];
+      })
+      .finally(() => {
+        if (mode === "switcher") renderSwitcher();
+      });
   }
 
   function close() {
@@ -67,16 +96,25 @@ export function initOverlays(actions) {
     switcher.hidden = true;
     mode = "";
     actions.overlay(false);
+    if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
+    lastFocus = null;
   }
 
   function runQuery(query) {
     const token = ++queryToken;
-    actions.palette(query).then((result) => {
-      if (token !== queryToken || mode !== "palette") return;
-      rows = Array.isArray(result) ? result : [];
-      if (selected >= rows.length) selected = Math.max(0, rows.length - 1);
-      renderPalette();
-    });
+    actions
+      .palette(query)
+      .then((result) => {
+        if (token !== queryToken || mode !== "palette") return;
+        rows = Array.isArray(result) ? result : [];
+        if (selected >= rows.length) selected = Math.max(0, rows.length - 1);
+        renderPalette();
+      })
+      .catch(() => {
+        if (token !== queryToken || mode !== "palette") return;
+        rows = [];
+        renderPalette();
+      });
   }
 
   function renderPalette() {
@@ -84,26 +122,47 @@ export function initOverlays(actions) {
     rows.forEach((item, index) => {
       const row = document.createElement("div");
       row.className = "pal-row" + (index === selected ? " on" : "");
-      const name = item.type === "problem" ? "code" : ACTION_ICONS[item.id] || "search";
-      row.innerHTML = icon(name);
-      row.appendChild(document.createTextNode(item.label));
+      row.id = rowId("pal", index);
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", index === selected ? "true" : "false");
+      row.innerHTML = icon(item.type === "problem" ? "code" : ACTION_ICONS[item.id] || "search");
+      const label = document.createElement("span");
+      label.className = "pal-label";
+      label.textContent = item.label;
+      row.appendChild(label);
       const kind = document.createElement("span");
       kind.className = "pal-kind";
       kind.textContent = item.type === "problem" ? "题目" : "功能";
       row.appendChild(kind);
       row.addEventListener("mouseenter", () => {
+        if (selected === index) return;
         selected = index;
-        renderPalette();
+        updatePaletteSelection();
       });
       row.addEventListener("click", () => choose(item));
       palList.appendChild(row);
     });
     if (!rows.length) {
-      const empty = document.createElement("div");
-      empty.className = "pal-row";
-      empty.textContent = "没有匹配项";
-      palList.appendChild(empty);
+      palList.appendChild(loadingRow("没有匹配项"));
     }
+    updatePaletteSelection(true);
+  }
+
+  function updatePaletteSelection(scroll) {
+    if (!rows.length) {
+      input.removeAttribute("aria-activedescendant");
+      return;
+    }
+    const nodes = palList.querySelectorAll(".pal-row");
+    nodes.forEach((node, index) => {
+      const on = index === selected;
+      node.classList.toggle("on", on);
+      node.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const active = nodes[selected];
+    if (!active) return;
+    input.setAttribute("aria-activedescendant", active.id);
+    if (scroll) active.scrollIntoView({ block: "nearest" });
   }
 
   function renderSwitcher() {
@@ -111,6 +170,9 @@ export function initOverlays(actions) {
     swRows.forEach((item, index) => {
       const row = document.createElement("div");
       row.className = "sw-row" + (index === swSelected ? " on" : "");
+      row.id = rowId("sw", index);
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", index === swSelected ? "true" : "false");
       const ico = document.createElement("span");
       ico.className = "sw-ico";
       const name =
@@ -123,24 +185,38 @@ export function initOverlays(actions) {
               : "search";
       ico.innerHTML = icon(name);
       row.appendChild(ico);
-      row.appendChild(document.createTextNode(item.title || item.key));
+      const title = document.createElement("span");
+      title.className = "sw-title";
+      title.textContent = item.title || item.key;
+      row.appendChild(title);
       const kind = document.createElement("span");
       kind.className = "sw-kind";
       kind.textContent = item.kind === "problem" ? "题目" : item.kind === "profile" ? "主页" : "板块";
       row.appendChild(kind);
       row.addEventListener("mouseenter", () => {
+        if (swSelected === index) return;
         swSelected = index;
-        renderSwitcher();
+        updateSwitcherSelection();
       });
       row.addEventListener("click", () => chooseSwitcher(item));
       swList.appendChild(row);
     });
     if (!swRows.length) {
-      const empty = document.createElement("div");
-      empty.className = "sw-row";
-      empty.textContent = "还没有打开的页面";
-      swList.appendChild(empty);
+      swList.appendChild(loadingRow("还没有打开的页面", "sw"));
     }
+    updateSwitcherSelection(true);
+  }
+
+  function updateSwitcherSelection(scroll) {
+    if (!swRows.length) return;
+    const nodes = swList.querySelectorAll(".sw-row");
+    nodes.forEach((node, index) => {
+      const on = index === swSelected;
+      node.classList.toggle("on", on);
+      node.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    const active = nodes[swSelected];
+    if (active && scroll) active.scrollIntoView({ block: "nearest" });
   }
 
   function choose(item) {
@@ -163,13 +239,13 @@ export function initOverlays(actions) {
       event.preventDefault();
       if (rows.length) {
         selected = (selected + 1) % rows.length;
-        renderPalette();
+        updatePaletteSelection(true);
       }
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       if (rows.length) {
         selected = (selected - 1 + rows.length) % rows.length;
-        renderPalette();
+        updatePaletteSelection(true);
       }
     } else if (event.key === "Enter") {
       event.preventDefault();
@@ -182,6 +258,12 @@ export function initOverlays(actions) {
 
   document.addEventListener("keydown", (event) => {
     if (overlay.hidden) return;
+    if (event.key === "Tab") {
+      event.preventDefault();
+      if (mode === "palette") input.focus();
+      else switcher.focus();
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       close();
@@ -192,13 +274,13 @@ export function initOverlays(actions) {
       event.preventDefault();
       if (swRows.length) {
         swSelected = (swSelected + 1) % swRows.length;
-        renderSwitcher();
+        updateSwitcherSelection(true);
       }
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       if (swRows.length) {
         swSelected = (swSelected - 1 + swRows.length) % swRows.length;
-        renderSwitcher();
+        updateSwitcherSelection(true);
       }
     } else if (event.key === "Enter") {
       event.preventDefault();

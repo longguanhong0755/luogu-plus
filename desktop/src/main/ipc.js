@@ -214,6 +214,10 @@ function registerIpc(ctx) {
     ctx.views.setIde(!!on);
   });
 
+  ipcMain.handle("app:setIdeSplit", (_event, ratio) => {
+    ctx.views.setIdeSplit(Number(ratio));
+  });
+
   ipcMain.handle("app:overlay", (_event, open) => {
     ctx.views.setOverlay(!!open);
   });

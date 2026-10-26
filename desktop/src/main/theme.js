@@ -1,43 +1,43 @@
 /* 主题解析：配置 → 具体色板与材质参数。
    渲染层只消费解析后的颜色，不自己判断深浅。
-   材质参数的含义：
+   材质参数的含义（0.4.0 起内容面始终可读）：
    - panelAlpha：标题栏/侧栏/工具条的不透明度（材质越高越透）
-   - pageScrim：洛谷页面里壁纸之上的主题色纱层
-   - cardAlpha：页面卡片/列表/输入框的不透明度
-   - blurPx：玻璃模糊半径 */
+   - pageScrim：内容画布与洛谷页面壁纸之上的主题色纱层（>= 91%）
+   - cardAlpha：卡片/列表/输入框的不透明度（>= 91%）
+   - blurPx：玻璃模糊半径（主要作用于外壳与浮层） */
 const { nativeTheme, systemPreferences } = require("electron");
 
 const DARK = {
-  bg: "#1b1c20",
-  rail: "#17181c",
-  title: "#191a1e",
-  surface: "#25262c",
-  surface2: "#2b2c33",
-  editor: "#18191d",
-  border: "rgba(255,255,255,0.09)",
-  text: "#ededf2",
-  text2: "#a7a8b3",
-  text3: "#8b8c98",
-  green: "#46d39a",
-  red: "#f4707b",
-  orange: "#f2ad4a",
+  bg: "#16181d",
+  rail: "#15171c",
+  title: "#17191e",
+  surface: "#1d2027",
+  surface2: "#23262f",
+  editor: "#17191e",
+  border: "rgba(255,255,255,0.10)",
+  text: "#f2f3f6",
+  text2: "#a8adb8",
+  text3: "#8b909c",
+  green: "#3fb950",
+  red: "#f85149",
+  orange: "#d29922",
   accent: "#5b8cff",
 };
 
 const LIGHT = {
-  bg: "#f2f3f6",
-  rail: "#e9eaef",
-  title: "#eef0f4",
+  bg: "#f5f6f8",
+  rail: "#eef0f4",
+  title: "#f1f3f6",
   surface: "#ffffff",
-  surface2: "#f6f7f9",
+  surface2: "#f3f5f8",
   editor: "#ffffff",
-  border: "rgba(22,24,31,0.10)",
-  text: "#1b1c21",
-  text2: "#5c5f69",
-  text3: "#6b6e78",
-  green: "#0f7a51",
-  red: "#a52f3b",
-  orange: "#8f5a0f",
+  border: "rgba(22,24,31,0.12)",
+  text: "#1b1f26",
+  text2: "#59606b",
+  text3: "#6b7280",
+  green: "#1a7f37",
+  red: "#cf222e",
+  orange: "#9a6700",
   accent: "#3360e0",
 };
 
@@ -86,6 +86,18 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+/* 自定义强调色可能很浅（例如黄色）。文字用色必须在 bg 与 surface 上都 >= 4.5:1，
+   所以逐步向黑/白混合，而不是直接把原色当文字色。 */
+function readableAccent(accent, isDark, surfaces) {
+  const target = isDark ? "#ffffff" : "#101218";
+  let out = accent;
+  for (let step = 1; step <= 20; step++) {
+    if (surfaces.every((bg) => contrast(out, bg) >= 4.5)) return out;
+    out = mixHex(accent, target, 1 - step / 20);
+  }
+  return target;
+}
+
 function resolveMode(cfg) {
   const mode = cfg.appearance.mode;
   if (mode === "system") return nativeTheme.shouldUseDarkColors ? "dark" : "light";
@@ -111,16 +123,25 @@ function payload(cfg) {
   const isDark = mode === "dark";
   const colors = Object.assign({}, isDark ? DARK : LIGHT);
   colors.accent = resolveAccent(cfg, isDark);
-  colors.accentSoft = hexToRgba(colors.accent, isDark ? 0.18 : 0.12);
-  colors.accentLine = hexToRgba(colors.accent, isDark ? 0.42 : 0.34);
+  colors.accentSoft = hexToRgba(colors.accent, isDark ? 0.14 : 0.1);
+  colors.accentLine = hexToRgba(colors.accent, isDark ? 0.65 : 0.55);
   colors.accentFill = isDark ? mixHex(colors.accent, "#101218", 0.78) : colors.accent;
   colors.onAccent = contrast("#ffffff", colors.accentFill) >= 4.5 ? "#ffffff" : "#101218";
+  colors.accentText = readableAccent(colors.accent, isDark, [colors.bg, colors.surface]);
+  colors.borderStrong = isDark ? "rgba(255,255,255,0.18)" : "rgba(22,24,31,0.22)";
+  colors.divider = isDark ? "rgba(255,255,255,0.07)" : "rgba(22,24,31,0.08)";
+  colors.hover = isDark ? "rgba(255,255,255,0.06)" : "rgba(22,24,31,0.05)";
+  colors.pressed = isDark ? "rgba(255,255,255,0.10)" : "rgba(22,24,31,0.09)";
+  colors.shadow = isDark ? "rgba(0,0,0,0.45)" : "rgba(16,24,40,0.14)";
+  colors.highlight = isDark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.85)";
+
   const material = clamp(cfg.appearance.material, 0, 100, 55);
-  const panelAlpha = Math.round(92 - material * 0.35);
-  const pageScrim = Math.round(96 - material * 0.5);
-  const cardAlpha = Math.round(98 - material * 0.38);
-  const overlayAlpha = Math.min(97, panelAlpha + 9);
-  const blurPx = Math.round((2 + material * 0.16) * 10) / 10;
+  // 内容面始终保持在 91% 以上；材质主要影响外壳与模糊。
+  const panelAlpha = Math.round(94 - material * 0.2);
+  const pageScrim = Math.round(97 - material * 0.06);
+  const cardAlpha = Math.round(99 - material * 0.08);
+  const overlayAlpha = Math.min(98, cardAlpha + 2);
+  const blurPx = Math.round((6 + material * 0.24) * 10) / 10;
   return {
     mode,
     isDark,
@@ -135,4 +156,14 @@ function payload(cfg) {
   };
 }
 
-module.exports = { payload, resolveMode, resolveAccent, hexToRgba, mixHex, contrast, DARK, LIGHT };
+module.exports = {
+  payload,
+  resolveMode,
+  resolveAccent,
+  readableAccent,
+  hexToRgba,
+  mixHex,
+  contrast,
+  DARK,
+  LIGHT,
+};

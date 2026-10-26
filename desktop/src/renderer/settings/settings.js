@@ -1,5 +1,6 @@
 /* 设置窗口：改动即时生效（无保存按钮），所有状态以主进程广播为准。 */
 import { applyTheme } from "../shared/theme.js";
+import { icon } from "../shell/icons.js";
 
 const api = window.lgSettings;
 let current = null;
@@ -8,6 +9,17 @@ let weItems = [];
 let weScanning = false;
 let railSignature = "";
 let weSignature = "";
+let previewSignature = "";
+
+const NAV_ICONS = {
+  appearance: "palette",
+  wallpaper: "image",
+  rail: "sidebar",
+  general: "settings",
+  notify: "bell",
+  account: "user",
+  about: "info",
+};
 
 function $(id) {
   return document.getElementById(id);
@@ -20,18 +32,35 @@ function el(tag, className, text) {
   return node;
 }
 
-function apply(state) {
-  if (!state) return;
-  current = state;
-  applyTheme(state.theme);
-
+function updateNav() {
   document.querySelectorAll(".snav").forEach((btn) => {
-    btn.classList.toggle("on", btn.dataset.sec === section);
+    const on = btn.dataset.sec === section;
+    btn.classList.toggle("on", on);
+    if (on) btn.setAttribute("aria-current", "page");
+    else btn.removeAttribute("aria-current");
   });
   document.querySelectorAll("[data-panel]").forEach((panel) => {
     panel.hidden = panel.dataset.panel !== section;
   });
+}
 
+function setSection(next, focus = true) {
+  if (!next) return;
+  section = next;
+  updateNav();
+  const pane = document.querySelector(".set-pane");
+  if (pane) pane.scrollTop = 0;
+  if (focus) {
+    const head = document.querySelector(`[data-panel="${section}"] h2`);
+    if (head) head.focus({ preventScroll: true });
+  }
+}
+
+function apply(state) {
+  if (!state) return;
+  current = state;
+  applyTheme(state.theme);
+  updateNav();
   applyAppearance(state);
   applyWallpaper(state);
   renderRail(state);
@@ -46,56 +75,69 @@ function apply(state) {
 function applyAppearance(state) {
   const appearance = state.appearance;
   document.querySelectorAll("#mode-seg button").forEach((btn) => {
-    btn.classList.toggle("on", btn.dataset.mode === appearance.mode);
+    const on = btn.dataset.mode === appearance.mode;
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
   });
   const mat = $("mat");
   if (document.activeElement !== mat) mat.value = appearance.material;
   $("mat-val").textContent = appearance.material;
+  const pct = ((Number(mat.value) - Number(mat.min || 0)) / (Number(mat.max || 100) - Number(mat.min || 0))) * 100;
+  mat.style.setProperty("--fill", pct + "%");
 
   document.querySelectorAll("#accent-row .sw[data-accent]").forEach((btn) => {
-    btn.classList.toggle("on", btn.dataset.accent === appearance.accent);
+    const on = btn.dataset.accent === appearance.accent;
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
   });
   const custom = $("accent-custom");
   if (/^#[0-9a-fA-F]{6}$/.test(appearance.accent)) custom.value = appearance.accent;
+  custom.classList.toggle("on", /^#[0-9a-fA-F]{6}$/.test(appearance.accent));
 }
 
 function applyWallpaper(state) {
   const a = state.appearance;
   const wall = (state.theme && state.theme.wallpaper) || {};
   document.querySelectorAll("#wp-sources .src").forEach((btn) => {
-    btn.classList.toggle("on", btn.dataset.wall === a.wallpaper);
+    const on = btn.dataset.wall === a.wallpaper;
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
   });
 
-  const img = $("wp-preview-img");
-  img.textContent = "";
-  img.style.backgroundImage = "";
-  if (wall.video && wall.url) {
-    const video = document.createElement("video");
-    video.src = wall.url;
-    video.muted = true;
-    video.loop = true;
-    video.autoplay = true;
-    video.playsInline = true;
-    if (wall.poster) video.poster = wall.poster;
-    img.appendChild(video);
-  } else if (wall.url) {
-    img.style.backgroundImage = `url("${String(wall.url).replace(/"/g, '\\"')}")`;
-  } else {
-    const accent = (state.theme.colors && state.theme.colors.accent) || "#5b8cff";
-    img.style.backgroundImage =
-      `radial-gradient(120% 90% at 76% 6%, color-mix(in srgb, ${accent} 24%, transparent), transparent 58%),` +
-      `linear-gradient(160deg, color-mix(in srgb, ${accent} 9%, ${state.theme.colors.bg}), ${state.theme.colors.bg} 72%)`;
+  const signature = [wall.kind, wall.url, wall.video, wall.poster, wall.label, wall.count, state.theme.isDark].join("|");
+  if (signature !== previewSignature) {
+    previewSignature = signature;
+    const img = $("wp-preview-img");
+    img.textContent = "";
+    img.style.backgroundImage = "";
+    if (wall.video && wall.url) {
+      const video = document.createElement("video");
+      video.src = wall.url;
+      video.muted = true;
+      video.loop = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      if (wall.poster) video.poster = wall.poster;
+      img.appendChild(video);
+    } else if (wall.url) {
+      img.style.backgroundImage = `url("${String(wall.url).replace(/"/g, '\\"')}")`;
+    } else {
+      const accent = (state.theme.colors && state.theme.colors.accent) || "#5b8cff";
+      img.style.backgroundImage =
+        `radial-gradient(120% 90% at 76% 6%, color-mix(in srgb, ${accent} 24%, transparent), transparent 58%),` +
+        `linear-gradient(160deg, color-mix(in srgb, ${accent} 9%, ${state.theme.colors.bg}), ${state.theme.colors.bg} 72%)`;
+    }
+    $("wp-preview-label").textContent = wall.label || "—";
+    const kinds = {
+      desktop: "跟随桌面",
+      builtin: "内置渐变",
+      daily: "每日一图",
+      custom: "单张",
+      folder: "文件夹轮换",
+      we: "Wallpaper Engine",
+    };
+    $("wp-preview-kind").textContent = (kinds[a.wallpaper] || "") + (wall.count > 1 ? ` · ${wall.count} 张` : "");
   }
-  $("wp-preview-label").textContent = wall.label || "—";
-  const kinds = {
-    desktop: "跟随桌面",
-    builtin: "内置渐变",
-    daily: "每日一图",
-    custom: "单张",
-    folder: "文件夹轮换",
-    we: "Wallpaper Engine",
-  };
-  $("wp-preview-kind").textContent = (kinds[a.wallpaper] || "") + (wall.count > 1 ? ` · ${wall.count} 张` : "");
 
   $("wp-interval").value = String(a.wallpaperInterval);
   $("wp-shuffle").checked = !!a.wallpaperShuffle;
@@ -116,14 +158,30 @@ function applyGeneral(state) {
   $("autolaunch").checked = !!state.general.autoLaunch;
   $("notify-judge").checked = !!state.notify.judge;
   $("notify-contest").checked = !!state.notify.contest;
+  $("notify-lead").value = String(state.notify.contestLeadMin || 10);
 }
 
 function applyAccount(state) {
   const name = $("account-name");
+  const uid = $("account-uid");
+  const avatar = $("account-avatar");
   if (state.user && state.user.loggedIn) {
-    name.textContent = state.user.name ? `${state.user.name}（已登录）` : "已登录";
+    name.textContent = state.user.name || "已登录";
+    uid.textContent = state.user.uid ? "UID " + state.user.uid : "";
+    const url = state.user.avatar ? String(state.user.avatar) : "";
+    avatar.textContent = "";
+    if (url) {
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = state.user.name || "头像";
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = (state.user.name || "洛").slice(0, 1);
+    }
   } else {
     name.textContent = "未登录";
+    uid.textContent = "登录后可查看提交记录与签到";
+    avatar.textContent = "洛";
   }
   $("btn-logout").disabled = !(state.user && state.user.loggedIn);
 }
@@ -136,6 +194,7 @@ function renderRail(state) {
   if (signature === railSignature) return;
   railSignature = signature;
 
+  const focusKey = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.focusKey : "";
   const labels = new Map((rail.all || []).map((item) => [item.id, item]));
   const hidden = new Set(rail.hidden);
   const list = $("rail-list");
@@ -145,21 +204,26 @@ function renderRail(state) {
     const meta = labels.get(id) || { label: id };
     const row = el("div", "rail-row" + (hidden.has(id) ? " off" : ""));
     row.appendChild(el("span", "rail-name", meta.label));
-    const spacer = el("span", "rail-spacer-mini");
-    row.appendChild(spacer);
+    row.appendChild(el("span", "rail-spacer-mini"));
 
-    const up = el("button", "rail-mini", "↑");
+    const up = el("button", "rail-mini");
     up.type = "button";
     up.title = "上移";
+    up.setAttribute("aria-label", meta.label + " 上移");
+    up.innerHTML = icon("chevronUp");
+    up.dataset.focusKey = "up:" + id;
     up.disabled = index === 0;
     up.addEventListener("click", () => {
       const order = rail.order.slice();
       [order[index - 1], order[index]] = [order[index], order[index - 1]];
       api.setRail({ order });
     });
-    const down = el("button", "rail-mini", "↓");
+    const down = el("button", "rail-mini");
     down.type = "button";
     down.title = "下移";
+    down.setAttribute("aria-label", meta.label + " 下移");
+    down.innerHTML = icon("chevronDown");
+    down.dataset.focusKey = "down:" + id;
     down.disabled = index === rail.order.length - 1;
     down.addEventListener("click", () => {
       const order = rail.order.slice();
@@ -168,6 +232,8 @@ function renderRail(state) {
     });
     const toggle = el("button", "rail-eye" + (hidden.has(id) ? " off" : ""), hidden.has(id) ? "显示" : "隐藏");
     toggle.type = "button";
+    toggle.dataset.focusKey = "toggle:" + id;
+    toggle.setAttribute("aria-pressed", hidden.has(id) ? "true" : "false");
     toggle.addEventListener("click", () => {
       const next = new Set(hidden);
       if (next.has(id)) next.delete(id);
@@ -189,15 +255,20 @@ function renderRail(state) {
     const row = el("div", "rail-row");
     row.appendChild(el("span", "rail-name", item.label));
     row.appendChild(el("span", "rail-kind url", item.url));
-    const spacer = el("span", "rail-spacer-mini");
-    row.appendChild(spacer);
+    row.appendChild(el("span", "rail-spacer-mini"));
     const del = el("button", "rail-mini wide", "删除");
     del.type = "button";
+    del.dataset.focusKey = "del:" + item.id;
     del.addEventListener("click", () => {
       api.setRail({ custom: rail.custom.filter((entry) => entry.id !== item.id) });
     });
     row.appendChild(del);
     customBox.appendChild(row);
+  }
+
+  if (focusKey) {
+    const back = document.querySelector(`[data-focus-key="${focusKey}"]`);
+    if (back) back.focus();
   }
 }
 
@@ -256,11 +327,29 @@ function renderWe(state) {
 
 function bind() {
   document.querySelectorAll(".snav").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      section = btn.dataset.sec;
-      apply(current);
-      if (section === "wallpaper" && current && current.appearance.weRoot && !weItems.length) scanWe();
+    const box = btn.querySelector(".snav-icon");
+    if (box) box.innerHTML = icon(NAV_ICONS[btn.dataset.sec] || "dot");
+    btn.addEventListener("click", () => setSection(btn.dataset.sec));
+  });
+  const nav = document.querySelector(".set-nav");
+  if (nav) {
+    nav.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      const items = [...nav.querySelectorAll(".snav")];
+      const index = items.indexOf(document.activeElement);
+      if (index < 0) return;
+      const next = items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length];
+      next.focus();
     });
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const tag = document.activeElement ? document.activeElement.tagName : "";
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(tag)) return;
+    event.preventDefault();
+    window.close();
   });
 
   document.querySelectorAll("#mode-seg button").forEach((btn) => {
@@ -271,6 +360,8 @@ function bind() {
   let timer = null;
   mat.addEventListener("input", () => {
     $("mat-val").textContent = mat.value;
+    const pct = ((Number(mat.value) - Number(mat.min || 0)) / (Number(mat.max || 100) - Number(mat.min || 0))) * 100;
+    mat.style.setProperty("--fill", pct + "%");
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => api.setAppearance({ material: Number(mat.value) }), 70);
   });
@@ -280,13 +371,14 @@ function bind() {
       const kind = btn.dataset.wall;
       if (kind === "custom") api.pickWallpaper();
       else if (kind === "folder") api.pickWallpaperDir();
-      else if (kind === "we") api.pickWeRoot().then((res) => {
-        if (res && res.state) {
-          weItems = res.items || [];
-          weSignature = "";
-          apply(res.state);
-        }
-      });
+      else if (kind === "we")
+        api.pickWeRoot().then((res) => {
+          if (res && res.state) {
+            weItems = res.items || [];
+            weSignature = "";
+            apply(res.state);
+          }
+        });
       else api.setAppearance({ wallpaper: kind, wallpaperIndex: 0 });
     });
   });
@@ -337,6 +429,9 @@ function bind() {
   $("autolaunch").addEventListener("change", (event) => api.setGeneral({ autoLaunch: event.target.checked }));
   $("notify-judge").addEventListener("change", (event) => api.setNotify({ judge: event.target.checked }));
   $("notify-contest").addEventListener("change", (event) => api.setNotify({ contest: event.target.checked }));
+  $("notify-lead").addEventListener("change", (event) => {
+    api.setNotify({ contestLeadMin: Number(event.target.value) });
+  });
 
   $("btn-login").addEventListener("click", () => api.nav("login"));
   $("btn-logout").addEventListener("click", async () => {
@@ -370,6 +465,7 @@ async function boot() {
   bind();
   api.onState(apply);
   apply(await api.getState());
+  setSection(section, false);
   try {
     $("about-version").textContent = "版本 " + (await api.getVersion());
   } catch {

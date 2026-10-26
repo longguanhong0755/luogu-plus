@@ -254,6 +254,8 @@ for (const [name, needle] of [
   ["快照捕获调度", /scheduleProblemCapture/],
   ["快照抓取", /captureProblem/],
   ["题目加载失败回退快照", /回退离线快照/],
+  ["水合前不存裸 markdown", /raw-markdown/],
+  ["快照要求正文类已出现", /no-marked/],
   ["lgoff 导航放行", /isOfflineUrl\(url\)\) return/],
   ["离线页不注皮肤", /离线快照页有自己的排版/],
 ]) {
@@ -331,6 +333,154 @@ try {
 } catch (err) {
   fail("store 单测异常", String((err && err.stack) || err).slice(0, 200));
 }
+
+/* ---------- 4.0 设计系统契约 ---------- */
+
+if (fs.existsSync(path.join(ROOT, "src/renderer/shared/tokens.css"))) ok("设计令牌 tokens.css 存在");
+else fail("缺少 src/renderer/shared/tokens.css");
+
+const tokensSrc = read("src/renderer/shared/tokens.css");
+for (const [name, needle] of [
+  ["字体", /--font-ui/],
+  ["字号", /--fs-sm: 13px/],
+  ["间距", /--sp-4: 16px/],
+  ["圆角", /--r-lg: 12px/],
+  ["控件高度", /--h-md: 32px/],
+  ["侧栏宽度", /--sidebar-w: 208px/],
+  ["动效", /--dur-2: 160ms/],
+  ["焦点环", /--focus-ring/],
+]) {
+  if (needle.test(tokensSrc)) ok("tokens.css " + name);
+  else fail("tokens.css 缺少" + name);
+}
+
+if (/accentText/.test(themeSource) && /borderStrong/.test(themeSource) && /colors\.hover/.test(themeSource)) {
+  ok("theme.js 提供 accentText/borderStrong/hover/pressed/shadow 状态令牌");
+} else {
+  fail("theme.js 缺少 4.0 状态令牌");
+}
+if (/94 - material \* 0\.2/.test(themeSource) && /99 - material \* 0\.08/.test(themeSource)) {
+  ok("内容面不透明度下限 >= 91%");
+} else {
+  fail("material 公式仍会让正文过度透明");
+}
+
+const shellCss = read("src/renderer/shell/shell.css");
+const baseCss = read("src/renderer/shared/base.css");
+for (const [name, needle] of [
+  ["208px 侧栏", /--sidebar-w/],
+  ["文字导航", /\.rail-label/],
+  ["统一卡片", /\.card \{/],
+  ["2px 焦点环", /outline: 2px solid var\(--accent\)/],
+  ["减弱动效", /prefers-reduced-motion/],
+]) {
+  if (needle.test(shellCss) || needle.test(baseCss)) ok("shell.css/base.css " + name);
+  else fail("shell.css/base.css 缺少" + name);
+}
+
+for (const file of ["src/renderer/shell/shell.css", "src/renderer/settings/settings.css", "src/renderer/shared/base.css"]) {
+  const source = read(file);
+  if (/font-size:\s*(?:9\.5|10|10\.5|11\.5|12\.5|13\.5|19)px/.test(source)) {
+    fail(file + " 仍使用非设计系统字号");
+  } else {
+    ok(file + " 字号全部在 11/12/13/14/16/20/24 档位");
+  }
+  if (/border-radius:\s*(?:5|7|9|10|11)px/.test(source)) {
+    fail(file + " 仍使用非设计系统圆角");
+  } else {
+    ok(file + " 圆角全部在 4/6/8/12/pill 档位");
+  }
+  if (/box-shadow:[^;]*rgba\(0,\s*0,\s*0,\s*0\.[3-9]/.test(source)) {
+    fail(file + " 仍有硬编码重阴影");
+  } else {
+    ok(file + " 阴影使用主题令牌");
+  }
+}
+
+const settingsCss = read("src/renderer/settings/settings.css");
+if (/::-webkit-slider-thumb/.test(settingsCss) && /appearance: none/.test(settingsCss) && /\.check \.box/.test(settingsCss) && /\.radio \.box/.test(settingsCss)) {
+  ok("设置窗 range/checkbox/radio 全部自绘");
+} else {
+  fail("设置窗仍有原生控件");
+}
+if (/class="pane-head"/.test(settingsHtml) && /class="settings-group"/.test(settingsHtml) && /id="notify-lead"/.test(settingsHtml)) {
+  ok("设置窗分区标题/分组/通知提前量 UI");
+} else {
+  fail("设置窗缺少分区标题或分组结构");
+}
+
+const homeSrc2 = read("src/renderer/shell/home.js");
+for (const [name, needle] of [
+  ["两栏仪表盘", /home-grid/],
+  ["学习概览", /buildStats/],
+  ["热力图图例", /heat-legend/],
+  ["空寄语不渲染", /if \(home\.quote\)/],
+]) {
+  if (needle.test(homeSrc2)) ok("home.js " + name);
+  else fail("home.js 缺少" + name);
+}
+
+const librarySrc = read("src/renderer/shell/library.js");
+for (const [name, needle] of [
+  ["骨架屏", /skeletonRows/],
+  ["错误保留旧数据", /lib-banner/],
+  ["列表键盘导航", /aria-activedescendant/],
+  ["roving 选中", /setActive\(/],
+]) {
+  if (needle.test(librarySrc)) ok("library.js " + name);
+  else fail("library.js 缺少" + name);
+}
+
+const editorSrc2 = read("src/renderer/shell/editor.js");
+if (/ide-gutter/.test(editorSrc2) && /updateGutter/.test(editorSrc2) && /setIdeSplit/.test(editorSrc2)) {
+  ok("IDE 行号槽 + 可拖拽分栏 + 状态栏");
+} else {
+  fail("IDE 缺少行号/分栏/状态栏");
+}
+
+const overlaysSrc = read("src/renderer/shell/overlays.js");
+if (/updatePaletteSelection/.test(overlaysSrc) && /scrollIntoView/.test(overlaysSrc) && /aria-activedescendant/.test(overlaysSrc)) {
+  ok("命令面板选择不重建 DOM 且自动滚入视野");
+} else {
+  fail("命令面板仍会在 hover 时重建/丢滚动");
+}
+
+const skinSrc = read("src/renderer/skin/luogu-skin.css");
+for (const [name, needle] of [
+  ["阅读正文", /\.lfe-marked/],
+  ["真实按钮类", /\[class\*="l-button"\]/],
+  ["表格组件", /\.cute-table/],
+  ["编辑器", /\.cm-editor/],
+  ["用户页头", /\.user-header-top/],
+  ["阅读行高", /line-height: 1\.8/],
+  ["2px 焦点环", /outline: 2px solid var\(--lg-accent\)/],
+]) {
+  if (needle.test(skinSrc)) ok("luogu-skin.css " + name);
+  else fail("luogu-skin.css 缺少" + name);
+}
+
+const viewsSrc3 = read("src/main/views.js");
+if (/--lg-accent-text/.test(viewsSrc3) && /--lg-hover/.test(viewsSrc3) && /--lg-shadow/.test(viewsSrc3) && /--lg-border-strong/.test(viewsSrc3)) {
+  ok("views.js 向阅读面注入 4.0 状态令牌");
+} else {
+  fail("views.js 缺少阅读面状态令牌");
+}
+
+const indexSrc2 = read("src/main/index.js");
+if (/74ch/.test(indexSrc2) && /--accent-text/.test(indexSrc2) && /border-radius: 12px/.test(indexSrc2)) {
+  ok("离线阅读页复用 4.0 排版与令牌");
+} else {
+  fail("离线阅读页未复用 4.0 排版");
+}
+
+let pkgVersion = "";
+try {
+  pkgVersion = JSON.parse(read("package.json")).version || "";
+} catch {
+  /* 已在上面报错 */
+}
+if (pkgVersion === "0.4.0") ok("版本号 0.4.0");
+else fail("package.json 版本号不是 0.4.0（当前 " + pkgVersion + "）");
 
 console.log("");
 console.log(`check: ${checks} 项通过, ${failures} 项失败`);

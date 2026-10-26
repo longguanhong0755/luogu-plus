@@ -1095,6 +1095,13 @@ async function runSmoke(ctx) {
       }
       ctx.win.setOpacity(0);
       ctx.win.showInactive();
+      if (process.env.LG_SMOKE_SIZE) {
+        const [width, height] = String(process.env.LG_SMOKE_SIZE).split("x").map((value) => Number(value));
+        if (width && height) {
+          ctx.win.setContentSize(width, height);
+          await wait(600);
+        }
+      }
       await wait(process.env.LG_SMOKE_NET === "1" ? 9000 : 1400);
       const homeShot = await shot("home");
       console.log("SMOKE_OK " + homeShot);
@@ -1106,16 +1113,86 @@ async function runSmoke(ctx) {
           .filter(Boolean);
         for (const kind of libKinds) {
           ctx.views.showLibrary(kind);
-          await wait(process.env.LG_SMOKE_NET === "1" ? 2600 : 700);
+          await wait(process.env.LG_SMOKE_NET === "1" ? 12000 : 700);
           await shot("lib-" + kind);
         }
         ctx.views.showHome();
         await wait(400);
       }
 
+      if (process.env.LG_SMOKE_VISUAL === "1") {
+        await ctx.win.webContents.executeJavaScript(
+          `window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, cancelable: true, bubbles: true }))`
+        );
+        await wait(700);
+        await shot("palette");
+        await ctx.win.webContents.executeJavaScript(
+          `document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true, bubbles: true }))`
+        );
+        await wait(300);
+        await ctx.win.webContents.executeJavaScript(
+          `window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", ctrlKey: true, cancelable: true, bubbles: true }))`
+        );
+        await wait(700);
+        await shot("switcher");
+        await ctx.win.webContents.executeJavaScript(
+          `document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true, bubbles: true }))`
+        );
+        await wait(300);
+        ctx.toast("已保存", "草稿已保存到本机，断网也不会丢。");
+        await wait(500);
+        await shot("toast");
+        await ctx.win.webContents.executeJavaScript(`document.querySelector(".toast") && document.querySelector(".toast").click()`);
+        await wait(250);
+        const metrics = await ctx.win.webContents.executeJavaScript(`(() => {
+          const q = (s) => document.querySelector(s);
+          const rect = (s) => { const e = q(s); if (!e) return null; const r = e.getBoundingClientRect(); return { w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, x: Math.round(r.x * 10) / 10 }; };
+          const css = (s) => { const e = q(s); return e ? getComputedStyle(e) : null; };
+          return {
+            rail: rect("#rail"),
+            title: rect("#titlebar"),
+            avatar: rect("#tb-avatar"),
+            titlePadding: css("#titlebar") ? css("#titlebar").paddingRight : "",
+            innerWidth: window.innerWidth,
+            toolbar: rect("#toolbar"),
+            contentBg: css("#content") ? css("#content").backgroundColor : "",
+            homeMax: css(".home-wrap") ? css(".home-wrap").maxWidth : "",
+            heatCell: rect(".hc"),
+            cardRadius: css(".card") ? css(".card").borderRadius : "",
+            bodyFont: css("body") ? css("body").fontSize : "",
+            heatLegend: !!q(".heat-legend"),
+            statsCard: !!q(".stats-card"),
+            sidebarLabel: q("#rail-top .rail-label") ? q("#rail-top .rail-label").textContent : "",
+            homeCards: document.querySelectorAll(".home-wrap .card").length
+          };
+        })()`);
+        console.log("SMOKE_VISUAL_METRICS " + JSON.stringify(metrics));
+      }
+
       if (process.env.LG_SMOKE_LUOGU === "1") {
         ctx.views.openProblem("P1001");
-        await wait(8000);
+        const maxWait = Number(
+          process.env.LG_SMOKE_LUOGU_WAIT || (process.env.LG_SMOKE_NET === "1" ? 30000 : 8000)
+        );
+        const deadline = Date.now() + maxWait;
+        let rendered = false;
+        while (Date.now() < deadline) {
+          const wc = ctx.views.currentWebContents();
+          if (wc) {
+            try {
+              rendered = await wc.executeJavaScript(`(() => {
+                const m = document.querySelector(".lfe-marked");
+                const text = m ? (m.innerText || "") : "";
+                return !!(m && text.trim().length > 200 && !/\\*\\*[^*\\n]{1,80}\\*\\*/.test(text.slice(0, 4000)));
+              })()`);
+            } catch {
+              rendered = false;
+            }
+            if (rendered) break;
+          }
+          await wait(1000);
+        }
+        console.log("SMOKE_LUOGU_READY " + rendered);
         await shot("problem");
         const entry = ctx.views.currentEntry();
         if (entry) {
@@ -1139,7 +1216,7 @@ async function runSmoke(ctx) {
             fs.writeFileSync(path.join(outDir, "smoke-problem-view.png"), viewImage.toPNG());
             console.log("SMOKE_SHOT problem-view");
           } else {
-            console.log("SMOKE_SHOT problem-view SKIPPED（隐藏窗口取帧不稳定，非产品问题）");
+            console.log("SMOKE_SKIP problem-view（隐藏窗口取帧不稳定，非产品问题）");
           }
           try {
             const skin = await entry.view.webContents.executeJavaScript(`(() => {
@@ -1156,6 +1233,55 @@ async function runSmoke(ctx) {
             console.log("SMOKE_SKIN " + JSON.stringify(skin));
           } catch (err) {
             console.log("SMOKE_SKIN probe failed: " + err.message);
+          }
+          try {
+            const buttons = await entry.view.webContents.executeJavaScript(`(() => {
+              return [...document.querySelectorAll("button, a")].filter((el) => /提交|登录/.test((el.textContent || "").trim())).slice(0, 8).map((el) => ({
+                tag: el.tagName.toLowerCase(),
+                cls: typeof el.className === "string" ? el.className : "",
+                bg: getComputedStyle(el).backgroundColor,
+                color: getComputedStyle(el).color,
+                h: Math.round(el.getBoundingClientRect().height)
+              }));
+            })()`);
+            console.log("SMOKE_BUTTONS " + JSON.stringify(buttons));
+          } catch (err) {
+            console.log("SMOKE_BUTTONS probe failed: " + err.message);
+          }
+          if (process.env.LG_SMOKE_IDE === "1") {
+            ctx.views.setIde(true);
+            await wait(1000);
+            await shot("ide");
+            try {
+              const ideProbe = await ctx.win.webContents.executeJavaScript(`(() => {
+                const pane = document.querySelector("#ide-pane");
+                const resizer = document.querySelector("#ide-resizer");
+                const gutter = document.querySelector(".ide-gutter");
+                const rect = pane.getBoundingClientRect();
+                return {
+                  paneHidden: pane.hidden,
+                  paneRect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+                  split: getComputedStyle(document.querySelector("#workspace")).getPropertyValue("--ide-split").trim(),
+                  resizerHidden: resizer.hidden,
+                  lines: gutter ? gutter.textContent.split("\\n").length : 0,
+                  codeFont: getComputedStyle(document.querySelector(".ide-code")).fontSize,
+                  headH: Math.round(document.querySelector(".ide-head").getBoundingClientRect().height)
+                };
+              })()`);
+              console.log("SMOKE_IDE " + JSON.stringify(ideProbe));
+              const ideEntry = ctx.views.currentEntry();
+              console.log(
+                "SMOKE_IDE_BOUNDS " +
+                  JSON.stringify({
+                    view: ideEntry ? ideEntry.view.getBounds() : null,
+                    content: ctx.win.getContentBounds(),
+                  })
+              );
+            } catch (err) {
+              console.log("SMOKE_IDE probe failed: " + err.message);
+            }
+            ctx.views.setIde(false);
+            await wait(400);
           }
         }
 
@@ -1189,20 +1315,29 @@ async function runSmoke(ctx) {
           kind: "problems",
           page: 1,
           perPage: 50,
-          total: 1,
+          total: 10,
           items: [
-            {
-              type: "problem",
-              pid: "P1001",
-              title: "A+B Problem（离线缓存）",
-              difficulty: 1,
-              difficultyName: "入门",
-              difficultyColor: "#f0616d",
-              submissions: 100,
-              accepted: 60,
-              provider: "洛谷",
-            },
-          ],
+            ["P1001", "A+B Problem（离线缓存）", 1, "入门", "#fe4c61", 100, 60],
+            ["P1002", "过河卒", 3, "普及/提高−", "#f39c11", 820000, 410000],
+            ["P1003", "铺地毯", 2, "普及−", "#ffc116", 610000, 370000],
+            ["P1004", "方格取数", 4, "普及+/提高", "#52c41a", 390000, 210000],
+            ["P1005", "矩阵取数游戏", 5, "提高+/省选−", "#3498db", 180000, 62000],
+            ["P1006", "传纸条", 4, "普及+/提高", "#52c41a", 300000, 170000],
+            ["P1007", "独木桥", 3, "普及/提高−", "#f39c11", 210000, 120000],
+            ["P1008", "三连击", 2, "普及−", "#ffc116", 720000, 510000],
+            ["P1009", "阶乘之和", 2, "普及−", "#ffc116", 650000, 390000],
+            ["P1010", "幂次方", 3, "普及/提高−", "#f39c11", 240000, 160000],
+          ].map(([pid, title, difficulty, difficultyName, difficultyColor, submissions, accepted]) => ({
+            type: "problem",
+            pid,
+            title,
+            difficulty,
+            difficultyName,
+            difficultyColor,
+            submissions,
+            accepted,
+            provider: "洛谷",
+          })),
           needLogin: false,
           categories: [],
           error: "",
@@ -1243,6 +1378,12 @@ async function runSmoke(ctx) {
             })
         );
 
+        ctx.views.showLibrary("problems");
+        await wait(900);
+        await shot("offline-lib");
+        ctx.views.showHome();
+        await wait(500);
+
         ctx.views.openProblem("P1001");
         // ensureEntry 要先装 CDP 守卫（最多 5s）再 loadURL(lgoff)，这里等足
         await wait(7000);
@@ -1261,6 +1402,17 @@ async function runSmoke(ctx) {
         }
         console.log("SMOKE_OFFLINE_PROBLEM " + JSON.stringify({ url: offUrl, snapUrl, probe: offProbe }));
         await shot("offline-problem");
+        if (offEntry) {
+          try {
+            const offImage = await offEntry.view.webContents.capturePage();
+            if (offImage && !offImage.isEmpty()) {
+              fs.writeFileSync(path.join(outDir, "smoke-offline-problem-view.png"), offImage.toPNG());
+              console.log("SMOKE_SHOT offline-problem-view");
+            }
+          } catch {
+            /* 隐藏窗口取帧不稳定，非产品问题 */
+          }
+        }
 
         // 未缓存的题：离线时应出「没有快照」提示页，而不是空白 + 加载失败弹窗
         ctx.views.openProblem("P9999");
@@ -1342,6 +1494,31 @@ async function runSmoke(ctx) {
         );
         await wait(400);
         await shot("settings-rail", ctx.settingsWin);
+
+        if (process.env.LG_SMOKE_VISUAL === "1") {
+          for (const sec of ["general", "notify", "account", "about"]) {
+            await ctx.settingsWin.webContents.executeJavaScript(
+              `document.querySelector('.snav[data-sec="${sec}"]').click()`
+            );
+            await wait(350);
+            await shot("settings-" + sec, ctx.settingsWin);
+          }
+          const settingsMetrics = await ctx.settingsWin.webContents.executeJavaScript(`(() => {
+            const q = (s) => document.querySelector(s);
+            const rect = (s) => { const e = q(s); if (!e) return null; const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; };
+            const css = (s) => { const e = q(s); return e ? getComputedStyle(e) : null; };
+            return {
+              nav: rect(".set-nav"),
+              paneMax: css(".set-pane section[data-panel]") ? css(".set-pane section[data-panel]").maxWidth : "",
+              groupRadius: css(".settings-group") ? css(".settings-group").borderRadius : "",
+              rowH: rect(".setting-row"),
+              rangeAppearance: css("#mat") ? css("#mat").appearance : "",
+              rangeHeight: rect("#mat"),
+              navCurrent: q(".snav[aria-current='page']") ? q(".snav[aria-current='page']").textContent.trim() : ""
+            };
+          })()`);
+          console.log("SMOKE_SETTINGS_METRICS " + JSON.stringify(settingsMetrics));
+        }
 
         if (process.env.LG_SMOKE_RAIL === "1") {
           const before = ctx.cfg.get().rail.order.slice();
