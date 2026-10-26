@@ -75,6 +75,7 @@ class ViewManager {
     this.currentKey = null;
     this.library = null;
     this.returnLib = null;
+    this.closedStack = [];
     this.ideOn = false;
     this.ideSplit = 0.5;
     this.overlayOpen = false;
@@ -317,6 +318,8 @@ class ViewManager {
       this.openProblem(pid);
       return;
     }
+    // 从列表点进详情/比赛/讨论/文章：记住来路，back 能回列表
+    if (this.library) this.returnLib = this.library;
     const entry = this.ensureEntry({
       key: key || "detail:" + url,
       kind: "detail",
@@ -348,6 +351,16 @@ class ViewManager {
       url: "https://www.luogu.com.cn/auth/login",
       section: "home",
     });
+    // 复用登录页时页面可能已经跳走（上次登录成功重定向回首页）：
+    // 不在登录页就重新加载，否则用户看到的是旧页面、登录按钮像坏了
+    try {
+      const current = entry.view.webContents.getURL();
+      if (current && !current.includes("auth/login")) {
+        entry.view.webContents.loadURL("https://www.luogu.com.cn/auth/login").catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
     this.showEntry(entry);
   }
 
@@ -357,6 +370,7 @@ class ViewManager {
       this.openLogin();
       return;
     }
+    if (this.library) this.returnLib = this.library;
     const entry = this.ensureEntry({
       key: "profile:" + id,
       kind: "profile",
@@ -624,6 +638,7 @@ class ViewManager {
   }
 
   currentInfo() {
+    const canReopen = this.closedStack.length > 0;
     if (this.library) {
       return {
         home: false,
@@ -635,6 +650,7 @@ class ViewManager {
         url: "",
         canBack: false,
         canForward: false,
+        canReopen,
         isProblem: false,
         pid: "",
         ide: false,
@@ -653,6 +669,7 @@ class ViewManager {
         url: "",
         canBack: false,
         canForward: false,
+        canReopen,
         isProblem: false,
         pid: "",
         ide: false,
@@ -678,6 +695,7 @@ class ViewManager {
       url: wc.getURL(),
       canBack: canBack || !!this.returnLib,
       canForward,
+      canReopen,
       isProblem: entry.kind === "problem",
       pid: entry.pid || pidFromUrl(wc.getURL()),
       ide: this.ideOn,
@@ -743,6 +761,19 @@ class ViewManager {
       entry.booted = true;
       await this.attachGuard(wc);
       if (!wc.isDestroyed() && url) {
+        // 真实页提交后把守卫用的 about:blank 从历史里摘掉：否则第一次
+        // 「后退」会退到空白页而不是应用内的来源列表
+        wc.once("did-navigate", () => {
+          try {
+            const history = wc.navigationHistory;
+            const first = history.getEntryAtIndex(0);
+            if (history.length() > 1 && first && first.url === "about:blank") {
+              history.removeEntryAtIndex(0);
+            }
+          } catch {
+            /* ignore */
+          }
+        });
         wc.loadURL(url).catch((err) => {
           this.ctx.toast && this.ctx.toast("页面打开失败", err.message);
         });
@@ -850,6 +881,7 @@ class ViewManager {
       if (ctrl && !input.shift && input.key.toLowerCase() === "k") command = "palette";
       else if (ctrl && !input.shift && input.key.toLowerCase() === "l") command = "jump";
       else if (ctrl && input.key === "Tab") command = "switcher";
+      else if (ctrl && input.shift && input.key.toLowerCase() === "t") command = "reopen";
       else if (ctrl && (input.key === "," || input.key === "，")) command = "settings";
       else if (input.key === "F11") command = "fullscreen";
       else if (input.key === "F12") command = "devtools";
@@ -1005,6 +1037,13 @@ class ViewManager {
       clearTimeout(entry.captureTimer);
       entry.captureTimer = null;
     }
+    // 关闭前抓 URL 进「最近关闭」栈（LRU 挤掉的页面也能一键找回）
+    let lastUrl = "";
+    try {
+      lastUrl = entry.view.webContents.getURL();
+    } catch {
+      /* ignore */
+    }
     try {
       if (entry.attached) {
         this.win.contentView.removeChildView(entry.view);
@@ -1016,6 +1055,37 @@ class ViewManager {
     }
     this.entries.delete(entry.key);
     if (this.currentKey === entry.key) this.currentKey = null;
+    if (
+      entry.kind !== "login" &&
+      (entry.pid || (/^https:\/\//i.test(lastUrl) && isLuoguUrl(lastUrl)))
+    ) {
+      this.closedStack.push({
+        kind: entry.kind,
+        pid: entry.pid || pidFromUrl(lastUrl) || "",
+        section: entry.section || "",
+        title: entry.title || "",
+        url: lastUrl,
+      });
+      if (this.closedStack.length > 12) this.closedStack.shift();
+    }
+  }
+
+  /* 恢复最近一次关闭的页面（Ctrl+Shift+T / 工具条按钮）。 */
+  reopenClosed() {
+    const item = this.closedStack.pop();
+    if (!item) return null;
+    if (item.kind === "problem" && item.pid) this.openProblem(item.pid);
+    else if (item.kind === "profile") {
+      const uid = Number((item.url.match(/\/user\/(\d+)/) || [])[1]);
+      if (Number.isFinite(uid) && uid > 0) this.openProfile(uid);
+      else this.openDetail(item.url, item.title);
+    } else if (item.kind === "web" && item.section) this.openWeb(item.section);
+    else this.openDetail(item.url, item.title);
+    return item;
+  }
+
+  canReopen() {
+    return this.closedStack.length > 0;
   }
 
   updateTheme() {

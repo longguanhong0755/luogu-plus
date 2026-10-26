@@ -37,6 +37,7 @@ export const ICONS = {
   back: S('<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>'),
   forward: S('<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>'),
   refresh: S('<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/>'),
+  reopen: S('<path d="M4 12a8 8 0 1 1 2.4 5.7"/><path d="M4 20v-5h5"/>'),
   external: S(
     '<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5H5V6h5"/>'
   ),

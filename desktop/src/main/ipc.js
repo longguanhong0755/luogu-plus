@@ -231,6 +231,7 @@ function registerIpc(ctx) {
     if (action === "back") ctx.views.back();
     else if (action === "forward") ctx.views.forward();
     else if (action === "reload") ctx.views.reload();
+    else if (action === "reopen") ctx.views.reopenClosed();
     else if (action === "external") ctx.views.openExternal();
   });
 

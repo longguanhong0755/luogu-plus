@@ -1754,6 +1754,56 @@ async function runSmoke(ctx) {
         await wait(300);
       }
 
+      if (process.env.LG_SMOKE_HISTORY === "1") {
+        // R57 回归：详情页能返回来源列表；最近关闭的页面可一键恢复
+        const histPayload = {
+          kind: "problems",
+          page: 1,
+          perPage: 50,
+          total: 1,
+          items: [
+            { type: "problem", pid: "P1001", title: "A+B Problem", difficulty: 1, difficultyName: "入门", difficultyColor: "#fe4c61", submissions: 100, accepted: 60, provider: "洛谷" },
+          ],
+          needLogin: false,
+          categories: [],
+          error: "",
+        };
+        ctx.luogu.libCache.set("problems|1||", { at: Date.now(), payload: histPayload });
+        ctx.views.showLibrary("problems");
+        await wait(700);
+        ctx.views.openDetail("/contest/1", "比赛详情");
+        await wait(500);
+        const detailInfo = ctx.views.currentInfo();
+        ctx.views.back();
+        await wait(400);
+        const backInfo = ctx.views.currentInfo();
+        const backOk = !!detailInfo.canBack && backInfo.kind === "library" && backInfo.library === "problems";
+        console.log(
+          "SMOKE_HISTORY_BACK " + JSON.stringify({ canBack: detailInfo.canBack, backKind: backInfo.kind, lib: backInfo.library, ok: backOk })
+        );
+        if (!backOk) console.log("SMOKE_FAIL 详情页返回不到来源列表");
+
+        ctx.views.openProblem("P1001");
+        await wait(600);
+        const closeEntry = ctx.views.entries.get("problem:P1001");
+        const hadEntry = !!closeEntry;
+        if (closeEntry) ctx.views.destroyEntry(closeEntry);
+        await wait(200);
+        const reopenable = ctx.views.canReopen();
+        const reopened = ctx.views.reopenClosed();
+        await wait(500);
+        const reopenInfo = ctx.views.currentInfo();
+        const reopenOk =
+          hadEntry && reopenable && reopened && reopenInfo.kind === "problem" && reopenInfo.pid === "P1001";
+        console.log(
+          "SMOKE_HISTORY_REOPEN " +
+            JSON.stringify({ hadEntry, reopenable, reopenedKind: reopened && reopened.kind, nowPid: reopenInfo.pid, ok: reopenOk })
+        );
+        if (!reopenOk) console.log("SMOKE_FAIL 最近关闭恢复失败");
+        ctx.views.showHome();
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_DRAFT === "1") {
         // R56 回归：草稿按题目隔离，A 题的代码绝不漏进 B 题的编辑器
         await ctx.win.webContents.executeJavaScript(

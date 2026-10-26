@@ -295,6 +295,10 @@ function bootstrap() {
         ctx.openSettings();
         return;
       }
+      if (name === "reopen") {
+        ctx.views.reopenClosed();
+        return;
+      }
       if (name === "fullscreen") {
         ctx.win.setFullScreen(!ctx.win.isFullScreen());
         return;

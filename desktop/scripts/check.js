@@ -149,6 +149,23 @@ const viewsSource = read("src/main/views.js");
 if (/openExternal\(url\)/.test(viewsSource)) ok("站外链接交给系统浏览器");
 else fail("views.js 没有站外链接出口");
 
+/* R57 导航契约 */
+if (/reopenClosed/.test(viewsSource) && /closedStack/.test(viewsSource) && /canReopen/.test(viewsSource)) ok("最近关闭栈与恢复入口存在");
+else fail("views.js 缺少最近关闭恢复");
+if (viewsSource.split("this.returnLib = this.library").length >= 3) ok("题目/详情/个人页都会记住来源列表");
+else fail("部分入口没有设置 returnLib");
+if (/"t"\) command = "reopen"/.test(viewsSource)) ok("Ctrl+Shift+T 恢复关闭页面");
+else fail("缺少 Ctrl+Shift+T 恢复快捷键");
+const openLoginBody = viewsSource.split("openLogin()")[1] || "";
+if (/auth\/login"\)\.catch/.test(openLoginBody)) ok("登录页复用时按需重载");
+else fail("openLogin 缺少重载逻辑");
+if (/canReopen,/.test(viewsSource)) ok("页面状态带 canReopen（工具条按钮可置灰）");
+else fail("currentInfo 缺少 canReopen");
+if (/"reopen"\) ctx\.views\.reopenClosed\(\)/.test(ipcSource)) ok("app:viewAction 支持恢复关闭页面");
+else fail("ipc.js 未接入 reopen 动作");
+if (/iconButton\("reopen"/.test(read("src/renderer/shell/chrome.js"))) ok("工具条有恢复关闭页面按钮");
+else fail("工具条缺少恢复按钮");
+
 /* 7. 产品关键约束（0.2.0） */
 const passkeySource = read("src/main/passkey-guard.js");
 if (/__lgPasskeyGuard/.test(passkeySource) && /allowUntil/.test(passkeySource) && /credentials\.get/.test(passkeySource)) {
@@ -604,7 +621,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.3";
+const EXPECTED_VERSION = "0.5.4";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

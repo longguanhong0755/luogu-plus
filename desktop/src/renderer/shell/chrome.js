@@ -112,6 +112,7 @@ export function initChrome(actions) {
       page.title,
       !!page.canBack,
       !!page.canForward,
+      !!page.canReopen,
       !!page.isProblem,
       page.pid || "",
       !!page.ide,
@@ -127,9 +128,12 @@ export function initChrome(actions) {
     const forward = iconButton("forward", "前进", () => actions.view("forward"));
     forward.disabled = !page.canForward;
     const reload = iconButton("refresh", "刷新", () => actions.view("reload"));
+    const reopen = iconButton("reopen", "恢复关闭的页面（Ctrl+Shift+T）", () => actions.view("reopen"));
+    reopen.disabled = !page.canReopen;
     nav.appendChild(back);
     nav.appendChild(forward);
     nav.appendChild(reload);
+    nav.appendChild(reopen);
     toolbar.appendChild(nav);
 
     const sep = document.createElement("span");
