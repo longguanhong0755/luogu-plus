@@ -1,0 +1,37 @@
+/* 悬停展开的侧栏浮层：复用外壳的侧栏样式，只覆盖布局与壁纸复刻。
+   浮层是独立 WebContentsView（宽 208），页面 view 仍按折叠宽度排版。 */
+@import "../shell/shell.css";
+
+html,
+body {
+  background: transparent;
+}
+
+body.rail-overlay #app {
+  display: block;
+  height: 100%;
+}
+
+body.rail-overlay #rail {
+  height: 100%;
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 24px -12px var(--shadow-color);
+}
+
+/* 壁纸复刻层：按整个窗口的尺寸铺，再让 view 裁出左侧 208px，
+   这样浮层里的壁纸与外壳/页面里的壁纸逐像素对齐。 */
+body.rail-overlay #wallpaper {
+  top: calc(-1 * var(--title-h));
+  left: 0;
+  right: auto;
+  bottom: auto;
+  width: var(--wall-w, 100vw);
+  height: var(--wall-h, 100vh);
+  transform: translate3d(var(--lg-pan-x, 0px), var(--lg-pan-y, 0px), 0) scale(var(--lg-zoom, 1));
+  transform-origin: 50% 50%;
+}
+
+body.rail-overlay .wall-layer {
+  opacity: 1;
+  transition: none;
+}

@@ -1,15 +1,19 @@
 # 洛谷桌面版（Luogu Desktop）
 
-为 Windows 打造的洛谷客户端，v0.4.0。**不是网页套壳**：
+为 Windows 打造的洛谷客户端，v0.5.0。**不是网页套壳**：
 
 - **题库 / 训练 / 比赛 / 记录 / 讨论 / 文章是原生列表**——搜索、筛选、翻页都不加载整页，
   点击行才打开洛谷原版阅读面（题面、公式、代码、评论保持原样）。
 - **4.0 视觉重构**：GitHub Primer / Linear / VS Code / Windows 11 Fluent 的尺寸与状态规则；
-  208px 文字侧栏、40px 标题栏、44px 工具条、1080px 内容列，13/14px 阅读字号，
-  2px 焦点环，正文落在 ≥91% 不透明的内容面上。
+  40px 标题栏、44px 工具条、1080px 内容列，13/14px 阅读字号，2px 焦点环，
+  正文落在 ≥91% 不透明的内容面上。
+- **侧栏默认为 56px 图标栏**：鼠标移入展开 208px 浮层（页面不回流），展开态右上角的
+  钉子可常驻；所有页面一律不高亮，当前页只由标题栏标题表达。
 - **壁纸只做氛围**：标题栏/侧栏/浮层保留玻璃，内容区压一层高不透明度画布；
   壁纸仍在窗口边缘与卡片缝隙可见，但不再透到正文后面。
-- 左侧 208px 导航可**排序、显隐、加自定义链接**（设置 → 侧边栏）。
+- 左侧导航可**排序、显隐、加自定义链接**（设置 → 侧边栏）。
+- **性能优先开关 + 动态降载**：失焦、最小化、滚动、切页时自动暂停壁纸与页面动效；
+  设置 → 通用可关闭全部模糊与动画。
 - 壁纸支持**文件夹轮换与 Wallpaper Engine 导入**（视频壁纸可播，场景壁纸以预览图呈现）。
 - 登录页**不会自动弹 Windows 安全窗口**；只有点击“通过通行密钥登录”才会唤起。
 - 窗口/托盘使用**洛谷官方图标**。
@@ -23,8 +27,9 @@ desktop/   当前应用（Electron 39）
   src/main/      主进程，按领域拆分：
                  index / config / theme / wallpaper / sections /
                  views / passkey-guard / luogu / tray / notify / ipc / smoke
-  src/preload/   shell / settings / page 三个隔离桥
-  src/renderer/  shell（标题栏/导航/主页/原生列表/命令面板/IDE）
+  src/preload/   shell / rail / settings / page 隔离桥
+  src/renderer/  shell（标题栏/折叠侧栏/主页/原生列表/命令面板/IDE）
+                 rail（悬停展开的 208px 侧栏浮层）
                  settings（七分区设置窗）
                  skin（洛谷页面皮肤 + 页面壁纸复刻层）
 legacy/    3.17.0 旧版 LuoguLab 完整归档（git 历史保留，可作参考/回退）
@@ -49,7 +54,8 @@ LG_SMOKE_LIB=1  npm run smoke            # 逐个截图原生列表
 LG_SMOKE_LUOGU=1 npm run smoke           # 打开 P1001 并截图阅读面
 LG_SMOKE_AUDIT=1 npm run smoke           # 深色/浅色对比度审计 → ../.lg-dev/audit-dark.json
 LG_SMOKE_THEME=light npm run smoke       # 以浅色模式跑同一套
-LG_SMOKE_RAIL=1 npm run smoke            # 侧边栏排序/显隐/自定义链接端到端
+LG_SMOKE_RAIL=1 npm run smoke            # 折叠→悬停展开→固定→导航/钉子点击端到端
+LG_SMOKE_PERF=1 npm run smoke            # 性能模式：模糊归零 + 失焦冻结/聚焦恢复
 LG_SMOKE_FOLDER=<dir> / LG_SMOKE_WE=<dir> npm run smoke   # 壁纸文件夹 / Wallpaper Engine
 LG_SMOKE_CAPTCHA_MANUAL=1 npm run smoke   # 验证码不自动识别，等人工写答案文件（默认自动 ddddocr）
 LG_SMOKE_OFFLINE=1 npm run smoke          # 断网链路：缓存列表/lgoff 快照页/离线队列/联网重放（全程不联网）

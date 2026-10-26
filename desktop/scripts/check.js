@@ -58,11 +58,15 @@ const required = [
   "src/main/smoke.js",
   "src/preload/shell.js",
   "src/preload/page.js",
+  "src/preload/rail.js",
   "src/preload/settings.js",
   "src/renderer/shell/index.html",
   "src/renderer/shell/shell.js",
   "src/renderer/shell/library.js",
   "src/renderer/shell/shell.css",
+  "src/renderer/rail/index.html",
+  "src/renderer/rail/rail.js",
+  "src/renderer/rail/rail.css",
   "src/renderer/settings/index.html",
   "src/renderer/settings/settings.js",
   "src/renderer/settings/settings.css",
@@ -87,6 +91,7 @@ try {
 /* 4. renderer HTML 的资源引用都存在 */
 for (const html of [
   "src/renderer/shell/index.html",
+  "src/renderer/rail/index.html",
   "src/renderer/settings/index.html",
 ]) {
   const source = read(html);
@@ -105,7 +110,7 @@ const mainHandlers = new Set(
   [...ipcSource.matchAll(/ipcMain\.(?:handle|on)\("([^"]+)"/g)].map((m) => m[1])
 );
 const preloadCalls = new Set();
-for (const file of ["src/preload/shell.js", "src/preload/settings.js", "src/preload/page.js"]) {
+for (const file of ["src/preload/shell.js", "src/preload/rail.js", "src/preload/settings.js", "src/preload/page.js"]) {
   const source = read(file);
   for (const m of source.matchAll(/ipcRenderer\.(?:invoke|send)\("([^"]+)"/g)) preloadCalls.add(m[1]);
 }
@@ -120,7 +125,7 @@ for (const file of walk(path.join(ROOT, "src", "main"), []).filter((f) => f.ends
   for (const m of source.matchAll(/webContents\.send\("([^"]+)"/g)) mainSends.add(m[1]);
 }
 const preloadListeners = new Set();
-for (const file of ["src/preload/shell.js", "src/preload/settings.js", "src/preload/page.js"]) {
+for (const file of ["src/preload/shell.js", "src/preload/rail.js", "src/preload/settings.js", "src/preload/page.js"]) {
   const source = read(file);
   for (const m of source.matchAll(/on\("([^"]+)"/g)) preloadListeners.add(m[1]);
 }
@@ -183,10 +188,10 @@ if (/openSubmitAssist/.test(viewsSource2) && /insertText/.test(viewsSource2)) {
 }
 
 const sectionsSource = read("src/main/sections.js");
-if (/class: \{ label: "课程"/.test(sectionsSource) && /article: \{ label: "文章"/.test(sectionsSource)) {
-  ok("侧栏包含课程/文章等内置页面");
+if (!/class: \{ label: "课程"/.test(sectionsSource) && /article: \{ label: "文章"/.test(sectionsSource)) {
+  ok("侧栏已移除课程并保留文章");
 } else {
-  fail("sections.js 缺少课程或文章板块");
+  fail("sections.js 仍包含课程板块");
 }
 if (/resolveRail/.test(sectionsSource) && /custom/.test(sectionsSource)) ok("侧栏支持排序/显隐/自定义");
 else fail("sections.js 缺少侧栏定制模型");
@@ -378,6 +383,59 @@ for (const [name, needle] of [
   else fail("shell.css/base.css 缺少" + name);
 }
 
+/* ---------- 折叠侧栏 / 固定 / 不高亮 / 性能模式契约 ---------- */
+
+const windowSource = read("src/main/window.js");
+if (/RAIL_COLLAPSED_W = 56/.test(windowSource)) ok("折叠侧栏宽度 56px");
+else fail("window.js 缺少 RAIL_COLLAPSED_W = 56");
+
+if (
+  /ensureRailOverlay/.test(viewsSource) &&
+  /setRailHover\(/.test(viewsSource) &&
+  /setRailPinned\(/.test(viewsSource) &&
+  /railWidth\(\)/.test(viewsSource)
+) {
+  ok("侧栏浮层/悬停/固定/宽度切换在主进程存在");
+} else {
+  fail("views.js 缺少侧栏浮层或固定逻辑");
+}
+if (/RAIL_W/.test(read("src/main/window.js")) && /RAIL_W/.test(viewsSource)) {
+  ok("侧栏固定宽度 RAIL_W 在主进程贯通");
+} else {
+  fail("侧栏固定宽度 RAIL_W 未贯通");
+}
+if (!/rail-btn\.active/.test(shellCss) && !/activeId/.test(read("src/renderer/shell/chrome.js"))) {
+  ok("侧栏项目全部不高亮（无 .active / activeId）");
+} else {
+  fail("侧栏仍存在项目高亮逻辑");
+}
+const chromeSource = read("src/renderer/shell/chrome.js");
+if (/pinOff/.test(chromeSource) && /pinOff/.test(read("src/renderer/rail/rail.js"))) {
+  ok("侧栏钉子图标（线条 pin/pinOff）存在");
+} else {
+  fail("侧栏缺少 pin/pinOff 线条图标");
+}
+if (/pinned:\s*false/.test(configSource) && /performanceMode:\s*false/.test(configSource)) {
+  ok("侧栏默认折叠、性能模式默认关闭");
+} else {
+  fail("config.js 缺少 pinned/performanceMode 默认值");
+}
+if (/const perf = !!\(cfg\.general && cfg\.general\.performanceMode\)/.test(themeSource) && /blurPx = perf \? 0/.test(themeSource)) {
+  ok("性能模式关闭模糊（theme.js）");
+} else {
+  fail("theme.js 没有把性能模式接入模糊计算");
+}
+if (/id="perf-mode"/.test(settingsHtml) && /setGeneral\(\{ performanceMode/.test(read("src/renderer/settings/settings.js"))) {
+  ok("设置页提供性能模式开关");
+} else {
+  fail("设置页缺少性能模式开关");
+}
+if (/--sidebar-w-collapsed: 56px/.test(tokensSrc) && /--rail-current-w/.test(shellCss)) {
+  ok("折叠/展开侧栏宽度令牌已接入布局");
+} else {
+  fail("tokens.css/shell.css 缺少折叠侧栏令牌");
+}
+
 for (const file of ["src/renderer/shell/shell.css", "src/renderer/settings/settings.css", "src/renderer/shared/base.css"]) {
   const source = read(file);
   if (/font-size:\s*(?:9\.5|10|10\.5|11\.5|12\.5|13\.5|19)px/.test(source)) {
@@ -479,8 +537,8 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-if (pkgVersion === "0.4.0") ok("版本号 0.4.0");
-else fail("package.json 版本号不是 0.4.0（当前 " + pkgVersion + "）");
+if (pkgVersion === "0.5.0") ok("版本号 0.5.0");
+else fail("package.json 版本号不是 0.5.0（当前 " + pkgVersion + "）");
 
 console.log("");
 console.log(`check: ${checks} 项通过, ${failures} 项失败`);

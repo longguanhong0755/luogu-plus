@@ -136,6 +136,25 @@ function toMillis(value) {
   return n > 1e12 ? n : n * 1000;
 }
 
+/* 列表摘要只保留纯文本：去掉公式、HTML 和 Markdown 记号，避免列表里直接露出
+   $\sum...$ 之类源码（正文仍由页面完整渲染）。 */
+function plainExcerpt(value, limit = 120) {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\$\$[\s\S]*?\$\$/g, " ")
+    .replace(/\\\[[\s\S]*?\\\]/g, " ")
+    .replace(/\$[^$]*\$/g, " ")
+    .replace(/\\\([\s\S]*?\\\)/g, " ")
+    .replace(/\\[a-zA-Z]+(?:\s*\{[^{}]*\})?/g, " ")
+    .replace(/&[a-z]+;/gi, " ")
+    .replace(/[#>*`_~{}\[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit);
+}
+
 class LuoguService {
   constructor(ctx) {
     this.ctx = ctx;
@@ -536,8 +555,9 @@ class LuoguService {
     if (!force && cached && Date.now() - cached.at < 45000) return cached.payload;
 
     const base = { kind, page, perPage: 0, total: 0, items: [], needLogin: false, categories: [], error: "" };
+    let login = null;
     if (kind === "record") {
-      const login = await this.loginState();
+      login = await this.loginState();
       if (!login.loggedIn) {
         return Object.assign(base, { needLogin: true });
       }
@@ -676,11 +696,7 @@ class LuoguService {
         replyCount: Number(item.replyCount) || 0,
         favorCount: Number(item.favorCount) || 0,
         category: Number(item.category) || 0,
-        excerpt: String(item.content || "")
-          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-          .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-          .replace(/[#>*`_~]/g, "")
-          .slice(0, 120),
+        excerpt: plainExcerpt(item.content),
       }));
     }
     const payload = Object.assign(base, {

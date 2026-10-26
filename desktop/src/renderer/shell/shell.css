@@ -50,8 +50,11 @@ body.resizing {
   z-index: 1;
   height: 100%;
   display: grid;
-  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+  grid-template-columns: var(--rail-current-w, var(--sidebar-w-collapsed)) minmax(0, 1fr);
   grid-template-rows: var(--title-h) minmax(0, 1fr);
+}
+body.rail-pinned {
+  --rail-current-w: var(--sidebar-w);
 }
 
 #titlebar {
@@ -173,6 +176,84 @@ body.resizing {
   border-top: 1px solid var(--border);
 }
 
+/* 展开/折叠共用同一行头部：行高固定，悬停展开时导航项不会上下跳 */
+#rail-head {
+  height: 36px;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 0 5px;
+}
+#rail-mark {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  -webkit-user-drag: none;
+  opacity: 0.9;
+}
+#rail-pin {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease),
+    opacity var(--dur-2) var(--ease);
+}
+#rail-pin svg {
+  width: 16px;
+  height: 16px;
+}
+#rail-pin:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+#rail-pin.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  opacity: 1;
+  pointer-events: auto;
+}
+body.rail-overlay #rail-pin {
+  opacity: 1;
+  pointer-events: auto;
+}
+body.rail-pinned #rail-pin {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 折叠态：只留图标。头部行保留，所以悬停展开时行位置不动 */
+body:not(.rail-pinned):not(.rail-overlay) .rail-btn {
+  justify-content: center;
+  padding: 0;
+}
+body:not(.rail-pinned):not(.rail-overlay) .rail-label {
+  display: none;
+}
+body:not(.rail-pinned):not(.rail-overlay) #rail-jump {
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+body:not(.rail-pinned):not(.rail-overlay) #rail-jump-input {
+  display: none;
+}
+body:not(.rail-pinned):not(.rail-overlay) #rail-jump .rj-icon {
+  color: var(--text-2);
+}
+body:not(.rail-pinned):not(.rail-overlay) #rail-jump:hover .rj-icon {
+  color: var(--text);
+}
+
 .rail-spacer {
   display: none;
 }
@@ -212,24 +293,6 @@ body.resizing {
 }
 .rail-btn:active {
   background: var(--pressed);
-}
-.rail-btn.active {
-  background: var(--accent-soft);
-  color: var(--text);
-  font-weight: 600;
-}
-.rail-btn.active svg {
-  color: var(--accent);
-}
-.rail-btn.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
-  width: 3px;
-  border-radius: var(--r-pill);
-  background: var(--accent);
 }
 .rail-btn:focus-visible {
   outline: none;
@@ -283,7 +346,9 @@ body.resizing {
   color: var(--text-3);
 }
 
-/* ---------- 内容区：高不透明度画布，正文不再直接压在壁纸上 ---------- */
+/* ---------- 内容区：高不透明度画布，正文不再直接压在壁纸上 ----------
+   这里不再挂 backdrop-filter：94% 底色已经足够，整块内容区实时模糊
+   是切栏目/滚动卡顿的大头，玻璃只保留在标题栏、侧栏、工具条和浮层。 */
 #content {
   grid-column: 2;
   grid-row: 2;
@@ -293,8 +358,6 @@ body.resizing {
   display: flex;
   flex-direction: column;
   background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
-  -webkit-backdrop-filter: blur(calc(var(--blur, 19px) * 0.6)) saturate(1.05);
-  backdrop-filter: blur(calc(var(--blur, 19px) * 0.6)) saturate(1.05);
   isolation: isolate;
 }
 
@@ -2101,6 +2164,43 @@ html[data-theme="light"] #scrim {
     opacity: 1;
     transform: none;
   }
+}
+
+/* ---------- 性能优先：去掉实时模糊与壁纸动画 ---------- */
+body.perf #wallpaper {
+  transform: none !important;
+  will-change: auto;
+}
+body.perf #wallpaper::after {
+  opacity: calc(0.92 - var(--mat, 55) * 0.001);
+}
+body.perf #titlebar,
+body.perf #rail,
+body.perf #toolbar,
+body.perf #content,
+body.perf .lib-top,
+body.perf .overlay-card,
+body.perf #scrim {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+body.perf #titlebar,
+body.perf #rail,
+body.perf #toolbar {
+  background: color-mix(in srgb, var(--title) 97%, transparent);
+}
+body.perf #content {
+  background: color-mix(in srgb, var(--bg) 98%, transparent);
+}
+body.perf .lib-top {
+  background: var(--bg);
+}
+body.perf .wall-layer,
+body.perf #wallpaper,
+body.perf .overlay-card,
+body.perf .toast {
+  transition: none !important;
+  animation: none !important;
 }
 
 /* ---------- 响应式 ---------- */

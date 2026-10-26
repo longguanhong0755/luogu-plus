@@ -43,6 +43,7 @@ const badShots = shots.filter((file) => !fs.existsSync(file) || fs.statSync(file
 const ok =
   result.status === 0 &&
   String(result.stdout || "").includes("SMOKE_OK") &&
+  !String(result.stdout || "").includes("SMOKE_FAIL") &&
   fs.existsSync(out) &&
   fs.statSync(out).size > 5000 &&
   badShots.length === 0;

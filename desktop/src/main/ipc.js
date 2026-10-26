@@ -10,12 +10,19 @@ function publicWallpaper(wallpaper) {
 
 function state(ctx) {
   const cfg = ctx.cfg.get();
+  let bounds = { width: 1280, height: 820 };
+  try {
+    if (ctx.win && !ctx.win.isDestroyed()) bounds = ctx.win.getContentBounds();
+  } catch {
+    /* window 正在创建 */
+  }
   return {
     version: app.getVersion(),
     appearance: cfg.appearance,
     general: cfg.general,
     notify: cfg.notify,
     rail: resolveRail(cfg),
+    window: { width: bounds.width, height: bounds.height },
     theme: Object.assign({}, ctx.theme, { wallpaper: publicWallpaper(ctx.wallpaper) }),
     user: ctx.luogu.user,
     home: ctx.luogu.home,
@@ -28,15 +35,17 @@ function state(ctx) {
 
 function broadcastState(ctx) {
   const payload = state(ctx);
-  for (const win of [ctx.win, ctx.settingsWin]) {
+  const targets = [ctx.win, ctx.settingsWin];
+  for (const win of targets) {
     if (win && !win.isDestroyed()) win.webContents.send("app:state", payload);
   }
+  const rail = ctx.views && ctx.views.railWebContents ? ctx.views.railWebContents() : null;
+  if (rail && !rail.isDestroyed()) rail.send("app:state", payload);
 }
 
 const ACTIONS = [
   { type: "action", id: "home", label: "主页" },
   { type: "action", id: "problems", label: "题库" },
-  { type: "action", id: "class", label: "课程" },
   { type: "action", id: "training", label: "训练" },
   { type: "action", id: "contest", label: "比赛" },
   { type: "action", id: "record", label: "记录" },
@@ -73,9 +82,23 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:setRail", (_event, patch) => {
-    const rail = ctx.cfg.setRail(patch);
-    broadcastState(ctx);
+    const next = patch || {};
+    const rail = ctx.cfg.setRail(next);
+    if (Object.prototype.hasOwnProperty.call(next, "pinned")) ctx.views.setRailPinned(!!rail.pinned);
+    else broadcastState(ctx);
     return rail;
+  });
+
+  ipcMain.handle("app:railPin", (_event, pinned) => {
+    ctx.views.setRailPinned(!!pinned);
+    return ctx.cfg.get().rail;
+  });
+
+  ipcMain.handle("app:railHover", (_event, payload) => {
+    const open = typeof payload === "object" && payload ? !!payload.open : !!payload;
+    const focus = typeof payload === "object" && payload ? String(payload.focus || "") : "";
+    const force = typeof payload === "object" && payload ? !!payload.force : false;
+    ctx.views.setRailHover(open, focus, force);
   });
 
   ipcMain.handle("app:resetRail", () => {
@@ -85,9 +108,14 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:setGeneral", (_event, patch) => {
-    const general = ctx.cfg.setGeneral(patch);
+    const next = patch || {};
+    const general = ctx.cfg.setGeneral(next);
     ctx.applyAutoLaunch();
-    broadcastState(ctx);
+    if (Object.prototype.hasOwnProperty.call(next, "performanceMode")) {
+      ctx.refreshAppearance({ reschedule: false }).catch(() => {});
+    } else {
+      broadcastState(ctx);
+    }
     return general;
   });
 
@@ -154,11 +182,12 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:nav", (_event, target) => {
+    ctx.views.setRailHover(false);
     if (target === "home") ctx.views.showHome();
     else if (target === "login") ctx.views.openLogin();
     else if (target === "profile") ctx.views.openProfile(ctx.luogu.user.uid);
     else if (target === "settings") ctx.openSettings();
-    else if (LIBRARY_IDS.has(target) || target === "class" || target === "chat" || target === "notification") {
+    else if (LIBRARY_IDS.has(target) || target === "chat" || target === "notification") {
       ctx.views.openSection(target);
     }
     ctx.emitPage();
@@ -176,6 +205,7 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:openDetail", (_event, payload) => {
+    ctx.views.hideRailOverlay();
     const url = String((payload && payload.url) || "");
     const title = String((payload && payload.title) || "");
     const key = payload && payload.key ? String(payload.key) : "";
@@ -183,14 +213,17 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:openCustom", (_event, payload) => {
+    ctx.views.hideRailOverlay();
     ctx.views.openCustom(payload && payload.url, payload && payload.label);
   });
 
   ipcMain.handle("app:openWebFallback", (_event, kind) => {
+    ctx.views.hideRailOverlay();
     ctx.views.openWebFallback(String(kind || ""));
   });
 
   ipcMain.handle("app:openProblem", (_event, pid) => {
+    ctx.views.hideRailOverlay();
     ctx.views.openProblem(pid);
   });
 
@@ -312,6 +345,7 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:openSettings", () => {
+    ctx.views.hideRailOverlay();
     ctx.openSettings();
   });
 

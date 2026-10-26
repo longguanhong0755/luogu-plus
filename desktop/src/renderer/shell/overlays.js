@@ -5,7 +5,6 @@ import { icon } from "./icons.js";
 const ACTION_ICONS = {
   home: "home",
   problems: "library",
-  class: "class",
   training: "training",
   contest: "contest",
   discuss: "discuss",

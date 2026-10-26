@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
 
-const RAIL_ORDER = ["home", "problems", "class", "training", "contest", "record", "discuss", "article"];
+const RAIL_ORDER = ["home", "problems", "training", "contest", "record", "discuss", "article"];
 const RAIL_IDS = new Set(RAIL_ORDER);
 const WALLPAPERS = ["desktop", "builtin", "daily", "custom", "folder", "we"];
 
@@ -31,10 +31,12 @@ const DEFAULTS = {
     order: RAIL_ORDER.slice(),
     hidden: [],
     custom: [], // [{ id, label, url }]
+    pinned: false, // true = 常驻展开；false = 默认折叠，悬停浮出
   },
   general: {
     closeAction: "tray", // tray | quit
     autoLaunch: false,
+    performanceMode: false, // 关闭壁纸运动 / 背景模糊 / 切换动画
   },
   notify: {
     judge: true,
@@ -90,6 +92,7 @@ function sanitizeRail(rail) {
   for (const id of RAIL_ORDER) if (!seen.has(id)) order.push(id);
   rail.order = order;
   rail.hidden = Array.isArray(rail.hidden) ? [...new Set(rail.hidden.filter((id) => RAIL_IDS.has(id)))] : [];
+  rail.pinned = !!rail.pinned;
 
   const custom = [];
   for (const item of Array.isArray(rail.custom) ? rail.custom : []) {
@@ -136,6 +139,7 @@ function sanitize() {
   const g = data.general;
   if (!["tray", "quit"].includes(g.closeAction)) g.closeAction = "tray";
   g.autoLaunch = !!g.autoLaunch;
+  g.performanceMode = !!g.performanceMode;
 
   const n = data.notify;
   n.judge = !!n.judge;

@@ -1035,6 +1035,28 @@ async function loginFlow(ctx, wait, outDir) {
         error: home2.error || "",
       })
   );
+
+  // 头像打开独立个人主页，且侧栏任何项目都不高亮
+  try {
+    await ctx.win.webContents.executeJavaScript(`document.getElementById("tb-avatar").click()`);
+    await wait(1800);
+    const entry = ctx.views.currentEntry();
+    const railState = await ctx.win.webContents.executeJavaScript(`(() => ({
+      active: document.querySelectorAll('#rail .active, #rail [aria-current="page"]').length,
+      navPressed: [...document.querySelectorAll("#rail .rail-btn")].filter((b) => b.getAttribute("aria-pressed") === "true").length,
+    }))()`);
+    console.log(
+      "LGTEST_PROFILE " +
+        JSON.stringify({
+          key: entry ? entry.key : null,
+          url: entry ? entry.view.webContents.getURL() : null,
+          active: railState.active,
+          navPressed: railState.navPressed,
+        })
+    );
+  } catch (err) {
+    console.log("SMOKE_FAIL profile probe: " + err.message);
+  }
 }
 
 async function runSmoke(ctx) {
@@ -1102,9 +1124,148 @@ async function runSmoke(ctx) {
           await wait(600);
         }
       }
+      // 登录/提交流程可能把页面停在题目页；首页截图前先回到原生主页
+      ctx.views.showHome();
       await wait(process.env.LG_SMOKE_NET === "1" ? 9000 : 1400);
       const homeShot = await shot("home");
       console.log("SMOKE_OK " + homeShot);
+
+      if (process.env.LG_SMOKE_PERF === "1") {
+        ctx.cfg.setGeneral({ performanceMode: true });
+        await ctx.refreshAppearance({ reschedule: false });
+        await wait(700);
+        const perf1 = await ctx.win.webContents.executeJavaScript(`(() => {
+          const css = (sel, prop) => { const el = document.querySelector(sel); return el ? getComputedStyle(el)[prop] : ""; };
+          return {
+            perf: document.body.classList.contains("perf"),
+            blurVar: getComputedStyle(document.documentElement).getPropertyValue("--blur").trim(),
+            titleBlur: css("#titlebar", "backdropFilter"),
+            railBlur: css("#rail", "backdropFilter"),
+            contentBlur: css("#content", "backdropFilter"),
+            zoom: getComputedStyle(document.documentElement).getPropertyValue("--lg-zoom").trim(),
+          };
+        })()`);
+        await wait(600);
+        const zoom2 = await ctx.win.webContents.executeJavaScript(
+          `getComputedStyle(document.documentElement).getPropertyValue("--lg-zoom").trim()`
+        );
+        console.log("SMOKE_PERF " + JSON.stringify(Object.assign({}, perf1, { zoom2 })));
+        ctx.cfg.setGeneral({ performanceMode: false });
+        await ctx.refreshAppearance({ reschedule: false });
+        await wait(500);
+
+        // 动态降载：失焦后冻结，重新聚焦后恢复
+        const sampleZoom = () =>
+          ctx.win.webContents.executeJavaScript(
+            `getComputedStyle(document.documentElement).getPropertyValue("--lg-zoom").trim()`
+          );
+        ctx.win.emit("focus");
+        await wait(700);
+        const z1 = await sampleZoom();
+        await wait(500);
+        const z2 = await sampleZoom();
+        ctx.win.emit("blur");
+        await wait(500);
+        const z3 = await sampleZoom();
+        await wait(500);
+        const z4 = await sampleZoom();
+        ctx.win.emit("focus");
+        await wait(500);
+        const z5 = await sampleZoom();
+        console.log(
+          "SMOKE_LAZY " +
+            JSON.stringify({
+              moving: z1 !== z2,
+              frozen: z3 === z4,
+              resumed: z5 !== z4,
+              z: [z1, z2, z3, z4, z5],
+            })
+        );
+
+      }
+
+      if (process.env.LG_SMOKE_RAIL === "1") {
+        ctx.views.setRailHover(true, "jump");
+        await wait(800);
+        const railWc = ctx.views.railWebContents();
+        if (railWc) {
+          const railView = ctx.views.railOverlay;
+          const visible = !!(railView && railView.getVisible());
+          console.log("SMOKE_RAIL_VISIBLE " + JSON.stringify({ visible, bounds: railView ? railView.getBounds() : null }));
+          // 透明 view 在不可见/失焦的冒烟窗口里 capturePage 可能得到空图；
+          // 有图才落盘，视觉验收以固定态窗口截图 + DOM 断言为准。
+          if (visible) {
+            if (railView) railView.setBackgroundColor("#16181d");
+            await wait(160);
+            const image = await railWc.capturePage();
+            if (image && !image.isEmpty()) {
+              const file = path.join(outDir, "smoke-rail-overlay.png");
+              fs.writeFileSync(file, image.toPNG());
+              console.log("SMOKE_SHOT rail-overlay " + file);
+            }
+            if (railView) railView.setBackgroundColor("#00000000");
+          }
+          const metrics = await railWc.executeJavaScript(`(() => {
+            const rail = document.getElementById("rail");
+            const labels = [...document.querySelectorAll(".rail-label")].filter((el) => getComputedStyle(el).display !== "none");
+            const pin = document.getElementById("rail-pin");
+            return {
+              railW: Math.round(rail.getBoundingClientRect().width),
+              labels: labels.length,
+              pinVisible: !!pin && getComputedStyle(pin).opacity !== "0",
+              pinned: document.body.classList.contains("rail-pinned"),
+              jumpFocused: document.activeElement === document.getElementById("rail-jump-input"),
+            };
+          })()`);
+          console.log("SMOKE_RAIL " + JSON.stringify(metrics));
+        }
+        ctx.views.setRailPinned(true);
+        await wait(600);
+        const pinnedShot = await shot("rail-pinned");
+        const pinnedMetrics = await ctx.win.webContents.executeJavaScript(`(() => {
+          const rail = document.getElementById("rail");
+          const pin = document.getElementById("rail-pin");
+          return {
+            railW: Math.round(rail.getBoundingClientRect().width),
+            pinned: document.body.classList.contains("rail-pinned"),
+            pinVisible: !!pin && getComputedStyle(pin).opacity !== "0",
+            labels: [...document.querySelectorAll(".rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
+          };
+        })()`);
+        console.log("SMOKE_RAIL_PINNED " + JSON.stringify(Object.assign({ shot: pinnedShot }, pinnedMetrics)));
+        ctx.views.setRailPinned(false);
+        await wait(400);
+
+        // 浮层里的导航与钉子必须真的能点（不是只有 DOM 形状对）
+        ctx.views.setRailHover(true);
+        await wait(500);
+        const railWc2 = ctx.views.railWebContents();
+        if (railWc2) {
+          await railWc2.executeJavaScript(`document.querySelector('.rail-btn[data-id="home"]').click()`);
+          await wait(500);
+          console.log(
+            "SMOKE_RAIL_NAV " +
+              JSON.stringify({
+                home: !!ctx.views.currentInfo().home,
+                overlay: !!(ctx.views.railOverlay && ctx.views.railOverlay.getVisible()),
+              })
+          );
+          ctx.views.setRailHover(true);
+          await wait(500);
+          await railWc2.executeJavaScript(`document.getElementById("rail-pin").click()`);
+          await wait(600);
+          console.log(
+            "SMOKE_RAIL_PIN_CLICK " +
+              JSON.stringify({
+                pinned: !!ctx.cfg.get().rail.pinned,
+                railW: Math.round(await ctx.win.webContents.executeJavaScript(`document.getElementById("rail").getBoundingClientRect().width`)),
+                overlay: !!(ctx.views.railOverlay && ctx.views.railOverlay.getVisible()),
+              })
+          );
+          ctx.views.setRailPinned(false);
+          await wait(400);
+        }
+      }
 
       if (process.env.LG_SMOKE_LIB === "1") {
         const libKinds = String(process.env.LG_SMOKE_LIB_ONLY || "problems,contest,article,discuss,training,record")
@@ -1202,6 +1363,30 @@ async function runSmoke(ctx) {
               " bounds=" +
               JSON.stringify(entry.view.getBounds())
           );
+          // 折叠/固定侧栏时页面视图让位：56 → 208 → 56（真实题面在场）
+          try {
+            const collapsed = entry.view.getBounds();
+            ctx.views.setRailPinned(true);
+            await wait(400);
+            const pinned = entry.view.getBounds();
+            ctx.views.setRailPinned(false);
+            await wait(400);
+            const restored = entry.view.getBounds();
+            const railBoundsOk =
+              collapsed.x === 56 && pinned.x === 208 && restored.x === 56;
+            console.log(
+              "SMOKE_RAIL_BOUNDS " +
+                JSON.stringify({
+                  collapsed: collapsed.x,
+                  pinned: pinned.x,
+                  restored: restored.x,
+                  ok: railBoundsOk,
+                })
+            );
+            if (!railBoundsOk) console.log("SMOKE_FAIL rail bounds mismatch");
+          } catch (err) {
+            console.log("SMOKE_FAIL rail bounds: " + err.message);
+          }
           let viewImage = null;
           for (let attempt = 0; attempt < 4; attempt++) {
             try {

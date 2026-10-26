@@ -2,12 +2,11 @@
    kind:
    - home     应用主页（原生）
    - library  原生列表（题库/训练/比赛/记录/讨论/文章）
-   - web      洛谷网页页面（课程/聊天/通知）
+   - web      洛谷网页页面（聊天/通知）
    - action   打开设置等动作 */
 const NAV = {
   home: { label: "主页", icon: "home", kind: "home" },
   problems: { label: "题库", icon: "library", kind: "library", url: "/problem/list" },
-  class: { label: "课程", icon: "class", kind: "web", url: "https://class.luogu.com.cn/" },
   training: { label: "训练", icon: "training", kind: "library", url: "/training/list" },
   contest: { label: "比赛", icon: "contest", kind: "library", url: "/contest/list" },
   record: { label: "记录", icon: "record", kind: "library", url: "/record/list" },
@@ -21,7 +20,6 @@ const NAV = {
 const LIBRARY_IDS = new Set(["problems", "training", "contest", "record", "discuss", "article"]);
 
 const WEB_URLS = {
-  class: "https://class.luogu.com.cn/",
   chat: "https://www.luogu.com.cn/chat",
   notification: "https://www.luogu.com.cn/user/notification",
 };
@@ -58,6 +56,7 @@ function resolveRail(cfg) {
     order: cfg.rail.order.slice(),
     hidden: cfg.rail.hidden.slice(),
     custom: cfg.rail.custom.map((item) => Object.assign({}, item)),
+    pinned: !!cfg.rail.pinned,
     all: Object.keys(NAV).map((id) => ({ id, label: NAV[id].label, icon: NAV[id].icon, kind: NAV[id].kind })),
   };
 }

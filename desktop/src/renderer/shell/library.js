@@ -379,7 +379,12 @@ export function initLibrary(actions) {
       const box = el("div", "lib-state");
       box.innerHTML = icon("inbox");
       box.appendChild(el("strong", "", state.items.length ? "当前筛选没有结果" : state.meta.empty));
-      box.appendChild(el("span", "", state.items.length ? "换一个筛选条件试试。" : "联网后这里会自动更新。"));
+      const emptyHint = state.items.length
+        ? "换一个筛选条件试试。"
+        : state.offlineNote
+          ? "当前离线，联网后会自动更新。"
+          : "有新内容时会出现在这里。";
+      box.appendChild(el("span", "", emptyHint));
       list.appendChild(box);
       renderFoot(state);
       return;

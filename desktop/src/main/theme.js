@@ -136,12 +136,15 @@ function payload(cfg) {
   colors.highlight = isDark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.85)";
 
   const material = clamp(cfg.appearance.material, 0, 100, 55);
+  const perf = !!(cfg.general && cfg.general.performanceMode);
   // 内容面始终保持在 91% 以上；材质主要影响外壳与模糊。
-  const panelAlpha = Math.round(94 - material * 0.2);
+  let panelAlpha = Math.round(94 - material * 0.2);
   const pageScrim = Math.round(97 - material * 0.06);
   const cardAlpha = Math.round(99 - material * 0.08);
   const overlayAlpha = Math.min(98, cardAlpha + 2);
-  const blurPx = Math.round((6 + material * 0.24) * 10) / 10;
+  const blurPx = perf ? 0 : Math.round((6 + material * 0.24) * 10) / 10;
+  // 性能模式没有背景模糊，外壳底色要更实一点，避免文字压在壁纸上
+  if (perf) panelAlpha = Math.min(98, panelAlpha + 8);
   return {
     mode,
     isDark,
@@ -153,6 +156,7 @@ function payload(cfg) {
     cardAlpha,
     overlayAlpha,
     blurPx,
+    performanceMode: perf,
   };
 }
 

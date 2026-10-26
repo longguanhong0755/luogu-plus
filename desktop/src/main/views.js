@@ -1,14 +1,14 @@
 /* 页面视图管理：原生列表 + 网页详情。
    - 原生列表（题库/训练/比赛/记录/讨论/文章）不创建 WebContentsView，由渲染层直接画；
-   - 网页页面（课程/聊天/通知、题面、文章详情等）各自一个 WebContentsView；
+   - 网页页面（聊天/通知、题面、文章详情等）各自一个 WebContentsView；
    - 题目多开（LRU 上限 8），详情页上限 10；
    - 站外链接一律交给系统浏览器。
    玻璃化：页面内注入一个与窗口同坐标的壁纸复刻层，卡片/输入框按材质半透明。 */
 const fs = require("node:fs");
 const path = require("node:path");
-const { WebContentsView, shell } = require("electron");
-const { PRELOAD, SKIN_DIR } = require("./paths");
-const { TITLE_H, RAIL_W, TOOLBAR_H } = require("./window");
+const { WebContentsView, shell, screen } = require("electron");
+const { PRELOAD, SKIN_DIR, RENDERER } = require("./paths");
+const { TITLE_H, RAIL_W, RAIL_COLLAPSED_W, TOOLBAR_H } = require("./window");
 const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
 const { SOURCE: PASSKEY_GUARD } = require("./passkey-guard");
 
@@ -78,6 +78,11 @@ class ViewManager {
     this.ideOn = false;
     this.ideSplit = 0.5;
     this.overlayOpen = false;
+    this.railPinned = !!(ctx.cfg && ctx.cfg.get().rail && ctx.cfg.get().rail.pinned);
+    this.railOverlay = null;
+    this.railOverlayAttached = false;
+    this.railHoverOpen = false;
+    this.railHideTimer = null;
     this.skinSource = "";
     this.skinMtime = 0;
     this.clock = 0;
@@ -86,6 +91,122 @@ class ViewManager {
 
   setWindow(win) {
     this.win = win;
+  }
+
+  /* ---------- 侧栏折叠 / 悬停浮层 ----------
+     折叠时页面 view 从 56px 开始；悬停展开的 208px 侧栏画在独立的
+     WebContentsView 里，盖在页面 view 之上，不改变页面宽度、不触发回流。
+     点钉子后进入常驻展开：view 才真正让到 208px。 */
+
+  railWidth() {
+    return this.railPinned ? RAIL_W : RAIL_COLLAPSED_W;
+  }
+
+  railWebContents() {
+    if (!this.railOverlay || this.railOverlay.webContents.isDestroyed()) return null;
+    return this.railOverlay.webContents;
+  }
+
+  ensureRailOverlay() {
+    if (this.railOverlay && !this.railOverlay.webContents.isDestroyed()) return this.railOverlay;
+    const view = new WebContentsView({
+      webPreferences: {
+        preload: path.join(PRELOAD, "rail.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        spellcheck: false,
+        // 浮层只在悬停时出现，隐藏时也不能被节流，否则第一次悬停会慢半拍
+        backgroundThrottling: false,
+      },
+    });
+    view.setBackgroundColor("#00000000");
+    view.setVisible(false);
+    view.webContents.loadFile(path.join(RENDERER, "rail", "index.html")).catch((err) => {
+      console.error("[rail] load failed:", err.message);
+    });
+    this.railOverlay = view;
+    return view;
+  }
+
+  layoutRailOverlay() {
+    if (!this.railOverlay || this.railOverlay.webContents.isDestroyed()) return;
+    if (!this.win || this.win.isDestroyed()) return;
+    const bounds = this.win.getContentBounds();
+    this.railOverlay.setBounds({
+      x: 0,
+      y: TITLE_H,
+      width: RAIL_W,
+      height: Math.max(0, bounds.height - TITLE_H),
+    });
+  }
+
+  setRailHover(open, focus = "", force = false) {
+    if (open) {
+      if (this.railPinned || !this.win || this.win.isDestroyed()) return;
+      clearTimeout(this.railHideTimer);
+      this.railHideTimer = null;
+      this.railHoverOpen = true;
+      const view = this.ensureRailOverlay();
+      const wc = view.webContents;
+      const reveal = () => {
+        if (!this.railHoverOpen || this.railPinned || wc.isDestroyed()) return;
+        if (!this.win || this.win.isDestroyed()) return;
+        // 每次都重新挂到最上层：之后新建的页面 view 不能盖住浮层
+        if (this.railOverlayAttached) this.win.contentView.removeChildView(view);
+        this.win.contentView.addChildView(view);
+        this.railOverlayAttached = true;
+        view.setVisible(true);
+        this.layoutRailOverlay();
+        if (this.ctx.broadcastState) this.ctx.broadcastState();
+        if (focus) wc.send("rail:focus", focus);
+      };
+      if (wc.isLoadingMainFrame()) wc.once("dom-ready", reveal);
+      else reveal();
+      return;
+    }
+    if (!this.railHoverOpen) return;
+    // 鼠标从外壳窄条移进浮层时，外壳会先收到 mouseleave。用真实光标位置
+    // 判断它是否仍在 208px 的浮层区域内，避免第二/第三次悬停被误收起。
+    if (!force && this.cursorInRail()) return;
+    clearTimeout(this.railHideTimer);
+    // 给鼠标从外壳窄条移进浮层留出交接时间
+    this.railHideTimer = setTimeout(() => this.hideRailOverlay(), 220);
+  }
+
+  cursorInRail() {
+    if (!this.win || this.win.isDestroyed()) return false;
+    try {
+      const point = screen.getCursorScreenPoint();
+      const b = this.win.getContentBounds();
+      return (
+        point.x >= b.x &&
+        point.x < b.x + RAIL_W &&
+        point.y >= b.y + TITLE_H &&
+        point.y < b.y + b.height
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  hideRailOverlay() {
+    clearTimeout(this.railHideTimer);
+    this.railHideTimer = null;
+    this.railHoverOpen = false;
+    if (!this.railOverlay || this.railOverlay.webContents.isDestroyed()) return;
+    const hadFocus = this.railOverlay.webContents.isFocused();
+    this.railOverlay.setVisible(false);
+    if (hadFocus && this.win && !this.win.isDestroyed() && this.win.isFocused()) this.win.webContents.focus();
+  }
+
+  setRailPinned(pinned) {
+    const next = !!pinned;
+    if (this.ctx.cfg) this.ctx.cfg.setRail({ pinned: next });
+    this.railPinned = next;
+    if (next) this.hideRailOverlay();
+    this.layout();
+    this.emit();
   }
 
   /* ---------- 入口 ---------- */
@@ -104,6 +225,7 @@ class ViewManager {
 
   showLibrary(kind) {
     if (!LIBRARY_IDS.has(kind)) return;
+    this.hideRailOverlay();
     this.library = kind;
     this.returnLib = null;
     this.currentKey = null;
@@ -247,6 +369,7 @@ class ViewManager {
   }
 
   showHome() {
+    this.hideRailOverlay();
     this.currentKey = null;
     this.library = null;
     this.returnLib = null;
@@ -456,8 +579,10 @@ class ViewManager {
 
   setOverlay(open) {
     this.overlayOpen = !!open;
-    if (this.overlayOpen) this.hideAll();
-    else this.restoreCurrent();
+    if (this.overlayOpen) {
+      this.hideRailOverlay();
+      this.hideAll();
+    } else this.restoreCurrent();
   }
 
   switchTo(key) {
@@ -513,7 +638,7 @@ class ViewManager {
         isProblem: false,
         pid: "",
         ide: false,
-        layout: { titleH: TITLE_H, railW: RAIL_W, toolbarH: TOOLBAR_H },
+        layout: { titleH: TITLE_H, railW: this.railWidth(), toolbarH: TOOLBAR_H },
       };
     }
     const entry = this.currentEntry();
@@ -531,7 +656,7 @@ class ViewManager {
         isProblem: false,
         pid: "",
         ide: false,
-        layout: { titleH: TITLE_H, railW: RAIL_W, toolbarH: TOOLBAR_H },
+        layout: { titleH: TITLE_H, railW: this.railWidth(), toolbarH: TOOLBAR_H },
       };
     }
     const wc = entry.view.webContents;
@@ -556,7 +681,7 @@ class ViewManager {
       isProblem: entry.kind === "problem",
       pid: entry.pid || pidFromUrl(wc.getURL()),
       ide: this.ideOn,
-      layout: { titleH: TITLE_H, railW: RAIL_W, toolbarH: TOOLBAR_H },
+      layout: { titleH: TITLE_H, railW: this.railWidth(), toolbarH: TOOLBAR_H },
     };
   }
 
@@ -570,6 +695,7 @@ class ViewManager {
       return existing;
     }
     const t = this.ctx.theme;
+    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
     const view = new WebContentsView({
       webPreferences: {
         preload: path.join(PRELOAD, "page.js"),
@@ -581,10 +707,10 @@ class ViewManager {
         backgroundThrottling: !this.ctx.smoke,
         additionalArguments: [
           "--lg-boot-bg=" + encodeURIComponent(t.colors.bg),
-          "--lg-view-x=" + RAIL_W,
+          "--lg-view-x=" + this.railWidth(),
           "--lg-view-y=" + (TITLE_H + TOOLBAR_H),
-          "--lg-motion=" + (this.ctx.cfg.get().appearance.wallpaperMotion ? "1" : "0"),
-          "--lg-zoom=" + (this.ctx.cfg.get().appearance.wallpaperZoom ? "1" : "0"),
+          "--lg-motion=" + (!perf && this.ctx.cfg.get().appearance.wallpaperMotion ? "1" : "0"),
+          "--lg-zoom=" + (!perf && this.ctx.cfg.get().appearance.wallpaperZoom ? "1" : "0"),
         ],
       },
     });
@@ -599,6 +725,11 @@ class ViewManager {
       view,
       lastUsed: ++this.clock,
       skinKey: null,
+      skinPending: false,
+      skinMtime: 0,
+      varsKey: null,
+      varsSig: "",
+      varsPending: false,
       attached: false,
       lastRect: "",
       booted: false,
@@ -681,6 +812,8 @@ class ViewManager {
       // 插入的 CSS 随文档销毁；新文档必须重新注入静态规则
       entry.skinKey = null;
       entry.varsKey = null;
+      entry.varsSig = "";
+      entry.varsPending = false;
       entry.skinMtime = 0;
       entry.skinPending = false;
       if (!wc.debugger.isAttached()) this.attachGuard(wc);
@@ -746,13 +879,36 @@ class ViewManager {
     });
   }
 
+  sendMotion(entry, active) {
+    if (!entry || !entry.view || entry.view.webContents.isDestroyed()) return;
+    const wall = this.ctx.wallpaper || {};
+    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
+    try {
+      entry.view.webContents.send("lg:motion", {
+        motion: !!(active && !perf && wall.motion),
+        zoom: !!(active && !perf && wall.zoom),
+      });
+    } catch {
+      /* 页面正在销毁 */
+    }
+  }
+
+  setWindowActive(active) {
+    const current = this.currentEntry();
+    for (const entry of this.entries.values()) this.sendMotion(entry, !!active && entry === current);
+  }
+
   showEntry(entry) {
     if (!this.win || this.win.isDestroyed()) return;
+    this.hideRailOverlay();
     this.currentKey = entry.key;
     this.library = null;
     this.overlayOpen = false;
     for (const other of this.entries.values()) {
-      if (other !== entry) other.view.setVisible(false);
+      if (other !== entry) {
+        other.view.setVisible(false);
+        this.sendMotion(other, false);
+      }
     }
     if (!entry.attached) {
       this.win.contentView.addChildView(entry.view);
@@ -762,12 +918,16 @@ class ViewManager {
     entry.lastUsed = ++this.clock;
     this.layout();
     this.injectSkin(entry);
+    this.sendMotion(entry, true);
     entry.view.webContents.focus();
     this.emit();
   }
 
   hideAll() {
-    for (const entry of this.entries.values()) entry.view.setVisible(false);
+    for (const entry of this.entries.values()) {
+      entry.view.setVisible(false);
+      this.sendMotion(entry, false);
+    }
   }
 
   restoreCurrent() {
@@ -797,15 +957,17 @@ class ViewManager {
 
   layout() {
     if (!this.win || this.win.isDestroyed()) return;
+    if (this.railHoverOpen) this.layoutRailOverlay();
     const entry = this.currentEntry();
     if (!entry || this.overlayOpen || this.library) {
       this.hideAll();
       return;
     }
     const bounds = this.win.getContentBounds();
-    const x = RAIL_W;
+    const railW = this.railWidth();
+    const x = railW;
     const y = TITLE_H + TOOLBAR_H;
-    let width = Math.max(320, bounds.width - RAIL_W);
+    let width = Math.max(320, bounds.width - railW);
     const height = Math.max(240, bounds.height - TITLE_H - TOOLBAR_H);
     if (this.ideOn && entry.kind === "problem") {
       width = Math.max(320, Math.floor(width * (1 - this.ideSplit)));
@@ -858,14 +1020,9 @@ class ViewManager {
 
   updateTheme() {
     if (!this.win || this.win.isDestroyed()) return;
-    const wall = this.ctx.wallpaper || {};
     for (const entry of this.entries.values()) {
       entry.view.setBackgroundColor(this.ctx.theme.colors.bg);
-      try {
-        entry.view.webContents.send("lg:motion", { motion: !!wall.motion, zoom: !!wall.zoom });
-      } catch {
-        /* ignore */
-      }
+      this.sendMotion(entry, entry === this.currentEntry());
       this.injectSkin(entry);
     }
     this.layout();
@@ -891,6 +1048,7 @@ class ViewManager {
     const t = this.ctx.theme;
     const c = t.colors;
     const wall = this.ctx.wallpaper || {};
+    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
     const winBounds = this.win.getContentBounds();
     const rect = entry.view.getBounds();
     const backdrop = wall.backdrop || "none";
@@ -923,7 +1081,7 @@ class ViewManager {
       `--lg-card-alpha:${t.cardAlpha}%`,
       `--lg-overlay-alpha:${t.overlayAlpha}%`,
       `--lg-scrim:${t.pageScrim}%`,
-      `--lg-blur:${t.blurPx}px`,
+      `--lg-blur:${perf ? 0 : t.blurPx}px`,
       `--lg-font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace`,
       `--lg-radius-sm:6px`,
       `--lg-radius-md:8px`,
@@ -941,8 +1099,9 @@ class ViewManager {
       `--lg-wall-w:${winBounds.width}px`,
       `--lg-wall-h:${winBounds.height}px`,
       `--lg-color-scheme:${t.isDark ? "dark" : "light"}`,
-      `--lg-motion:${wall.motion ? 1 : 0}`,
-      `--lg-zoom-on:${wall.zoom ? 1 : 0}`,
+      `--lg-motion:${!perf && wall.motion ? 1 : 0}`,
+      `--lg-zoom-on:${!perf && wall.zoom ? 1 : 0}`,
+      `--lg-perf:${perf ? 1 : 0}`,
     ].join(";");
     return `:root{${vars}}`;
   }
@@ -982,12 +1141,21 @@ class ViewManager {
             entry.skinPending = false;
           });
       }
-      if (entry.varsKey) wc.removeInsertedCSS(entry.varsKey).catch(() => {});
+      if (entry.varsPending) return;
+      if (entry.varsKey && entry.varsSig === vars) return;
+      entry.varsPending = true;
+      const oldVars = entry.varsKey;
+      entry.varsKey = null;
+      if (oldVars) wc.removeInsertedCSS(oldVars).catch(() => {});
       wc.insertCSS(vars)
         .then((key) => {
           entry.varsKey = key;
+          entry.varsSig = vars;
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          entry.varsPending = false;
+        });
     } catch {
       /* 页面还在加载中，dom-ready 会再试 */
     }

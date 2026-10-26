@@ -68,6 +68,8 @@ export const ICONS = {
   palette: S('<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.4 0 2-1 1.4-2.1-.7-1.3.2-2.4 1.7-2.4h1.3A3.6 3.6 0 0 0 20 12.4 8.9 8.9 0 0 0 12 3.5"/><circle cx="8" cy="9" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16" cy="9" r="1"/>'),
   sidebar: S('<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/><path d="M5.8 8h1M5.8 11h1M5.8 14h1"/>'),
   fileCode: S('<path d="M6 3.5h7l5 5V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M13 3.5V9h5"/><path d="m10 12-2 2 2 2M14 12l2 2-2 2"/>'),
+  pin: S('<path d="M9 3.5h6"/><path d="M10 3.5v5.8L7 12.3V14h10v-1.7l-3-3V3.5"/><path d="M12 14v6.5"/>'),
+  pinOff: S('<path d="M4 4l16 16"/><path d="M9 3.5h6"/><path d="M10 3.5v4.2L7 10.7V13h7.5"/><path d="M17 13V10.7l-2.3-2.3"/><path d="M12 13v5.5"/>'),
   play: S('<path d="M8 5.5 18 12 8 18.5z"/>'),
 };
 

@@ -12,13 +12,14 @@ export function initChrome(actions) {
   const libraryEl = document.getElementById("library");
   const browseEl = document.getElementById("browse");
   const avatar = document.getElementById("tb-avatar");
+  const pin = document.getElementById("rail-pin");
   const jumpForm = document.getElementById("rail-jump");
   const jumpInput = document.getElementById("rail-jump-input");
 
   let data = null;
   let railSignature = "";
   let toolbarSignature = "";
-  let buttons = new Map();
+  let pinState = null;
 
   function navButton(item) {
     const btn = document.createElement("button");
@@ -46,17 +47,8 @@ export function initChrome(actions) {
     railSignature = signature;
     railTop.textContent = "";
     railBottom.textContent = "";
-    buttons = new Map();
-    for (const item of config.top) {
-      const btn = navButton(item);
-      railTop.appendChild(btn);
-      buttons.set(item.id, btn);
-    }
-    for (const item of config.bottom) {
-      const btn = navButton(item);
-      railBottom.appendChild(btn);
-      buttons.set(item.id, btn);
-    }
+    for (const item of config.top) railTop.appendChild(navButton(item));
+    for (const item of config.bottom) railBottom.appendChild(navButton(item));
     rail.classList.toggle("empty-top", !config.top.length);
   }
 
@@ -82,19 +74,22 @@ export function initChrome(actions) {
     }
   }
 
-  function activeId(page) {
-    if (page.home) return "home";
-    if (page.library) return page.library;
-    if (page.section) return page.section;
-    if (page.kind === "problem" || page.kind === "detail") return "problems";
-    return "";
+  function syncPin(pinned) {
+    if (pinState === !!pinned) return;
+    pinState = !!pinned;
+    document.body.classList.toggle("rail-pinned", !!pinned);
+    pin.classList.toggle("on", !!pinned);
+    pin.setAttribute("aria-pressed", pinned ? "true" : "false");
+    pin.innerHTML = icon(pinned ? "pin" : "pinOff");
+    pin.title = pinned ? "取消固定（回到折叠，悬停自动展开）" : "固定侧栏（常驻展开）";
+    pin.setAttribute("aria-label", pin.title);
   }
 
   function update(next) {
     data = next;
     renderRail(next.rail);
+    syncPin(next.rail.pinned);
     const page = next.page;
-    const active = activeId(page);
     titleEl.textContent = page.home ? "主页" : page.title || "";
     if (page.library) titleEl.textContent = (next.rail.all.find((item) => item.id === page.library) || {}).label || page.title;
 
@@ -102,13 +97,7 @@ export function initChrome(actions) {
     libraryEl.hidden = !page.library;
     browseEl.hidden = page.home || !!page.library;
 
-    for (const [id, btn] of buttons) {
-      const on = id === active;
-      btn.classList.toggle("active", on);
-      if (on) btn.setAttribute("aria-current", "page");
-      else btn.removeAttribute("aria-current");
-    }
-    avatar.classList.toggle("active", page.kind === "profile");
+    // 侧栏只做入口，不表示当前页面：所有页面都不高亮
     updateAvatar(next.user);
 
     if (!page.home && !page.library) renderToolbar(page);
@@ -207,11 +196,34 @@ export function initChrome(actions) {
     actions.openProblem(match[1].toUpperCase());
   });
 
+  jumpForm.addEventListener("click", (event) => {
+    if (!data || !data.rail) return;
+    if (data.rail.pinned) {
+      if (event.target !== jumpInput) jumpInput.focus();
+      return;
+    }
+    event.preventDefault();
+    actions.railHover({ open: true, focus: "jump" });
+  });
+
   jumpInput.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       jumpInput.value = "";
       jumpInput.blur();
     }
+  });
+
+  pin.addEventListener("click", () => {
+    const next = !(data && data.rail && data.rail.pinned);
+    syncPin(next);
+    actions.setRailPinned(next);
+  });
+
+  rail.addEventListener("mouseenter", () => {
+    if (data && data.rail && !data.rail.pinned) actions.railHover(true);
+  });
+  rail.addEventListener("mouseleave", () => {
+    actions.railHover(false);
   });
 
   avatar.addEventListener("click", () => actions.profile());

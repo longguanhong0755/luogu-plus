@@ -1,13 +1,14 @@
 # 洛谷桌面版 · 设计规范
 
-> 版本 0.4.0 · Windows 11 · 2026-10-26
+> 版本 0.5.0 · Windows 11 · 2026-10-26
 >
 > 本文是实现规范，不是概念稿。文中所有尺寸、颜色、透明度与动画曲线都能在
 > `desktop/src/` 里找到对应代码；`desktop/src/main/theme.js` 是颜色与状态令牌的
 > 唯一来源，`desktop/src/renderer/shared/tokens.css` 是尺寸/字号/圆角/动效令牌的
 > 唯一来源，`desktop/src/renderer/shell/shell.css` 是外壳布局的唯一来源。
 >
-> **注意**：第 4–12 节是 3.x 的历史像素规格；当前实现以第 15 节「4.0 视觉重构」为准。
+> **注意**：第 4–12 节是 3.x 的历史像素规格；当前实现以第 15 节「4.0 视觉重构」为准，
+> 其中 15.10 是 0.5.0 的折叠侧栏与性能增量。
 
 ---
 
@@ -21,7 +22,7 @@
 | 层 | 内容 | 实现 | 为什么 |
 | --- | --- | --- | --- |
 | **驾驶舱** | 主页、题库、训练、比赛、记录、讨论、文章、设置、命令面板 | 原生 DOM，主进程解析 `lentille-context` | 高频浏览必须零整页加载，搜索/筛选在本地完成 |
-| **阅读面** | 题目、题解、文章正文、讨论帖、比赛/题单详情、个人主页、课程、聊天、通知、登录 | `WebContentsView` + 统一皮肤 | 数学公式、代码高亮、评论交互必须保持洛谷原样 |
+| **阅读面** | 题目、题解、文章正文、讨论帖、比赛/题单详情、个人主页、聊天、通知、登录 | `WebContentsView` + 统一皮肤 | 数学公式、代码高亮、评论交互必须保持洛谷原样 |
 | **工作台** | 内置 IDE、提交、评测通知、托盘 | 原生 + 主进程 | 把“打开题 → 写代码 → 提交 → 等结果”收进一个窗口 |
 
 六条“不像套壳”的硬规则：
@@ -451,9 +452,9 @@ box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 - 个人主页的 `lcolor-*` 容器透明；头部条、统计条玻璃化；热力图浅灰格子改为强调色梯度。
 - 登录页 `main-wrapper` 透明；登录卡片玻璃化；通行密钥按钮保留原样。
 
-### 7.6 课程 / 聊天 / 通知
+### 7.6 聊天 / 通知
 
-- `class.luogu.com.cn`、`/chat`、`/user/notification` 仍是网页视图（这些页面依赖
+- `/chat`、`/user/notification` 仍是网页视图（这些页面依赖
   洛谷自己的实时组件）；工具条和皮肤与外层一致。
 - 站内域名白名单覆盖 `*.luogu.com.cn` 与 `*.luogu.org`；其他域名一律系统浏览器。
 
@@ -568,16 +569,18 @@ body::before {
 ```json
 {
   "rail": {
-    "order": ["home", "problems", "class", "training", "contest", "record", "discuss", "article"],
+    "order": ["home", "problems", "training", "contest", "record", "discuss", "article"],
     "hidden": [],
-    "custom": [{ "id": "custom:abc123", "label": "GitHub", "url": "https://github.com" }]
+    "custom": [{ "id": "custom:abc123", "label": "GitHub", "url": "https://github.com" }],
+    "pinned": false
   }
 }
 ```
 
-- `order` 只允许内置 id；新增版本追加的新板块会自动补到末尾。
+- `order` 只允许内置 id；新增版本追加的新板块会自动补到末尾。课程入口已移除。
 - `hidden` 控制显隐；设置页提供上移/下移/隐藏/显示。
 - 自定义链接最多 8 个，名称 ≤ 24 字，URL 必须 `http(s)`；显示在顶部组末尾。
+- `pinned` 控制侧栏是否常驻展开；默认 `false`（56px 图标栏，悬停展开）。
 - 底部固定：题号跳转、聊天、通知、设置。
 - 所有变更即时广播，主窗口的 rail 重建，不重启。
 
@@ -615,9 +618,10 @@ desktop/src/main/
   notify.js         toast/评测通知/角标
   smoke.js          隐形冒烟与深色/浅色审计
 desktop/src/preload/
-  shell.js / settings.js / page.js
+  shell.js / rail.js / settings.js / page.js
 desktop/src/renderer/
-  shell/            标题栏、rail、主页、原生列表、命令面板、IDE
+  shell/            标题栏、折叠侧栏、主页、原生列表、命令面板、IDE
+  rail/             悬停展开的 208px 侧栏浮层（壁纸对齐、钉子、跳转）
   settings/         七分区设置
   skin/             洛谷页面皮肤与壁纸复刻层
 desktop/src/assets/ 官方图标、托盘、AC/WA 角标
@@ -678,7 +682,7 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
 | 项目 | 值 |
 | --- | --- |
 | 标题栏 | 40px，单行当前页标题 + 28px 头像；不再重复应用名 |
-| 侧栏 | 208px，图标 20px + 文字 13/20；选中项 3px 强调色左条 + accent-soft |
+| 侧栏 | 默认 56px 图标栏；悬停展开 208px 浮层（页面不回流）；展开态图标 20px + 文字 13/20，右上角线条钉子常驻；任何页面都不高亮 |
 | 工具条 | 44px，图标按钮 28px，文字按钮 32px |
 | 内容列 | 最大 1080px，页边距 32px；首页与题库共用同一条中线 |
 | 设置窗 | 860×640，导航 200px，内容列最大 640px，页边距 32px |
@@ -711,8 +715,8 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
 - 强调色仍默认洛谷蓝；`accentFill` 用于按钮填充，`accentText` 保证在 bg/surface 上 ≥4.5:1。
 - 材质公式（m 0–100）：外壳 `94−0.2m`%、页面纱层 `97−0.06m`%、卡片 `99−0.08m`%、
   模糊 `6+0.24m` px；默认 55。**内容面最低 91%**，正文不放在模糊上。
-- 状态：hover 6%、pressed 10%、selected accent-soft + 2–3px 强调色条；
-  焦点 2px 强调色、offset 2；行内元素用内环。
+- 状态：hover 6%、pressed 10%、列表/筛选 selected accent-soft + 2–3px 强调色条；
+  侧栏导航项**不设选中态**；焦点 2px 强调色、offset 2；行内元素用内环。
 - 阴影：`--shadow-color` 分深浅两套，卡片 L1、浮层 L2、弹窗 L3；浅色不再共用深色重阴影。
 - 玻璃只用于标题栏/侧栏/工具条/浮层；卡片只保留 1px 边框 + L1 阴影，不再嵌套 blur。
 
@@ -734,7 +738,8 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
 ### 15.7 可访问性
 
 - 中文最小 12px；所有可聚焦元素有 2px 焦点环，行内用内环。
-- 导航用 `aria-current`，切换器/命令面板用 listbox + `aria-activedescendant`，
+- 导航栏**不设 `aria-current`，也不高亮**——当前页面只由标题栏标题表达；
+  原生列表/筛选用 `aria-selected`，切换器/命令面板用 listbox + `aria-activedescendant`，
   对话框有 `role="dialog"`/`aria-modal`，通知用 `aria-live`。
 - 键盘：列表 ↑↓/Home/End/Enter；命令面板 ↑↓/Enter/Esc；设置 Esc 关闭、↑↓ 切分区；
   IDE Tab 缩进、Ctrl+Enter 提交。
@@ -742,12 +747,16 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
 
 ### 15.8 验收基线（冒烟实测）
 
-- `SMOKE_VISUAL_METRICS`：侧栏 208、标题栏 40、内容列 1080、热力图格 14、
+- `SMOKE_VISUAL_METRICS`：折叠侧栏 56、标题栏 40、内容列 1080、热力图格 14、
   卡片圆角 12、body 13px、5 张首页卡片。
-- `SMOKE_IDE`：IDE 面板 x=744 / w=536、`--ide-split=0.5`、行号 10 行、
-  代码字号 13、头高 44；主进程视图 bounds 同步为 x=208 / w=536。
-- `npm run check`：178 项静态契约（含字号/圆角/阴影扫描、令牌存在性、阅读面真实类、
-  快照水合前不保存裸 markdown，且要求正文类已出现）。
+- `SMOKE_RAIL`：浮层 208×780、10 个标签、钉子可见、`jumpFocused=true`；
+  固定后页面视图让位 208；导航点击后浮层关闭且回到主页；钉子点击后 `pinned=true`。
+- `SMOKE_RAIL_BOUNDS`：真实题面在场时页面视图 x 依次为 56 → 208 → 56。
+- `SMOKE_PERF`：`body.perf`、`--blur:0px`、标题/侧栏/内容 blur 全为 `none`；
+  `SMOKE_LAZY` 失焦冻结、聚焦恢复均为 true。
+- `LGTEST_PROFILE`：头像打开独立 `profile:<uid>` 页面；侧栏 active/aria-current 计数为 0。
+- `npm run check`：198 项静态契约（含字号/圆角/阴影扫描、令牌存在性、折叠侧栏/钉子/
+  不高亮/性能模式契约、阅读面真实类、快照水合前不保存裸 markdown，且要求正文类已出现）。
 
 ### 15.9 4.0 决策记录
 
@@ -762,3 +771,20 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
 - **为什么题面快照要等水合**：站点在水合前会把 markdown 源文本直接放进 DOM；
   抓早了离线页就是满屏 `**` 和 `$`。现在要求 `.lfe-marked` 出现、正文足够长且不是
   裸 markdown 才落盘，最多重试 5 次。
+
+### 15.10 0.5.0 折叠侧栏与性能
+
+- **折叠侧栏**：默认 56px 图标栏；鼠标移入后由独立的 `WebContentsView` 浮层展示
+  208px 完整导航。浮层覆盖在页面上方、不改变页面视图 bounds，因此展开/收起不会触发
+  页面重排。展开态右上角是线条 `pinOff/pin`：点击后侧栏常驻（页面视图让位到 208），
+  再点回到折叠；`Ctrl+B` 等价于点钉子。
+- **不高亮**：所有侧栏项目（含头像/个人主页、登录、详情页）一律没有选中底色、
+  指示条或 `aria-current`；当前页面只由标题栏标题表达。个人主页是独立的
+  `profile:<uid>` 页面，不再被归入“主页”栏目。
+- **动态降载**：窗口失焦、最小化、隐藏、页面滚动时暂停壁纸 rAF 与页面动效，
+  恢复后自动继续；滚动停止 140ms 后恢复。壁纸与页面运动统一 30fps。
+- **性能模式**：设置 → 通用 → 性能优先。开启后 `--blur:0px`，外壳/设置/页面
+  `backdrop-filter` 全部关闭，壁纸停止漂浮与缩放；内容面同时提高不透明度。
+- **卡顿根因**：内容区 `#content` 曾对整块正文做 `backdrop-filter`，切页/滚动时
+  每帧都要重新模糊整个窗口；现在内容面改为高不透明度画布，模糊只留标题栏、
+  折叠侧栏和浮层。主题/皮肤变量注入也加了签名缓存，避免每次切换重复插入 CSS。

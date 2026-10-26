@@ -6,6 +6,7 @@ const { PRELOAD, RENDERER, ASSETS } = require("./paths");
 
 const TITLE_H = 40;
 const RAIL_W = 208;
+const RAIL_COLLAPSED_W = 56;
 const TOOLBAR_H = 44;
 
 function sanitizeBounds(saved) {
@@ -155,6 +156,7 @@ function applyTheme(win, t) {
 module.exports = {
   TITLE_H,
   RAIL_W,
+  RAIL_COLLAPSED_W,
   TOOLBAR_H,
   createMainWindow,
   createSettingsWindow,

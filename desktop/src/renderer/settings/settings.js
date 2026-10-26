@@ -156,6 +156,8 @@ function applyGeneral(state) {
   const closeRadio = document.querySelector(`input[name="close"][value="${state.general.closeAction}"]`);
   if (closeRadio) closeRadio.checked = true;
   $("autolaunch").checked = !!state.general.autoLaunch;
+  $("perf-mode").checked = !!state.general.performanceMode;
+  document.body.classList.toggle("perf", !!state.general.performanceMode);
   $("notify-judge").checked = !!state.notify.judge;
   $("notify-contest").checked = !!state.notify.contest;
   $("notify-lead").value = String(state.notify.contestLeadMin || 10);
@@ -427,6 +429,7 @@ function bind() {
     radio.addEventListener("change", () => api.setGeneral({ closeAction: radio.value }));
   });
   $("autolaunch").addEventListener("change", (event) => api.setGeneral({ autoLaunch: event.target.checked }));
+  $("perf-mode").addEventListener("change", (event) => api.setGeneral({ performanceMode: event.target.checked }));
   $("notify-judge").addEventListener("change", (event) => api.setNotify({ judge: event.target.checked }));
   $("notify-contest").addEventListener("change", (event) => api.setNotify({ contest: event.target.checked }));
   $("notify-lead").addEventListener("change", (event) => {

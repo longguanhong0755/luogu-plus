@@ -76,7 +76,7 @@ function applyWallpaper(theme) {
   }, 700);
 }
 
-export function applyTheme(theme) {
+export function applyThemeVars(theme) {
   if (!theme || !theme.colors) return;
   const root = document.documentElement;
   const map = {
@@ -116,6 +116,11 @@ export function applyTheme(theme) {
   for (const key of Object.keys(map)) root.style.setProperty(key, map[key]);
   root.dataset.theme = theme.isDark ? "dark" : "light";
   root.style.colorScheme = theme.isDark ? "dark" : "light";
+}
+
+export function applyTheme(theme) {
+  if (!theme || !theme.colors) return;
+  applyThemeVars(theme);
   applyWallpaper(theme);
 }
 

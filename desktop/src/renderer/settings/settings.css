@@ -84,6 +84,24 @@ body {
   height: 100%;
 }
 
+/* ---------- 性能优先：关闭实时模糊与壁纸动画 ---------- */
+body.perf #wallpaper {
+  transform: none !important;
+}
+body.perf #titlebar,
+body.perf .set-nav,
+body.perf .set-pane {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+body.perf #titlebar,
+body.perf .set-nav {
+  background: color-mix(in srgb, var(--title) 97%, transparent);
+}
+body.perf .set-pane {
+  background: var(--bg);
+}
+
 /* ---------- 布局 ---------- */
 .set-body {
   flex: 1;
