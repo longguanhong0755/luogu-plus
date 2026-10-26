@@ -206,6 +206,28 @@ function bootstrap() {
     ctx.session.setUserAgent(UA);
     ctx.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     ctx.session.setPermissionCheckHandler(() => false);
+    // 页面里的下载（附件/素材）自动落到系统「下载」文件夹，完成后 toast，不弹另存为
+    ctx.session.on("will-download", (_event, item) => {
+      try {
+        const dir = app.getPath("downloads");
+        const filename = item.getFilename() || "download";
+        let savePath = require("node:path").join(dir, filename);
+        const dot = filename.lastIndexOf(".");
+        const stem = dot > 0 ? filename.slice(0, dot) : filename;
+        const ext = dot > 0 ? filename.slice(dot) : "";
+        for (let i = 1; i < 100; i++) {
+          if (!require("node:fs").existsSync(savePath)) break;
+          savePath = require("node:path").join(dir, `${stem}(${i})${ext}`);
+        }
+        item.setSavePath(savePath);
+        item.once("done", (_e, state) => {
+          if (state === "completed") ctx.toast("下载完成", `${filename} 已保存到「下载」文件夹。`);
+          else if (state === "interrupted") ctx.toast("下载失败", filename);
+        });
+      } catch (err) {
+        console.error("[download]", err.message);
+      }
+    });
     // lgoff 离线协议要同时挂在默认 session 和洛谷分区 session 上（页面视图用后者）
     registerOfflineProtocol(ctx);
 

@@ -832,6 +832,8 @@ class LuoguService {
         }
 
         let records = [];
+        // 热力图只要最近 140 天：翻页翻到早于窗口起点就可以停，别为边缘数据拉满 6 页
+        const heatWindowStart = Date.now() - 140 * 86400000;
         for (let page = 1; page <= 6; page++) {
           const context = await this.fetchContext(
             `/record/list?user=${encodeURIComponent(login.uid)}&page=${page}`
@@ -850,6 +852,11 @@ class LuoguService {
           if (!pageRecords.length) break;
           records = records.concat(pageRecords);
           if (pageRecords.length < 20) break;
+          const oldest = pageRecords.reduce((min, record) => {
+            const ms = toMillis(record.submitTime || record.time);
+            return ms && ms < min ? ms : min;
+          }, Infinity);
+          if (oldest < heatWindowStart) break;
         }
         next.heat = this.buildHeat(records);
         next.recent = this.buildRecent(records);

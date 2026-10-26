@@ -24,6 +24,10 @@ class Store {
     this.dir = dir;
     this.mem = new Map();
     this.timers = new Map();
+    /* 磁盘文件索引：文件名 → { mtimeMs, key, at }。
+       evict/entries 是列表保存的热路径（每次列表刷新都会跑），
+       按 mtime 缓存后只有新写/变化的文件才需要解析 JSON。 */
+    this.index = new Map();
   }
 
   init() {
@@ -105,8 +109,45 @@ class Store {
     for (const key of [...this.mem.keys()]) this.flush(key);
   }
 
-  /* 前缀枚举：key 存在 payload 里（文件名可能被转义），所以从文件内容读回 key。
-     快照类缓存量级在几十条，全量解析可接受。 */
+  /* 刷新磁盘索引：只为 mtime 变化的文件付出一次解析成本。
+     value 不进索引（条目可能上百 KB），调用方需要值时用 get(key)。 */
+  refreshIndex() {
+    let names = [];
+    try {
+      names = fs.readdirSync(this.dir).filter((name) => name.endsWith(".json"));
+    } catch {
+      names = [];
+    }
+    const live = new Set();
+    for (const name of names) {
+      live.add(name);
+      const file = path.join(this.dir, name);
+      let stat = null;
+      try {
+        stat = fs.statSync(file);
+      } catch {
+        continue;
+      }
+      const cached = this.index.get(name);
+      if (cached && cached.mtimeMs === stat.mtimeMs) continue;
+      try {
+        const value = JSON.parse(fs.readFileSync(file, "utf8"));
+        this.index.set(name, {
+          mtimeMs: stat.mtimeMs,
+          key: value && typeof value.key === "string" ? value.key : "",
+          at: (value && value.savedAt) || (value && value.at) || 0,
+        });
+      } catch {
+        this.index.set(name, { mtimeMs: stat.mtimeMs, key: "", at: 0 });
+      }
+    }
+    for (const name of [...this.index.keys()]) {
+      if (!live.has(name)) this.index.delete(name);
+    }
+  }
+
+  /* 前缀枚举：mem 优先，磁盘走 mtime 索引（不解析全量 JSON）。
+     磁盘独有条目的 value 为 undefined——现有调用方（淘汰/清理）只用 key/at。 */
   entries(prefix) {
     const out = [];
     const seen = new Set();
@@ -118,21 +159,10 @@ class Store {
     for (const [key, value] of this.mem) {
       if (key.startsWith(prefix)) push(key, value, (value && value.savedAt) || (value && value.at) || 0);
     }
-    let names = [];
-    try {
-      names = fs.readdirSync(this.dir).filter((name) => name.endsWith(".json"));
-    } catch {
-      names = [];
-    }
-    for (const name of names) {
-      try {
-        const value = JSON.parse(fs.readFileSync(path.join(this.dir, name), "utf8"));
-        const key = value && typeof value.key === "string" ? value.key : "";
-        if (!key || seen.has(key)) continue;
-        push(key, value, (value && value.savedAt) || (value && value.at) || 0);
-      } catch {
-        /* 损坏文件跳过 */
-      }
+    this.refreshIndex();
+    for (const info of this.index.values()) {
+      if (!info.key || seen.has(info.key)) continue;
+      push(info.key, undefined, info.at);
     }
     return out;
   }

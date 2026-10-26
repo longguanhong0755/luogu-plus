@@ -307,6 +307,14 @@ const notifySource = read("src/main/notify.js");
 if (/startContestWatch/.test(notifySource) && /contestLeadMin/.test(notifySource) && /lastNotifiedContestId/.test(notifySource)) ok("比赛提醒有真实调度（提前量生效，每场只提醒一次）");
 else fail("比赛提醒仍是假开关");
 
+/* R62 性能与稳定 */
+if (/refreshIndex/.test(storeSrc) && /mtimeMs/.test(storeSrc)) ok("store 淘汰路径走 mtime 索引（不再每次全量解析）");
+else fail("store 仍全量解析目录");
+if (/heatWindowStart/.test(luoguSrc)) ok("主页刷新翻到热力窗口外即停（不再固定拉 6 页）");
+else fail("主页刷新仍拉满 6 页");
+if (/will-download/.test(indexSrc)) ok("页面下载自动落「下载」文件夹并 toast");
+else fail("缺少下载处理");
+
 /* R58 反馈可见性 */
 if (/pageWc/.test(indexSrc) && /app:toast/.test(indexSrc)) ok("toast 同步发给当前页面视图（不被页面盖住）");
 else fail("页面在场时 toast 仍会被盖住");
@@ -377,8 +385,18 @@ try {
   big.flushAll();
   if (!fs.existsSync(path.join(bigDir, big.fileOf("huge")))) ok("store 拒收超过体积上限的快照");
   else fail("store 未拒收超大快照");
+  /* R62：mtime 索引 —— mem 为空的新实例也能靠索引枚举磁盘条目（淘汰路径不再全量解析） */
+  const idxDir = fs.mkdtempSync(path.join(os.tmpdir(), "lg-store-idx-"));
+  const idxStore = new Store(idxDir).init();
+  idxStore.set("problem:A", { key: "problem:A", savedAt: 10, html: "<p>x</p>" }, 0);
+  idxStore.flushAll();
+  const freshStore = new Store(idxDir).init();
+  const found = freshStore.entries("problem:");
+  if (found.length === 1 && found[0].key === "problem:A" && found[0].at === 10) ok("store mtime 索引：新实例免解析枚举磁盘条目");
+  else fail("store 索引枚举失败", JSON.stringify(found.map((item) => item.key)));
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(bigDir, { recursive: true, force: true });
+  fs.rmSync(idxDir, { recursive: true, force: true });
 } catch (err) {
   fail("store 单测异常", String((err && err.stack) || err).slice(0, 200));
 }
@@ -659,7 +677,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.8";
+const EXPECTED_VERSION = "0.5.9";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
