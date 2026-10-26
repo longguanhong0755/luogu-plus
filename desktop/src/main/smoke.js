@@ -1925,6 +1925,21 @@ async function runSmoke(ctx) {
         await wait(300);
       }
 
+      if (process.env.LG_SMOKE_PALETTE === "1") {
+        // R61 回归：命令面板含题目直达、已打开页面切换、恢复关闭页面三项
+        ctx.views.openProblem("P1001");
+        await wait(600);
+        const palPid = await ctx.win.webContents.executeJavaScript(`window.lg.palette("P1001")`);
+        const palAll = await ctx.win.webContents.executeJavaScript(`window.lg.palette("")`);
+        const hasPid = palPid.length && palPid[0].type === "problem" && palPid[0].pid === "P1001";
+        const hasReopen = palAll.some((item) => item.id === "reopen");
+        const hasPage = palAll.some((item) => item.type === "page" && /P1001/.test(item.key || ""));
+        console.log("SMOKE_PALETTE " + JSON.stringify({ hasPid, hasReopen, hasPage, count: palAll.length }));
+        if (!hasPid || !hasReopen || !hasPage) console.log("SMOKE_FAIL 命令面板缺项");
+        ctx.views.showHome();
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_AUDIT === "1") {
         await runAudit(ctx, outDir, wait);
       }

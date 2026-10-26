@@ -296,6 +296,17 @@ else fail("index.js 缺少 store 装配/退出落盘");
 if (/离线快照/.test(indexSrc) && /charset=utf-8/.test(indexSrc)) ok("离线页外壳带主题与编码声明");
 else fail("离线页外壳缺少主题或编码声明");
 
+/* R61 命令面板与比赛提醒 */
+if (/id: "reopen", label: "恢复关闭的页面"/.test(ipcSource) && /type: "page", key: page\.key/.test(ipcSource)) ok("命令面板含恢复关闭 + 已打开页面切换");
+else fail("命令面板缺项");
+if (/palette\(query, ctx\)/.test(ipcSource)) ok("palette 接入打开页面列表（ctx 透传）");
+else fail("palette 未接入 ctx");
+if (/item\.type === "page" && item\.key/.test(read("src/renderer/shell/shell.js")) && /reopen: "reopen"/.test(read("src/renderer/shell/overlays.js"))) ok("外壳可执行切换/恢复两项面板动作");
+else fail("外壳缺面板动作分支");
+const notifySource = read("src/main/notify.js");
+if (/startContestWatch/.test(notifySource) && /contestLeadMin/.test(notifySource) && /lastNotifiedContestId/.test(notifySource)) ok("比赛提醒有真实调度（提前量生效，每场只提醒一次）");
+else fail("比赛提醒仍是假开关");
+
 /* R58 反馈可见性 */
 if (/pageWc/.test(indexSrc) && /app:toast/.test(indexSrc)) ok("toast 同步发给当前页面视图（不被页面盖住）");
 else fail("页面在场时 toast 仍会被盖住");
@@ -648,7 +659,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.5.7";
+const EXPECTED_VERSION = "0.5.8";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

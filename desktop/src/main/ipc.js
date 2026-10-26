@@ -49,6 +49,7 @@ const ACTIONS = [
   { type: "action", id: "training", label: "训练" },
   { type: "action", id: "contest", label: "比赛" },
   { type: "action", id: "record", label: "记录" },
+  { type: "action", id: "reopen", label: "恢复关闭的页面" },
   { type: "action", id: "discuss", label: "讨论" },
   { type: "action", id: "article", label: "文章" },
   { type: "action", id: "chat", label: "聊天" },
@@ -58,17 +59,24 @@ const ACTIONS = [
   { type: "action", id: "settings", label: "设置" },
 ];
 
-function palette(query) {
+function palette(query, ctx) {
   const q = String(query || "").trim();
   const out = [];
   const pid = q.match(/^([A-Za-z]{1,4}\d+[A-Za-z0-9]*)/);
   if (pid) {
     out.push({ type: "problem", pid: pid[1].toUpperCase(), label: "打开题目 " + pid[1].toUpperCase() });
   }
+  // 已经打开的页面可以直接切过去（Ctrl+K 也是页面间跳转的入口）
+  if (ctx && ctx.views && ctx.views.listOpen) {
+    for (const page of ctx.views.listOpen()) {
+      if (q && !(page.title || "").includes(q) && !(page.key || "").toLowerCase().includes(q.toLowerCase())) continue;
+      out.push({ type: "page", key: page.key, label: "切换到 " + (page.title || page.key) });
+    }
+  }
   for (const action of ACTIONS) {
     if (!q || action.label.includes(q) || action.id.includes(q.toLowerCase())) out.push(action);
   }
-  return out.slice(0, 10);
+  return out.slice(0, 12);
 }
 
 function registerIpc(ctx) {
@@ -362,7 +370,7 @@ function registerIpc(ctx) {
     return state(ctx);
   });
 
-  ipcMain.handle("app:palette", (_event, query) => palette(query));
+  ipcMain.handle("app:palette", (_event, query) => palette(query, ctx));
 
   ipcMain.handle("app:switcher", () => ctx.views.listOpen());
 

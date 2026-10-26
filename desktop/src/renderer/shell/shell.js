@@ -127,6 +127,14 @@ async function boot() {
       window.lg.openProblem(item.pid);
       return;
     }
+    if (item.type === "page" && item.key) {
+      window.lg.switchTo(item.key);
+      return;
+    }
+    if (item.id === "reopen") {
+      window.lg.viewAction("reopen");
+      return;
+    }
     if (
       ["home", "problems", "training", "contest", "record", "discuss", "article", "chat", "notification", "login"].includes(
         item.id

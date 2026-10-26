@@ -14,6 +14,7 @@ const ACTION_ICONS = {
   notification: "bell",
   checkin: "calendarCheck",
   login: "user",
+  reopen: "reopen",
   settings: "settings",
   problem: "code",
 };
@@ -124,14 +125,15 @@ export function initOverlays(actions) {
       row.id = rowId("pal", index);
       row.setAttribute("role", "option");
       row.setAttribute("aria-selected", index === selected ? "true" : "false");
-      row.innerHTML = icon(item.type === "problem" ? "code" : ACTION_ICONS[item.id] || "search");
+      row.innerHTML =
+        icon(item.type === "problem" ? "code" : item.type === "page" ? "library" : ACTION_ICONS[item.id] || "search");
       const label = document.createElement("span");
       label.className = "pal-label";
       label.textContent = item.label;
       row.appendChild(label);
       const kind = document.createElement("span");
       kind.className = "pal-kind";
-      kind.textContent = item.type === "problem" ? "题目" : "功能";
+      kind.textContent = item.type === "problem" ? "题目" : item.type === "page" ? "已打开" : "功能";
       row.appendChild(kind);
       row.addEventListener("mouseenter", () => {
         if (selected === index) return;
