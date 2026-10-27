@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("lg", {
   nextWallpaper: () => ipcRenderer.invoke("app:nextWallpaper"),
   nav: (target) => ipcRenderer.invoke("app:nav", target),
   library: (payload) => ipcRenderer.invoke("app:library", payload),
+  libraryTags: () => ipcRenderer.invoke("app:libraryTags"),
   openDetail: (payload) => ipcRenderer.invoke("app:openDetail", payload),
   openCustom: (payload) => ipcRenderer.invoke("app:openCustom", payload),
   openWebFallback: (kind) => ipcRenderer.invoke("app:openWebFallback", kind),

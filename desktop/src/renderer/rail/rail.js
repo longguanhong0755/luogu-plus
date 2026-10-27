@@ -9,6 +9,7 @@ const railBottom = $("rail-bottom");
 const pin = $("rail-pin");
 const jumpForm = $("rail-jump");
 const jumpInput = $("rail-jump-input");
+const railUser = $("rail-user");
 const wall = $("wallpaper");
 const layer = wall ? wall.querySelector(".wall-layer") : null;
 
@@ -46,8 +47,57 @@ function renderRail() {
   railSignature = signature;
   railTop.textContent = "";
   railBottom.textContent = "";
-  for (const item of state.rail.top) railTop.appendChild(navButton(item));
-  for (const item of state.rail.bottom) railBottom.appendChild(navButton(item));
+  appendRailItems(railTop, state.rail.top);
+  appendRailItems(railBottom, state.rail.bottom);
+}
+
+function appendRailItems(container, items) {
+  let lastGroup = "";
+  for (const item of items) {
+    if (item.group && item.group !== lastGroup) {
+      const group = document.createElement("div");
+      group.className = "rail-group";
+      group.dataset.group = item.group;
+      const label = document.createElement("span");
+      label.className = "rail-group-label";
+      label.textContent = item.groupLabel || "";
+      group.appendChild(label);
+      container.appendChild(group);
+      lastGroup = item.group;
+    }
+    container.appendChild(navButton(item));
+  }
+}
+
+function renderRailUser() {
+  if (!railUser || !state) return;
+  const user = state.user || {};
+  const logged = !!user.loggedIn;
+  const name = logged ? String(user.name || "我的洛谷") : "未登录";
+  const sub = logged ? "个人主页" : "点击登录";
+  railUser.classList.toggle("guest", !logged);
+  railUser.title = name + " · " + sub;
+  railUser.setAttribute("aria-label", name + "，" + sub);
+  const nameEl = railUser.querySelector(".rail-user-name");
+  const subEl = railUser.querySelector(".rail-user-sub");
+  if (nameEl) nameEl.textContent = name;
+  if (subEl) subEl.textContent = sub;
+  const box = railUser.querySelector(".rail-user-avatar");
+  if (!box) return;
+  const url = logged && user.avatar ? String(user.avatar) : "";
+  if (url) {
+    if (box.dataset.url !== url) {
+      box.dataset.url = url;
+      box.textContent = "";
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = "";
+      box.appendChild(img);
+    }
+  } else {
+    box.dataset.url = "";
+    box.textContent = "洛";
+  }
 }
 
 function syncPin() {
@@ -131,6 +181,7 @@ function apply(next) {
   applyThemeVars(next.theme);
   applyWallpaper();
   renderRail();
+  renderRailUser();
   syncPin();
   syncWall();
 }
@@ -156,6 +207,14 @@ pin.addEventListener("click", () => {
   syncPin();
   window.lgRail.setRailPinned(next);
 });
+
+if (railUser) {
+  railUser.addEventListener("click", () => {
+    const logged = !!(state && state.user && state.user.loggedIn);
+    window.lgRail.railHover({ open: false, force: true });
+    window.lgRail.nav(logged ? "profile" : "login");
+  });
+}
 
 document.documentElement.addEventListener("mouseenter", () => window.lgRail.railHover(true));
 document.documentElement.addEventListener("mouseleave", () => window.lgRail.railHover(false));

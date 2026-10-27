@@ -208,9 +208,14 @@ function registerIpc(ctx) {
       page: payload.page,
       keyword: payload.keyword,
       difficulty: payload.difficulty,
+      type: payload.type,
+      tags: payload.tags,
+      content: payload.content,
       force: payload.force,
     });
   });
+
+  ipcMain.handle("app:libraryTags", async () => ctx.luogu.fetchTags());
 
   ipcMain.handle("app:openDetail", (_event, payload) => {
     ctx.views.hideRailOverlay();

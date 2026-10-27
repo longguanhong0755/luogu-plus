@@ -50,17 +50,72 @@ const STATUS_TEXT = {
   14: "UC",
 };
 
+/* 与网页版题库难度口径一致（2026-10 实测 luogu.com.cn 题目列表） */
 const DIFFICULTY = {
   0: { name: "暂无评定", color: "#9aa0aa" },
-  1: { name: "入门", color: "#f0616d" },
-  2: { name: "普及−", color: "#f2a33c" },
-  3: { name: "普及/提高−", color: "#f2c94c" },
-  4: { name: "普及+/提高", color: "#3ecf8e" },
-  5: { name: "提高+/省选−", color: "#5b8cff" },
-  6: { name: "省选/NOI−", color: "#a86bff" },
-  7: { name: "NOI/NOI+", color: "#8b8f9c" },
-  8: { name: "NOI+/CTSC", color: "#5d6270" },
+  1: { name: "入门", color: "#fe4c61" },
+  2: { name: "普及−", color: "#f39c11" },
+  3: { name: "普及", color: "#ffc116" },
+  4: { name: "普及+/提高−", color: "#52c41a" },
+  5: { name: "提高", color: "#13c2c2" },
+  6: { name: "提高+/省选−", color: "#3498db" },
+  7: { name: "省选/NOI−", color: "#9d3dcf" },
+  8: { name: "NOI/NOI+/CTS", color: "#0e1d69" },
 };
+
+/* 题库分区：luogu = 洛谷（主题库 + 入门与面试） */
+const PROBLEM_TYPES = new Set(["luogu", "P", "B", "CF", "SP", "AT", "UVA"]);
+
+/* 标签筛选编码：组内逗号=或，组间竖线=与（与网页版 URL 完全一致） */
+function normalizeTagGroups(value) {
+  const groups = [];
+  for (const raw of Array.isArray(value) ? value : String(value || "").split("|")) {
+    const ids = (Array.isArray(raw) ? raw : String(raw).split(","))
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    const unique = [...new Set(ids)].sort((a, b) => a - b);
+    if (unique.length) groups.push(unique);
+  }
+  const seen = new Set();
+  return groups.filter((group) => {
+    const key = group.join(",");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function tagQuery(groups) {
+  return groups.map((group) => group.join(",")).join("|");
+}
+
+/* /_lfe/tags 精简：只保留前端需要的字段，避免把几百个无关字段带进渲染进程 */
+function normalizeTagCatalog(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const tags = Array.isArray(raw.tags)
+    ? raw.tags
+        .map((tag) => ({
+          id: Number(tag.id) || 0,
+          name: String(tag.name || ""),
+          type: Number(tag.type) || 0,
+          parent: Number(tag.parent) || 0,
+        }))
+        .filter((tag) => tag.id && tag.name)
+    : [];
+  const types = Array.isArray(raw.types)
+    ? raw.types
+        .map((type) => ({
+          id: Number(type.id) || 0,
+          type: String(type.type || ""),
+          name: String(type.name || ""),
+          color: String(type.color || ""),
+          order: Number(type.order) || 0,
+        }))
+        .filter((type) => type.id && type.name)
+    : [];
+  if (!tags.length) return null;
+  return { tags, types };
+}
 
 /* 语言 id 表在 ./langs（/_lfe/config 实测）。这里只消费 resolveLangId：
    不认识的语言返回 null → 拒绝提交并转页面内提交辅助，绝不悄悄换成默认语言。 */
@@ -165,6 +220,8 @@ class LuoguService {
     this.refreshing = false;
     this.lastRefresh = 0;
     this.libCache = new Map();
+    this.tagsCache = null;
+    this.tagsPromise = null;
     /* 断网可用：在线状态由主窗口 navigator.onLine 轮询 + 页面 fetch 失败反馈共同维护。 */
     this.online = true;
     this.onlineTimer = null;
@@ -537,12 +594,77 @@ class LuoguService {
     if (store.evict("lib:", 60) > 80) store.evict("lib:", 40);
   }
 
+  /* 标签目录是公开接口（不需要登录），缓存 6 小时；过期先用旧目录再后台刷新。 */
+  async fetchTags(options = {}) {
+    const force = !!options.force;
+    const now = Date.now();
+    const fresh = 6 * 60 * 60 * 1000;
+    if (!force && this.tagsCache && now - this.tagsCache.at < fresh) return this.tagsCache.payload;
+    if (!force && this.tagsPromise) return this.tagsPromise;
+
+    const stored = this.ctx.store ? this.ctx.store.get("libtags") : null;
+    const storedPayload =
+      stored && stored.payload && Array.isArray(stored.payload.tags) && stored.payload.tags.length
+        ? stored.payload
+        : null;
+    if (!force && storedPayload && now - (stored.at || 0) < 24 * 60 * 60 * 1000) {
+      this.tagsCache = { at: stored.at, payload: storedPayload };
+      if (now - stored.at >= fresh) this.fetchTags({ force: true }).catch(() => {});
+      return storedPayload;
+    }
+    if (!this.online) {
+      if (storedPayload) return Object.assign({}, storedPayload, { stale: true, offline: true });
+      return { tags: [], types: [], error: "当前离线，标签目录还没有缓存过。" };
+    }
+
+    const run = (async () => {
+      const raw = await this.exec(
+        `(async () => {
+          try {
+            const r = await fetch("/_lfe/tags", { credentials: "include", signal: AbortSignal.timeout(9000) });
+            if (!r.ok) return { ok: false, status: r.status };
+            return { ok: true, data: await r.json() };
+          } catch (e) {
+            return { ok: false, error: String(e).slice(0, 120), online: navigator.onLine };
+          }
+        })()`
+      );
+      const payload = raw && raw.ok ? normalizeTagCatalog(raw.data) : null;
+      if (!payload) {
+        if (storedPayload) return Object.assign({}, storedPayload, { stale: true, error: "标签目录刷新失败，已使用缓存。" });
+        return { tags: [], types: [], error: "标签目录加载失败，请检查网络。" };
+      }
+      const saved = Object.assign({}, payload, { at: now });
+      this.tagsCache = { at: now, payload: saved };
+      if (this.ctx.store) this.ctx.store.set("libtags", saved, 500);
+      return saved;
+    })();
+    this.tagsPromise = run;
+    try {
+      return await run;
+    } finally {
+      if (this.tagsPromise === run) this.tagsPromise = null;
+    }
+  }
+
   async fetchLibrary(kind, options = {}) {
     const page = Math.max(1, Number(options.page) || 1);
     const keyword = String(options.keyword || "").trim();
     const difficulty = String(options.difficulty || "").trim();
+    const type = kind === "problems" && PROBLEM_TYPES.has(String(options.type || ""))
+      ? String(options.type)
+      : "";
+    const tagGroups = kind === "problems" ? normalizeTagGroups(options.tags) : [];
+    const searchContent = kind === "problems" && !!options.content;
     const force = !!options.force;
-    const cacheKey = [kind, page, keyword, difficulty].join("|");
+    // 无筛选时保持原 key（problems|1||），旧缓存与冒烟打桩仍可直接命中
+    const cacheKey = [kind, page, keyword, difficulty]
+      .concat(
+        type && type !== "luogu" ? ["t:" + type] : [],
+        tagGroups.length ? ["g:" + tagQuery(tagGroups)] : [],
+        searchContent ? ["c:1"] : []
+      )
+      .join("|");
     const cached = this.libCache.get(cacheKey);
     if (!force && cached && Date.now() - cached.at < 45000) return cached.payload;
 
@@ -617,7 +739,14 @@ class LuoguService {
     const params = new URLSearchParams();
     params.set("page", String(page));
     if (keyword) params.set("keyword", keyword);
-    if (difficulty) params.set("difficulty", difficulty);
+    if (kind === "problems") {
+      if (type && type !== "luogu") params.set("type", type);
+      if (difficulty) params.set("difficulty", difficulty);
+      if (tagGroups.length) params.set("tag", tagQuery(tagGroups));
+      if (searchContent) params.set("content", "1");
+    } else if (difficulty) {
+      params.set("difficulty", difficulty);
+    }
     const paths = {
       problems: "/problem/list?" + params.toString(),
       training: "/training/list?" + params.toString(),
@@ -660,6 +789,7 @@ class LuoguService {
           submissions: Number(item.totalSubmit) || 0,
           accepted: Number(item.totalAccepted) || 0,
           provider: item.provider ? String(item.provider.name || "") : "",
+          tags: Array.isArray(item.tags) ? item.tags.map((tag) => Number(tag) || 0).filter(Boolean) : [],
         };
       });
     } else if (kind === "training") {

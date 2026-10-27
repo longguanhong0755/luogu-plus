@@ -3,22 +3,45 @@
    这是「客户端而不是套壳」的核心：列表滚动、搜索、筛选都不加载整页。 */
 import { icon } from "./icons.js";
 
+/* 题库分区与网页版一致：luogu = 洛谷（主题库 + 入门与面试） */
+const PROBLEM_TYPES = [
+  ["luogu", "洛谷"],
+  ["P", "主题库"],
+  ["B", "入门与面试"],
+  ["CF", "Codeforces"],
+  ["SP", "SPOJ"],
+  ["AT", "AtCoder"],
+  ["UVA", "UVa"],
+];
+
+const DIFFICULTIES = [
+  [1, "入门", "#fe4c61"],
+  [2, "普及−", "#f39c11"],
+  [3, "普及", "#ffc116"],
+  [4, "普及+/提高−", "#52c41a"],
+  [5, "提高", "#13c2c2"],
+  [6, "提高+/省选−", "#3498db"],
+  [7, "省选/NOI−", "#9d3dcf"],
+  [8, "NOI/NOI+/CTS", "#0e1d69"],
+];
+
+const TAG_TYPES = [
+  [2, "算法"],
+  [3, "来源"],
+  [4, "时间"],
+  [1, "区域"],
+  [5, "特殊题目"],
+];
+
+let tagCatalog = null;
+let tagCatalogError = "";
+let openDiffState = null;
+
 const META = {
   problems: {
     title: "题库",
     search: true,
     empty: "没有找到题目",
-    filters: [
-      ["", "全部"],
-      ["1", "入门"],
-      ["2", "普及−"],
-      ["3", "普及/提高−"],
-      ["4", "普及+/提高"],
-      ["5", "提高+/省选−"],
-      ["6", "省选/NOI−"],
-      ["7", "NOI/NOI+"],
-      ["8", "NOI+/CTSC"],
-    ],
   },
   training: { title: "训练", empty: "暂无题单" },
   contest: {
@@ -83,6 +106,50 @@ function fmtDateTime(ms) {
   return `${d.getMonth() + 1} 月 ${d.getDate()} 日 周${WEEK[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function difficultyName(level) {
+  const hit = DIFFICULTIES.find(([id]) => id === Number(level));
+  return hit ? hit[1] : "";
+}
+
+function encodeDifficulty(min, max) {
+  const low = Number(min) || 0;
+  const high = Number(max) || 0;
+  if (!low || !high) return "";
+  return low === high ? String(low) : low + "|" + high;
+}
+
+function difficultyRangeText(min, max) {
+  if (!min || !max) return "";
+  return min === max ? difficultyName(min) : `${difficultyName(min)} ~ ${difficultyName(max)}`;
+}
+
+function catalogTag(id) {
+  if (!tagCatalog || !tagCatalog.byId) return null;
+  return tagCatalog.byId.get(Number(id)) || null;
+}
+
+function selectedTagGroups(ids) {
+  const groups = new Map();
+  for (const raw of ids || []) {
+    const id = Number(raw) || 0;
+    if (!id) continue;
+    const tag = catalogTag(id);
+    const type = tag ? Number(tag.type) || 0 : 0;
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(id);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, group]) => [...new Set(group)].sort((a, b) => a - b));
+}
+
+function prepareCatalog(payload) {
+  if (!payload || !Array.isArray(payload.tags) || !payload.tags.length) return null;
+  const byId = new Map();
+  for (const tag of payload.tags) byId.set(Number(tag.id), tag);
+  return Object.assign({}, payload, { byId });
+}
+
 function contestState(item) {
   const now = Date.now();
   if (item.start && now < item.start) return "upcoming";
@@ -105,6 +172,13 @@ export function initLibrary(actions) {
   let lastSignature = "";
   let searchTimer = null;
 
+  document.addEventListener("click", (event) => {
+    if (!openDiffState) return;
+    const wrap = openDiffState.dom.problemDiffWrap;
+    if (wrap && wrap.contains(event.target)) return;
+    closeDiffMenu(openDiffState);
+  });
+
   function ensure(kind) {
     if (store.has(kind)) return store.get(kind);
     const meta = META[kind] || { title: kind, empty: "暂无内容" };
@@ -116,6 +190,17 @@ export function initLibrary(actions) {
       page: 0,
       keyword: "",
       difficulty: "",
+      difficultyMin: 0,
+      difficultyMax: 0,
+      type: "luogu",
+      tags: [],
+      tagDraft: new Set(),
+      tagType: 2,
+      tagQuery: "",
+      content: false,
+      showTags: localStorage.getItem("lg.lib.showTags") !== "0",
+      catalog: tagCatalog,
+      catalogLoading: false,
       filter: "all",
       loading: false,
       loadingVisible: false,
@@ -137,6 +222,7 @@ export function initLibrary(actions) {
   }
 
   function buildShell(state) {
+    if (openDiffState) closeDiffMenu(openDiffState);
     root.textContent = "";
     const wrap = el("div", "lib-wrap");
     const head = el("div", "lib-top");
@@ -209,8 +295,14 @@ export function initLibrary(actions) {
     web.addEventListener("click", () => actions.webFallback(state.kind));
     titleRow.appendChild(web);
 
+    let problemPanel = null;
     const filters = el("div", "lib-filters");
     head.appendChild(titleRow);
+    if (state.kind === "problems") {
+      problemPanel = buildProblemBar(state);
+      head.appendChild(problemPanel.bar);
+      head.appendChild(problemPanel.selected);
+    }
     head.appendChild(filters);
 
     const list = el("div", "lib-list");
@@ -249,16 +341,673 @@ export function initLibrary(actions) {
     wrap.appendChild(list);
     wrap.appendChild(foot);
     root.appendChild(wrap);
+    if (problemPanel) {
+      wrap.appendChild(problemPanel.modal);
+    }
 
-    state.dom = { count, filters, list, foot, search, clear, titleRow, refresh, web };
+    state.dom = {
+      count,
+      filters,
+      list,
+      foot,
+      search,
+      clear,
+      titleRow,
+      refresh,
+      web,
+      problemBar: problemPanel ? problemPanel.bar : null,
+      problemSelected: problemPanel ? problemPanel.selected : null,
+      problemTypes: problemPanel ? problemPanel.types : null,
+      problemDiffBtn: problemPanel ? problemPanel.diffBtn : null,
+      problemDiffText: problemPanel ? problemPanel.diffText : null,
+      problemDiffMenu: problemPanel ? problemPanel.diffMenu : null,
+      problemDiffWrap: problemPanel ? problemPanel.diffWrap : null,
+      problemTagBtn: problemPanel ? problemPanel.tagBtn : null,
+      problemClear: problemPanel ? problemPanel.clearBtn : null,
+      problemTagCount: problemPanel ? problemPanel.tagCount : null,
+      contentBtn: problemPanel ? problemPanel.contentBtn : null,
+      showTagsBtn: problemPanel ? problemPanel.showTagsBtn : null,
+      tagModal: problemPanel ? problemPanel.modal : null,
+      tagTabs: problemPanel ? problemPanel.tagTabs : null,
+      tagSearch: problemPanel ? problemPanel.tagSearch : null,
+      tagSearchInput: problemPanel ? problemPanel.tagSearchInput : null,
+      tagCatalogBox: problemPanel ? problemPanel.tagCatalogBox : null,
+      tagSelected: problemPanel ? problemPanel.tagSelected : null,
+      tagConfirm: problemPanel ? problemPanel.tagConfirm : null,
+      tagClear: problemPanel ? problemPanel.tagClear : null,
+      tagStatus: problemPanel ? problemPanel.tagStatus : null,
+    };
     state.built = true;
+    if (state.kind === "problems") {
+      renderProblemFilters(state);
+      if (!tagCatalog) loadTagCatalog(state);
+    }
     renderFilters(state);
+  }
+
+  function buildProblemBar(state) {
+    const bar = el("div", "lib-problem-bar");
+
+    const typeRow = el("div", "lib-filter-row");
+    typeRow.appendChild(el("span", "lib-filter-caption", "所属题库"));
+    const types = el("div", "lib-type-tabs");
+    types.setAttribute("role", "tablist");
+    types.setAttribute("aria-label", "选择题库");
+    for (const [value, label] of PROBLEM_TYPES) {
+      const btn = el("button", "lib-type", label);
+      btn.type = "button";
+      btn.dataset.type = value;
+      btn.setAttribute("role", "tab");
+      btn.addEventListener("click", () => {
+        if (state.type === value) return;
+        state.type = value;
+        state.activeIndex = 0;
+        renderProblemFilters(state);
+        load(state, 1, { force: true });
+      });
+      types.appendChild(btn);
+    }
+    typeRow.appendChild(types);
+    bar.appendChild(typeRow);
+
+    const diffRow = el("div", "lib-filter-row");
+    diffRow.appendChild(el("span", "lib-filter-caption", "筛选条件"));
+    const diffWrap = el("div", "lib-diff-wrap");
+    const diffBtn = el("button", "lib-diff-btn empty");
+    diffBtn.type = "button";
+    diffBtn.title = "题目难度范围";
+    diffBtn.setAttribute("aria-haspopup", "listbox");
+    diffBtn.setAttribute("aria-expanded", "false");
+    const diffText = el("span", "lib-diff-btn-text", "题目难度范围");
+    diffBtn.appendChild(diffText);
+    const caret = el("span", "lib-diff-caret");
+    caret.innerHTML = icon("chevronDown");
+    diffBtn.appendChild(caret);
+
+    const diffMenu = el("div", "lib-diff-menu");
+    diffMenu.hidden = true;
+    diffMenu.setAttribute("role", "listbox");
+    diffMenu.setAttribute("aria-label", "题目难度范围");
+    diffMenu.setAttribute("aria-multiselectable", "true");
+    diffMenu.appendChild(diffItem(state, 0, "不限难度", ""));
+    for (const [level, label, color] of DIFFICULTIES) {
+      diffMenu.appendChild(diffItem(state, level, label, color));
+    }
+    diffBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const willOpen = diffMenu.hidden;
+      if (openDiffState && openDiffState !== state) closeDiffMenu(openDiffState);
+      if (willOpen) {
+        diffMenu.hidden = false;
+        openDiffState = state;
+        const current = diffMenu.querySelector(".lib-diff-item.on");
+        if (current) current.focus();
+      } else {
+        closeDiffMenu(state);
+      }
+      syncDiffBtn(state);
+    });
+    diffMenu.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      closeDiffMenu(state);
+      diffBtn.focus();
+    });
+    diffWrap.appendChild(diffBtn);
+    diffWrap.appendChild(diffMenu);
+
+    const tools = el("div", "lib-filter-tools");
+    const tagBtn = el("button", "lib-tag-btn");
+    tagBtn.type = "button";
+    tagBtn.innerHTML = icon("tag");
+    tagBtn.appendChild(el("span", "", "标签"));
+    const tagCount = el("span", "lib-tag-count", "");
+    tagBtn.appendChild(tagCount);
+    tagBtn.addEventListener("click", () => openTagModal(state));
+    tools.appendChild(tagBtn);
+
+    const contentBtn = el("button", "lib-toggle", "搜索题面");
+    contentBtn.type = "button";
+    contentBtn.title = "关键字同时匹配题面内容";
+    contentBtn.setAttribute("aria-pressed", "false");
+    contentBtn.addEventListener("click", () => {
+      state.content = !state.content;
+      state.activeIndex = 0;
+      renderProblemFilters(state);
+      load(state, 1, { force: true });
+    });
+    tools.appendChild(contentBtn);
+
+    const showTagsBtn = el("button", "lib-toggle", "显示算法");
+    showTagsBtn.type = "button";
+    showTagsBtn.title = "在题目行内显示算法标签";
+    showTagsBtn.setAttribute("aria-pressed", "false");
+    showTagsBtn.addEventListener("click", () => {
+      state.showTags = !state.showTags;
+      localStorage.setItem("lg.lib.showTags", state.showTags ? "1" : "0");
+      renderProblemFilters(state);
+      renderRows(state);
+    });
+    tools.appendChild(showTagsBtn);
+
+    diffRow.appendChild(diffWrap);
+    diffRow.appendChild(tools);
+    bar.appendChild(diffRow);
+
+    const selected = el("div", "lib-selected");
+    selected.hidden = true;
+    bar.appendChild(selected);
+
+    const modal = buildTagModal(state);
+    return {
+      bar,
+      selected,
+      types,
+      diffBtn,
+      diffText,
+      diffMenu,
+      diffWrap,
+      tagBtn,
+      tagCount,
+      contentBtn,
+      showTagsBtn,
+      modal,
+      ...modal.parts,
+    };
+  }
+
+  function diffItem(state, level, label, color) {
+    const btn = el("button", "lib-diff-item");
+    btn.type = "button";
+    btn.dataset.level = String(level);
+    btn.setAttribute("role", "option");
+    const dot = el("span", "lib-diff-dot" + (color ? "" : " any"));
+    if (color) dot.style.background = color;
+    btn.appendChild(dot);
+    btn.appendChild(el("span", "lib-diff-item-name", label));
+    const check = el("span", "lib-diff-check");
+    check.innerHTML = icon("check");
+    btn.appendChild(check);
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      pickDifficulty(state, level);
+      if (!level) closeDiffMenu(state);
+    });
+    return btn;
+  }
+
+  function syncDiffBtn(state) {
+    const btn = state.dom.problemDiffBtn;
+    const text = state.dom.problemDiffText;
+    if (!btn || !text) return;
+    const label = difficultyRangeText(state.difficultyMin, state.difficultyMax);
+    text.textContent = label || "题目难度范围";
+    btn.classList.toggle("on", !!label);
+    btn.classList.toggle("empty", !label);
+    const open = !!(state.dom.problemDiffMenu && !state.dom.problemDiffMenu.hidden);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function closeDiffMenu(state) {
+    if (state && state.dom.problemDiffMenu) state.dom.problemDiffMenu.hidden = true;
+    if (openDiffState === state) openDiffState = null;
+    syncDiffBtn(state);
+  }
+
+  function buildTagModal(state) {
+    const modal = el("div", "lib-modal");
+    modal.hidden = true;
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-label", "选择标签");
+
+    const backdrop = el("div", "lib-modal-backdrop");
+    backdrop.addEventListener("click", () => closeTagModal(state));
+    modal.appendChild(backdrop);
+
+    const card = el("div", "lib-modal-card");
+    const head = el("div", "lib-modal-head");
+    head.appendChild(el("h2", "lib-modal-title", "选择标签"));
+    const close = el("button", "lib-icon");
+    close.type = "button";
+    close.title = "关闭";
+    close.setAttribute("aria-label", "关闭标签选择");
+    close.innerHTML = icon("close");
+    close.addEventListener("click", () => closeTagModal(state));
+    head.appendChild(close);
+    card.appendChild(head);
+
+    const search = el("label", "lib-modal-search");
+    search.innerHTML = icon("search");
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.placeholder = "搜索全部标签";
+    searchInput.autocomplete = "off";
+    searchInput.spellcheck = false;
+    searchInput.setAttribute("aria-label", "搜索全部标签");
+    searchInput.addEventListener("input", () => {
+      state.tagQuery = searchInput.value.trim();
+      renderTagCatalog(state);
+    });
+    search.appendChild(searchInput);
+    card.appendChild(search);
+
+    const tabs = el("div", "lib-tag-tabs");
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "标签分类");
+    card.appendChild(tabs);
+
+    const status = el("div", "lib-tag-status");
+    card.appendChild(status);
+
+    const main = el("div", "lib-tag-main");
+    const catalogBox = el("div", "lib-tag-catalog");
+    const selected = el("div", "lib-tag-selected");
+    main.appendChild(catalogBox);
+    main.appendChild(selected);
+    card.appendChild(main);
+
+    const foot = el("div", "lib-modal-foot");
+    const hint = el("span", "lib-tag-hint", "同类标签满足任一，不同类标签需同时满足");
+    const clear = el("button", "lib-modal-btn quiet", "清空");
+    clear.type = "button";
+    clear.addEventListener("click", () => {
+      state.tagDraft.clear();
+      renderTagModal(state);
+    });
+    const cancel = el("button", "lib-modal-btn", "取消");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => closeTagModal(state));
+    const confirm = el("button", "lib-modal-btn primary", "确定");
+    confirm.type = "button";
+    confirm.addEventListener("click", () => {
+      state.tags = [...state.tagDraft].filter((id) => Number(id) > 0);
+      state.activeIndex = 0;
+      closeTagModal(state);
+      renderProblemFilters(state);
+      load(state, 1, { force: true });
+    });
+    foot.appendChild(hint);
+    foot.appendChild(clear);
+    foot.appendChild(cancel);
+    foot.appendChild(confirm);
+    card.appendChild(foot);
+
+    modal.appendChild(card);
+    modal.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        closeTagModal(state);
+      }
+    });
+    modal.parts = {
+      tagTabs: tabs,
+      tagSearch: search,
+      tagSearchInput: searchInput,
+      tagCatalogBox: catalogBox,
+      tagSelected: selected,
+      tagConfirm: confirm,
+      tagClear: clear,
+      tagStatus: status,
+    };
+    return modal;
+  }
+
+  function openTagModal(state) {
+    if (openDiffState) closeDiffMenu(openDiffState);
+    state.tagDraft = new Set(state.tags);
+    const firstType = state.tags.map(catalogTag).find((tag) => tag && TAG_TYPES.some(([id]) => id === Number(tag.type)));
+    state.tagType = firstType ? Number(firstType.type) : TAG_TYPES[0][0];
+    state.tagQuery = "";
+    if (state.dom.tagSearchInput) state.dom.tagSearchInput.value = "";
+    if (state.dom.tagModal) state.dom.tagModal.hidden = false;
+    renderTagModal(state);
+    if (!tagCatalog && !state.catalogLoading) loadTagCatalog(state);
+    requestAnimationFrame(() => {
+      if (state.dom.tagSearchInput) state.dom.tagSearchInput.focus();
+    });
+  }
+
+  function closeTagModal(state) {
+    if (state.dom.tagModal) state.dom.tagModal.hidden = true;
+    state.tagQuery = "";
+    if (state.dom.tagSearchInput) state.dom.tagSearchInput.value = "";
+  }
+
+  function renderTagModal(state) {
+    if (!state.dom.tagModal || state.dom.tagModal.hidden) return;
+    renderTagTabs(state);
+    renderTagCatalog(state);
+    renderTagSelected(state);
+    renderTagStatus(state);
+  }
+
+  function renderTagTabs(state) {
+    const tabs = state.dom.tagTabs;
+    if (!tabs) return;
+    tabs.textContent = "";
+    for (const [id, label] of TAG_TYPES) {
+      const count = [...state.tagDraft].filter((tagId) => {
+        const tag = catalogTag(tagId);
+        return tag && Number(tag.type) === id;
+      }).length;
+      const btn = el("button", "lib-tag-tab");
+      btn.type = "button";
+      btn.setAttribute("role", "tab");
+      btn.appendChild(el("span", "", label));
+      if (count) btn.appendChild(el("span", "lib-tag-tab-count", String(count)));
+      const on = state.tagType === id;
+      btn.classList.toggle("on", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+      btn.addEventListener("click", () => {
+        if (state.tagType === id) return;
+        state.tagType = id;
+        state.tagQuery = "";
+        if (state.dom.tagSearchInput) state.dom.tagSearchInput.value = "";
+        renderTagModal(state);
+      });
+      tabs.appendChild(btn);
+    }
+  }
+
+  function tagChip(state, tag) {
+    const chip = el("button", "lib-tag-chip", tag.name);
+    chip.type = "button";
+    chip.dataset.id = String(tag.id);
+    const on = state.tagDraft.has(Number(tag.id));
+    chip.classList.toggle("on", on);
+    chip.setAttribute("aria-pressed", on ? "true" : "false");
+    chip.addEventListener("click", () => {
+      const id = Number(tag.id);
+      if (state.tagDraft.has(id)) state.tagDraft.delete(id);
+      else state.tagDraft.add(id);
+      renderTagModal(state);
+    });
+    return chip;
+  }
+
+  function renderTagCatalog(state) {
+    const box = state.dom.tagCatalogBox;
+    if (!box) return;
+    box.textContent = "";
+    const catalog = state.catalog;
+    if (!catalog) return;
+
+    const typeTags = catalog.tags.filter((tag) => Number(tag.type) === state.tagType);
+    const query = state.tagQuery.trim().toLowerCase();
+    if (query) {
+      const hits = catalog.tags.filter(
+        (tag) => Number(tag.id) > 0 && String(tag.name || "").toLowerCase().includes(query)
+      );
+      const section = el("div", "lib-tag-section");
+      section.appendChild(el("div", "lib-tag-section-title", hits.length ? `搜索结果 · ${hits.length}` : "没有匹配的标签"));
+      const wrap = el("div", "lib-tag-cloud");
+      for (const tag of hits.slice(0, 200)) wrap.appendChild(tagChip(state, tag));
+      section.appendChild(wrap);
+      box.appendChild(section);
+      return;
+    }
+
+    const roots = typeTags.filter((tag) => !Number(tag.parent));
+    for (const root of roots) {
+      const children = typeTags.filter((tag) => Number(tag.parent) === Number(root.id) && Number(tag.id) > 0);
+      if (!children.length) {
+        if (Number(root.id) <= 0) continue;
+        const lone = el("div", "lib-tag-section lone");
+        const wrap = el("div", "lib-tag-cloud");
+        wrap.appendChild(tagChip(state, root));
+        lone.appendChild(wrap);
+        box.appendChild(lone);
+        continue;
+      }
+      const section = el("div", "lib-tag-section");
+      section.appendChild(el("div", "lib-tag-section-title", root.name));
+      const wrap = el("div", "lib-tag-cloud");
+      for (const tag of children) wrap.appendChild(tagChip(state, tag));
+      section.appendChild(wrap);
+      box.appendChild(section);
+    }
+    if (!box.childElementCount) box.appendChild(el("div", "lib-tag-empty", "这个分类暂时没有可选标签"));
+  }
+
+  function renderTagSelected(state) {
+    const box = state.dom.tagSelected;
+    if (!box) return;
+    box.textContent = "";
+    box.appendChild(el("div", "lib-tag-selected-title", `已选标签（${state.tagDraft.size}）`));
+    if (!state.tagDraft.size) {
+      box.appendChild(el("div", "lib-tag-empty", "还没有选择标签"));
+      return;
+    }
+    const wrap = el("div", "lib-tag-selected-list");
+    for (const id of state.tagDraft) {
+      const tag = catalogTag(id);
+      const chip = el("button", "lib-sel-chip");
+      chip.type = "button";
+      chip.appendChild(document.createTextNode(tag ? tag.name : "#" + id));
+      const x = el("span", "lib-sel-x");
+      x.innerHTML = icon("close");
+      chip.appendChild(x);
+      chip.title = "移除";
+      chip.addEventListener("click", () => {
+        state.tagDraft.delete(Number(id));
+        renderTagModal(state);
+      });
+      wrap.appendChild(chip);
+    }
+    box.appendChild(wrap);
+  }
+
+  function renderTagStatus(state) {
+    const status = state.dom.tagStatus;
+    if (!status) return;
+    status.textContent = "";
+    if (state.catalogLoading) {
+      status.textContent = "正在加载标签目录…";
+      status.hidden = false;
+      return;
+    }
+    if (!state.catalog && tagCatalogError) {
+      status.hidden = false;
+      status.appendChild(el("span", "", tagCatalogError));
+      const retry = el("button", "lib-tag-retry", "重试");
+      retry.type = "button";
+      retry.addEventListener("click", () => loadTagCatalog(state, true));
+      status.appendChild(retry);
+      return;
+    }
+    status.hidden = true;
+  }
+
+  async function loadTagCatalog(state, force) {
+    if (state.catalogLoading) return;
+    if (!actions.libraryTags) {
+      tagCatalogError = "当前版本不支持标签筛选";
+      renderTagStatus(state);
+      return;
+    }
+    if (tagCatalog && !force) {
+      state.catalog = tagCatalog;
+      renderProblemFilters(state);
+      return;
+    }
+    state.catalogLoading = true;
+    tagCatalogError = "";
+    renderTagStatus(state);
+    try {
+      const payload = await actions.libraryTags();
+      const prepared = prepareCatalog(payload);
+      if (prepared) {
+        tagCatalog = prepared;
+        state.catalog = prepared;
+        tagCatalogError = "";
+      } else {
+        tagCatalogError = (payload && payload.error) || "标签目录加载失败";
+      }
+    } catch (err) {
+      tagCatalogError = err.message || "标签目录加载失败";
+    }
+    state.catalogLoading = false;
+    if (state.kind === "problems") {
+      renderProblemFilters(state);
+      renderTagModal(state);
+      renderRows(state);
+    }
+  }
+
+  function pickDifficulty(state, level) {
+    const min = state.difficultyMin;
+    const max = state.difficultyMax;
+    let nextMin = 0;
+    let nextMax = 0;
+    if (!level) {
+      nextMin = 0;
+      nextMax = 0;
+    } else if (!min) {
+      nextMin = level;
+      nextMax = level;
+    } else if (level < min) {
+      nextMin = level;
+      nextMax = max;
+    } else if (level > max) {
+      nextMin = min;
+      nextMax = level;
+    } else if (min === max) {
+      nextMin = 0;
+      nextMax = 0;
+    } else if (level === min || level === max) {
+      // 点区间端点收成单级，再点一次取消
+      nextMin = level;
+      nextMax = level;
+    } else {
+      // 点区间内部：从更近的一端收缩；等距时收高端（与网页版一致）
+      const left = level - min;
+      const right = max - level;
+      if (right <= left) {
+        nextMin = min;
+        nextMax = level;
+      } else {
+        nextMin = level;
+        nextMax = max;
+      }
+    }
+    state.difficultyMin = nextMin;
+    state.difficultyMax = nextMax;
+    state.difficulty = encodeDifficulty(nextMin, nextMax);
+    state.activeIndex = 0;
+    renderProblemFilters(state);
+    load(state, 1, { force: true });
+  }
+
+  function clearProblemFilters(state) {
+    if (!state.difficultyMin && !state.tags.length && !state.content) return;
+    state.difficultyMin = 0;
+    state.difficultyMax = 0;
+    state.difficulty = "";
+    state.tags = [];
+    state.content = false;
+    state.activeIndex = 0;
+    renderProblemFilters(state);
+    load(state, 1, { force: true });
+  }
+
+  function selectedChip(label, onRemove, title) {
+    const chip = el("button", "lib-sel-chip");
+    chip.type = "button";
+    chip.title = title || "移除筛选";
+    chip.appendChild(document.createTextNode(label));
+    const x = el("span", "lib-sel-x");
+    x.innerHTML = icon("close");
+    chip.appendChild(x);
+    chip.addEventListener("click", onRemove);
+    return chip;
+  }
+
+  function renderProblemSelected(state) {
+    const box = state.dom.problemSelected;
+    if (!box) return;
+    box.textContent = "";
+    const chips = [];
+    if (state.difficultyMin && state.difficultyMax) {
+      chips.push(
+        selectedChip("难度 · " + difficultyRangeText(state.difficultyMin, state.difficultyMax), () => {
+          pickDifficulty(state, 0);
+        }, "清除难度筛选")
+      );
+    }
+    for (const raw of state.tags) {
+      const tag = catalogTag(raw);
+      chips.push(
+        selectedChip(tag ? tag.name : "#" + raw, () => {
+          state.tags = state.tags.filter((id) => Number(id) !== Number(raw));
+          state.activeIndex = 0;
+          renderProblemFilters(state);
+          load(state, 1, { force: true });
+        }, "移除这个标签")
+      );
+    }
+    if (state.content) {
+      chips.push(
+        selectedChip("搜索题面", () => {
+          state.content = false;
+          state.activeIndex = 0;
+          renderProblemFilters(state);
+          load(state, 1, { force: true });
+        }, "不再搜索题面")
+      );
+    }
+    box.hidden = !chips.length;
+    if (!chips.length) return;
+    box.appendChild(el("span", "lib-filter-caption", "已选"));
+    for (const chip of chips) box.appendChild(chip);
+    const clear = el("button", "lib-clear-filters", "清除筛选");
+    clear.type = "button";
+    clear.addEventListener("click", () => clearProblemFilters(state));
+    box.appendChild(clear);
+  }
+
+  function renderProblemFilters(state) {
+    const dom = state.dom;
+    if (!dom.problemBar) return;
+    if (dom.problemTypes) {
+      for (const btn of dom.problemTypes.querySelectorAll(".lib-type")) {
+        const on = btn.dataset.type === state.type;
+        btn.classList.toggle("on", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+        btn.tabIndex = on ? 0 : -1;
+      }
+    }
+    syncDiffBtn(state);
+    if (dom.problemDiffMenu) {
+      for (const btn of dom.problemDiffMenu.querySelectorAll(".lib-diff-item")) {
+        const level = Number(btn.dataset.level) || 0;
+        const on = level
+          ? !!state.difficultyMin && level >= state.difficultyMin && level <= state.difficultyMax
+          : !state.difficultyMin;
+        btn.classList.toggle("on", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      }
+    }
+    if (dom.problemTagCount) dom.problemTagCount.textContent = state.tags.length ? String(state.tags.length) : "";
+    if (dom.contentBtn) {
+      dom.contentBtn.classList.toggle("on", state.content);
+      dom.contentBtn.setAttribute("aria-pressed", state.content ? "true" : "false");
+    }
+    if (dom.showTagsBtn) {
+      dom.showTagsBtn.classList.toggle("on", state.showTags);
+      dom.showTagsBtn.setAttribute("aria-pressed", state.showTags ? "true" : "false");
+    }
+    renderProblemSelected(state);
   }
 
   function renderFilters(state) {
     const filters = state.dom.filters;
     if (!filters) return;
     filters.textContent = "";
+    if (state.kind === "problems") {
+      filters.hidden = true;
+      return;
+    }
     const defs = state.meta.filters || [];
     if (!defs.length) {
       filters.hidden = true;
@@ -462,6 +1211,21 @@ export function initLibrary(actions) {
       meta.appendChild(el("span", "lib-sep", "·"));
       meta.appendChild(el("span", "", item.provider || "洛谷"));
       main.appendChild(meta);
+      if (state.showTags && Array.isArray(item.tags) && item.tags.length) {
+        const named = item.tags
+          .map((id) => catalogTag(id))
+          .filter((tag) => tag && Number(tag.id) > 0 && (Number(tag.type) === 2 || Number(tag.type) === 5));
+        if (named.length) {
+          const tags = el("span", "lib-tags");
+          for (const tag of named.slice(0, 4)) {
+            const chip = el("span", "lib-tag", tag.name);
+            chip.title = tag.name;
+            tags.appendChild(chip);
+          }
+          if (named.length > 4) tags.appendChild(el("span", "lib-tag more", "+" + (named.length - 4)));
+          main.appendChild(tags);
+        }
+      }
       row.appendChild(main);
       const stats = el("div", "lib-stats");
       const rate = item.submissions ? Math.round((item.accepted / item.submissions) * 100) : 0;
@@ -593,7 +1357,11 @@ export function initLibrary(actions) {
       kind: state.kind,
       page,
       keyword: state.keyword,
-      difficulty: state.difficulty,
+      difficulty:
+        state.kind === "problems" ? encodeDifficulty(state.difficultyMin, state.difficultyMax) : state.difficulty,
+      type: state.kind === "problems" ? state.type : "",
+      tags: state.kind === "problems" ? selectedTagGroups(state.tags) : [],
+      content: state.kind === "problems" ? state.content : false,
       force: !!options.force,
     };
     let res;

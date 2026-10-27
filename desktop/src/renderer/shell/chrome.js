@@ -15,11 +15,13 @@ export function initChrome(actions) {
   const pin = document.getElementById("rail-pin");
   const jumpForm = document.getElementById("rail-jump");
   const jumpInput = document.getElementById("rail-jump-input");
+  const railUser = document.getElementById("rail-user");
 
   let data = null;
   let railSignature = "";
   let toolbarSignature = "";
   let pinState = null;
+  let hoverTimer = 0;
 
   function navButton(item) {
     const btn = document.createElement("button");
@@ -47,9 +49,57 @@ export function initChrome(actions) {
     railSignature = signature;
     railTop.textContent = "";
     railBottom.textContent = "";
-    for (const item of config.top) railTop.appendChild(navButton(item));
-    for (const item of config.bottom) railBottom.appendChild(navButton(item));
+    appendRailItems(railTop, config.top);
+    appendRailItems(railBottom, config.bottom);
     rail.classList.toggle("empty-top", !config.top.length);
+  }
+
+  function appendRailItems(container, items) {
+    let lastGroup = "";
+    for (const item of items) {
+      if (item.group && item.group !== lastGroup) {
+        const group = document.createElement("div");
+        group.className = "rail-group";
+        group.dataset.group = item.group;
+        const label = document.createElement("span");
+        label.className = "rail-group-label";
+        label.textContent = item.groupLabel || "";
+        group.appendChild(label);
+        container.appendChild(group);
+        lastGroup = item.group;
+      }
+      container.appendChild(navButton(item));
+    }
+  }
+
+  function updateRailUser(user) {
+    if (!railUser) return;
+    const logged = !!(user && user.loggedIn);
+    const name = logged ? String(user.name || "我的洛谷") : "未登录";
+    const sub = logged ? "个人主页" : "点击登录";
+    railUser.classList.toggle("guest", !logged);
+    railUser.title = name + " · " + sub;
+    railUser.setAttribute("aria-label", name + "，" + sub);
+    const nameEl = railUser.querySelector(".rail-user-name");
+    const subEl = railUser.querySelector(".rail-user-sub");
+    if (nameEl) nameEl.textContent = name;
+    if (subEl) subEl.textContent = sub;
+    const box = railUser.querySelector(".rail-user-avatar");
+    if (!box) return;
+    const url = logged && user.avatar ? String(user.avatar) : "";
+    if (url) {
+      if (box.dataset.url !== url) {
+        box.dataset.url = url;
+        box.textContent = "";
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "";
+        box.appendChild(img);
+      }
+    } else {
+      box.dataset.url = "";
+      box.textContent = "洛";
+    }
   }
 
   function updateAvatar(user) {
@@ -99,6 +149,7 @@ export function initChrome(actions) {
 
     // 侧栏只做入口，不表示当前页面：所有页面都不高亮
     updateAvatar(next.user);
+    updateRailUser(next.user);
 
     if (!page.home && !page.library) renderToolbar(page);
     else {
@@ -224,11 +275,28 @@ export function initChrome(actions) {
   });
 
   rail.addEventListener("mouseenter", () => {
-    if (data && data.rail && !data.rail.pinned) actions.railHover(true);
+    if (!data || !data.rail || data.rail.pinned) return;
+    if (hoverTimer) clearTimeout(hoverTimer);
+    // 悬停意图：掠过侧栏不展开，停留 ~70ms 才展开
+    hoverTimer = setTimeout(() => {
+      hoverTimer = 0;
+      if (data && data.rail && !data.rail.pinned) actions.railHover(true);
+    }, 70);
   });
   rail.addEventListener("mouseleave", () => {
+    if (hoverTimer) clearTimeout(hoverTimer);
+    hoverTimer = 0;
     actions.railHover(false);
   });
+
+  if (railUser) {
+    railUser.addEventListener("click", () => {
+      const logged = !!(data && data.user && data.user.loggedIn);
+      if (data && data.rail && !data.rail.pinned) actions.railHover(false);
+      if (logged) actions.profile();
+      else actions.nav("login");
+    });
+  }
 
   avatar.addEventListener("click", () => actions.profile());
 

@@ -72,6 +72,9 @@ export const ICONS = {
   pin: S('<path d="M9 3.5h6"/><path d="M10 3.5v5.8L7 12.3V14h10v-1.7l-3-3V3.5"/><path d="M12 14v6.5"/>'),
   pinOff: S('<path d="M4 4l16 16"/><path d="M9 3.5h6"/><path d="M10 3.5v4.2L7 10.7V13h7.5"/><path d="M17 13V10.7l-2.3-2.3"/><path d="M12 13v5.5"/>'),
   play: S('<path d="M8 5.5 18 12 8 18.5z"/>'),
+  tag: S(
+    '<path d="M3.5 12.2V5a1.5 1.5 0 0 1 1.5-1.5h7.2a2 2 0 0 1 1.4.6l7 7a2 2 0 0 1 0 2.8l-6.2 6.2a2 2 0 0 1-2.8 0l-7-7a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.4"/>'
+  ),
 };
 
 export function icon(name) {

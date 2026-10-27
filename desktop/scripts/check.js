@@ -561,7 +561,58 @@ for (const [name, needle] of [
   else fail("library.js 缺少" + name);
 }
 
-/* R60 便利性契约 */
+/* R64 题库筛选对齐网页版 + 侧栏分组 */
+const luoguFilterSrc = read("src/main/luogu.js");
+const ipcFilterSrc = read("src/main/ipc.js");
+const shellPreloadFilterSrc = read("src/preload/shell.js");
+for (const [name, needle] of [
+  ["标签目录公开端点", /_lfe\/tags/],
+  ["标签目录缓存", /libtags/],
+  ["标签分组编码", /function tagQuery/],
+  ["题库类型白名单", /PROBLEM_TYPES/],
+  ["题库 type 参数", /params\.set\("type"/],
+  ["标签 tag 参数", /params\.set\("tag"/],
+  ["题面搜索参数", /params\.set\("content"/],
+]) {
+  if (needle.test(luoguFilterSrc)) ok("luogu.js " + name);
+  else fail("luogu.js 缺少" + name);
+}
+if (/app:libraryTags/.test(ipcFilterSrc) && /libraryTags: \(\) => ipcRenderer\.invoke\("app:libraryTags"\)/.test(shellPreloadFilterSrc)) {
+  ok("标签目录桥三处同步（handler + preload）");
+} else {
+  fail("标签目录桥未三处同步");
+}
+for (const [name, needle] of [
+  ["难度范围下拉", /lib-diff-menu/],
+  ["难度区间编码", /function encodeDifficulty/],
+  ["连续区间选择", /right <= left/],
+  ["所属题库分组", /所属题库/],
+  ["筛选条件分组", /筛选条件/],
+  ["标签草稿多选", /state\.tagDraft\.add/],
+  ["标签分类编码", /selectedTagGroups/],
+  ["搜索结果跨分类", /catalog\.tags\.filter/],
+  ["标签弹窗文案", /已选标签（/],
+  ["清除筛选", /清除筛选/],
+]) {
+  if (needle.test(librarySrc)) ok("library.js " + name);
+  else fail("library.js 缺少" + name);
+}
+if (/lib-diff-menu/.test(read("src/renderer/shell/shell.css"))) ok("题库难度下拉有样式");
+else fail("题库难度下拉缺少样式");
+const chromeRailSrc = read("src/renderer/shell/chrome.js");
+if (/rail-group/.test(chromeRailSrc) && /rail-group-label/.test(chromeRailSrc) && /rail-user/.test(read("src/renderer/shell/index.html"))) {
+  ok("侧栏分组标题与账户卡");
+} else {
+  fail("侧栏分组/账户卡缺失");
+}
+if (/hoverTimer = setTimeout/.test(chromeRailSrc) && /}, 70\);/.test(chromeRailSrc)) ok("侧栏悬停意图延迟");
+else fail("侧栏悬停意图延迟缺失");
+if (/railUser\.addEventListener\("click"/.test(chromeRailSrc) && /actions\.railHover\(false\)/.test(chromeRailSrc)) ok("侧栏账户卡点击前收起浮层");
+else fail("侧栏账户卡未收起浮层");
+if (/\.rail-group/.test(read("src/renderer/shell/shell.css")) && /rail-user-avatar/.test(read("src/renderer/shell/shell.css"))) ok("侧栏分组/账户卡样式");
+else fail("侧栏分组/账户卡样式缺失");
+
+
 if (/"r"\)\) command = "reload"/.test(viewsSource) && /"closepage"/.test(viewsSource) && /"ArrowLeft"\) command = "back"/.test(viewsSource)) ok("页面内 F5/Ctrl+R/Alt+方向键/Ctrl+W 浏览器基本键齐全");
 else fail("views.js 缺少浏览器基本键绑定");
 if (/closePage\(\)/.test(viewsSource) && /wc\.on\("context-menu"/.test(viewsSource)) ok("Ctrl+W 关页面（进最近关闭栈）+ 页面右键菜单存在");

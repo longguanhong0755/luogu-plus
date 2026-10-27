@@ -4,17 +4,24 @@
    - library  原生列表（题库/训练/比赛/记录/讨论/文章）
    - web      洛谷网页页面（聊天/通知）
    - action   打开设置等动作 */
+const GROUPS = {
+  browse: "浏览",
+  community: "社区",
+  tools: "工具",
+  custom: "自定义",
+};
+
 const NAV = {
-  home: { label: "主页", icon: "home", kind: "home" },
-  problems: { label: "题库", icon: "library", kind: "library", url: "/problem/list" },
-  training: { label: "训练", icon: "training", kind: "library", url: "/training/list" },
-  contest: { label: "比赛", icon: "contest", kind: "library", url: "/contest/list" },
-  record: { label: "记录", icon: "record", kind: "library", url: "/record/list" },
-  discuss: { label: "讨论", icon: "discuss", kind: "library", url: "/discuss" },
-  article: { label: "文章", icon: "article", kind: "library", url: "/article" },
-  chat: { label: "聊天", icon: "chat", kind: "web", url: "/chat" },
-  notification: { label: "通知", icon: "bell", kind: "web", url: "/user/notification" },
-  settings: { label: "设置", icon: "settings", kind: "action" },
+  home: { label: "主页", icon: "home", kind: "home", group: "browse" },
+  problems: { label: "题库", icon: "library", kind: "library", url: "/problem/list", group: "browse" },
+  training: { label: "训练", icon: "training", kind: "library", url: "/training/list", group: "browse" },
+  contest: { label: "比赛", icon: "contest", kind: "library", url: "/contest/list", group: "browse" },
+  record: { label: "记录", icon: "record", kind: "library", url: "/record/list", group: "browse" },
+  discuss: { label: "讨论", icon: "discuss", kind: "library", url: "/discuss", group: "community" },
+  article: { label: "文章", icon: "article", kind: "library", url: "/article", group: "community" },
+  chat: { label: "聊天", icon: "chat", kind: "web", url: "/chat", group: "tools" },
+  notification: { label: "通知", icon: "bell", kind: "web", url: "/user/notification", group: "tools" },
+  settings: { label: "设置", icon: "settings", kind: "action", group: "tools" },
 };
 
 const LIBRARY_IDS = new Set(["problems", "training", "contest", "record", "discuss", "article"]);
@@ -39,16 +46,38 @@ function resolveRail(cfg) {
   for (const id of cfg.rail.order) {
     const def = NAV[id];
     if (!def || hidden.has(id)) continue;
-    top.push({ id, label: def.label, icon: def.icon, kind: def.kind });
+    top.push({
+      id,
+      label: def.label,
+      icon: def.icon,
+      kind: def.kind,
+      group: def.group || "browse",
+      groupLabel: GROUPS[def.group] || "浏览",
+    });
   }
   for (const item of cfg.rail.custom || []) {
-    top.push({ id: item.id, label: item.label, icon: "link", kind: "custom", url: item.url });
+    top.push({
+      id: item.id,
+      label: item.label,
+      icon: "link",
+      kind: "custom",
+      url: item.url,
+      group: "custom",
+      groupLabel: GROUPS.custom,
+    });
   }
   const bottom = [];
   for (const id of ["chat", "notification", "settings"]) {
     if (hidden.has(id)) continue;
     const def = NAV[id];
-    bottom.push({ id, label: def.label, icon: def.icon, kind: def.kind });
+    bottom.push({
+      id,
+      label: def.label,
+      icon: def.icon,
+      kind: def.kind,
+      group: def.group || "tools",
+      groupLabel: GROUPS[def.group] || GROUPS.tools,
+    });
   }
   return {
     top,
@@ -57,7 +86,14 @@ function resolveRail(cfg) {
     hidden: cfg.rail.hidden.slice(),
     custom: cfg.rail.custom.map((item) => Object.assign({}, item)),
     pinned: !!cfg.rail.pinned,
-    all: Object.keys(NAV).map((id) => ({ id, label: NAV[id].label, icon: NAV[id].icon, kind: NAV[id].kind })),
+    all: Object.keys(NAV).map((id) => ({
+      id,
+      label: NAV[id].label,
+      icon: NAV[id].icon,
+      kind: NAV[id].kind,
+      group: NAV[id].group,
+      groupLabel: GROUPS[NAV[id].group] || "",
+    })),
   };
 }
 

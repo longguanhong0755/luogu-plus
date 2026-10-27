@@ -114,6 +114,7 @@ async function boot() {
 
   const library = initLibrary({
     library: (payload) => window.lg.library(payload),
+    libraryTags: () => window.lg.libraryTags(),
     openProblem: (pid) => window.lg.openProblem(pid),
     openDetail: (payload) => window.lg.openDetail(payload),
     webFallback: (kind) => window.lg.openWebFallback(kind),
