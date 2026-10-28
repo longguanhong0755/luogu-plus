@@ -12,10 +12,12 @@ body.rail-overlay #app {
   height: 100%;
 }
 
+/* 悬停展开不是“浮出小面板”，而是同一根侧栏变宽：去掉投影，
+   底色、分隔线与外壳里的折叠栏完全一致。 */
 body.rail-overlay #rail {
   height: 100%;
   border-right: 1px solid var(--border);
-  box-shadow: 8px 0 24px -12px var(--shadow-color);
+  box-shadow: none;
 }
 
 /* 壁纸复刻层：按整个窗口的尺寸铺，再让 view 裁出左侧 208px，

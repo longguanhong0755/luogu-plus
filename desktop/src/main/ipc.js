@@ -119,6 +119,11 @@ function registerIpc(ctx) {
     const next = patch || {};
     const general = ctx.cfg.setGeneral(next);
     ctx.applyAutoLaunch();
+    if (Object.prototype.hasOwnProperty.call(next, "adBlock")) {
+      ctx.views.applyAdBlock();
+      broadcastState(ctx);
+      return general;
+    }
     if (Object.prototype.hasOwnProperty.call(next, "performanceMode")) {
       ctx.refreshAppearance({ reschedule: false }).catch(() => {});
     } else {

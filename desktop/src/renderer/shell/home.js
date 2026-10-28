@@ -129,8 +129,16 @@ function buildHeat(home) {
   wrap.appendChild(days);
   wrap.appendChild(heatColumn);
 
+  /* 热力图只占卡片左半边，右边空着最显“莫名其妙留白”。
+     把学习概览并进同一张卡：宽屏放右侧竖排，窄屏折到下方横排。 */
+  const sideStats = el("div", "heat-side stats-card");
+  sideStats.appendChild(buildStatGrid(home));
+  const body = el("div", "heat-body");
+  body.appendChild(wrap);
+  body.appendChild(sideStats);
+
   card.appendChild(cardHead("打卡记录", "calendarCheck", `本月 ${monthDays} 天`));
-  card.appendChild(wrap);
+  card.appendChild(body);
   card.appendChild(foot);
   return card;
 }
@@ -260,7 +268,7 @@ function buildQueue(state, actions) {
   return card;
 }
 
-function buildStats(home) {
+function buildStatGrid(home) {
   const counts = new Map();
   for (const item of home.heat || []) counts.set(item.date, item.count);
   const today = new Date();
@@ -279,8 +287,6 @@ function buildStats(home) {
     if (count > 0 && day.getMonth() === today.getMonth()) monthDays++;
   }
 
-  const card = el("div", "stats-card card");
-  card.appendChild(cardHead("学习概览", "record"));
   const grid = el("div", "stats-grid");
   const stats = [
     [home.streak || 0, "连续签到"],
@@ -293,8 +299,7 @@ function buildStats(home) {
     cell.appendChild(el("span", "stat-label", label));
     grid.appendChild(cell);
   }
-  card.appendChild(grid);
-  return card;
+  return grid;
 }
 
 function buildSign(state, actions) {
@@ -408,7 +413,6 @@ export function renderHome(state, actions) {
   }
 
   side.appendChild(buildSign(state, actions));
-  if (user.loggedIn) side.appendChild(buildStats(home));
   side.appendChild(buildContest(home, actions));
   const queueCard = buildQueue(state, actions);
   if (queueCard) side.appendChild(queueCard);

@@ -45,6 +45,8 @@ const required = [
   "src/main/index.js",
   "src/main/config.js",
   "src/main/theme.js",
+  "src/main/material.js",
+  "src/main/adblock.js",
   "src/main/views.js",
   "src/main/sections.js",
   "src/main/passkey-guard.js",
@@ -426,16 +428,75 @@ if (/accentText/.test(themeSource) && /borderStrong/.test(themeSource) && /color
 } else {
   fail("theme.js 缺少 4.0 状态令牌");
 }
-if (/94 - material \* 0\.2/.test(themeSource) && /99 - material \* 0\.08/.test(themeSource)) ok("内容面公式保留材质基线，壁纸透出在其上继续下调");
-else fail("material 公式被破坏");
-if (/glass \* 0\.42/.test(themeSource) && /glass \* 0\.32/.test(themeSource) && /glass \* 0\.25/.test(themeSource)) ok("「壁纸透出」接入内容面/页面纱层/外壳三层透明度");
-else fail("theme.js 未接入 glass 滑杆");
-if (/, 50, 99\)/.test(themeSource) && /, 55, 99\)/.test(themeSource) && /, 58, 98\)/.test(themeSource)) ok("透明度有可读下限（scrim 50 / card 55 / panel 58）");
-else fail("透明度缺少可读下限");
+
+const materialSource = read("src/main/material.js");
+const material = require(path.join(ROOT, "src", "main", "material.js"));
+const baseLevel = material.levels({ material: 55, glass: 45 }, false);
+if (baseLevel.panelAlpha === 72 && baseLevel.pageScrim === 75 && baseLevel.cardAlpha === 80) {
+  ok("透明基线保持默认观感（panel 72 / scrim 75 / card 80）");
+} else {
+  fail("默认透明度偏离旧版", JSON.stringify(baseLevel));
+}
+const fullLevel = material.levels({ material: 55, glass: 100 }, false);
+if (fullLevel.panelAlpha === 0 && fullLevel.pageScrim === 0 && fullLevel.cardAlpha === 0) {
+  ok("壁纸透出 100% 时外壳/纱层/内容面全部为 0");
+} else {
+  fail("glass=100 没有真正全透", JSON.stringify(fullLevel));
+}
+if (fullLevel.overlayAlpha >= 60) ok("浮层保留 60% 可读下限");
+else fail("浮层跟着内容面一起归零，菜单不可读");
+const perfFull = material.levels({ material: 55, glass: 100 }, true);
+if (perfFull.panelAlpha === 0 && perfFull.blurPx === 0) ok("性能模式不会把 glass=100 顶回不透明");
+else fail("性能模式破坏了 100% 透明", JSON.stringify(perfFull));
+if (/materialLevels/.test(themeSource) && /require\("\.\/material"\)/.test(themeSource)) ok("theme.js 委托 material.js 计算透明度");
+else fail("theme.js 没有接入 material.js");
 if (/glass: 45,/.test(configSource) && /a\.glass = Math\.round/.test(configSource)) ok("「壁纸透出」默认 45 且落盘前收敛");
 else fail("config.js 缺少 glass 默认值/收敛");
 if (/id="glass"/.test(settingsHtml) && /setAppearance\(\{ glass:/.test(read("src/renderer/settings/settings.js"))) ok("设置页提供「壁纸透出」滑杆并即时生效");
 else fail("设置页缺少壁纸透出滑杆");
+if (/--lg-text-shadow/.test(read("src/main/views.js")) && /cardAlpha <= 30/.test(read("src/main/views.js"))) {
+  ok("高透明时正文自动加投影保护可读性");
+} else {
+  fail("高透明正文缺少投影保护");
+}
+
+/* 广告拦截：默认关闭，配置/设置页/IPC/页面兜底四处齐 */
+const preloadPageSource = read("src/preload/page.js");
+if (/adBlock: false/.test(configSource) && /g\.adBlock = !!g\.adBlock/.test(configSource)) ok("广告拦截默认关闭且落盘收敛");
+else fail("config.js 缺少 adBlock 默认值/收敛");
+if (/id="ad-block"/.test(settingsHtml) && /setGeneral\(\{ adBlock:/.test(read("src/renderer/settings/settings.js"))) ok("设置页提供广告拦截开关");
+else fail("设置页缺少广告拦截开关");
+if (/hasOwnProperty\.call\(next, "adBlock"\)/.test(ipcSource) && /ctx\.views\.applyAdBlock\(\)/.test(ipcSource)) ok("切换广告拦截即时应用");
+else fail("ipc.js 没有在 adBlock 变化时应用");
+if (/qiafan/.test(read("src/main/adblock.js")) && /onBeforeRequest/.test(read("src/main/adblock.js"))) ok("主进程按 /qiafan/ 请求级拦截");
+else fail("adblock.js 缺少请求级拦截");
+if (/--lg-adblock=/.test(read("src/main/views.js")) && /dataset\.lgAdblock/.test(preloadPageSource)) ok("页面 preload 在 document-start 置广告拦截标记");
+else fail("页面 preload 缺少广告拦截标记");
+if (/data-lg-adblock="1"/.test(read("src/renderer/skin/luogu-skin.css"))) ok("皮肤提供广告容器兜底隐藏");
+else fail("luogu-skin.css 缺少广告容器兜底");
+
+/* R65 实测回归：用户页头图、筛选条、分页、登录灰按钮、abort 误报 */
+const skinSource = read("src/renderer/skin/luogu-skin.css");
+if (!/\.user-header-top\s*\{[^}]*\bbackground\s*:/.test(skinSource)) ok("用户页头图不被 background 简写清掉");
+else fail("luogu-skin.css 用 background 简写覆盖了用户页头图");
+for (const [name, needle] of [
+  ["题库/比赛筛选标题", /\.filter-section \.title/],
+  ["筛选下拉与标签控件", /\.tag-select-area \.toggle-tag/],
+  ["底部分页按钮", /\.page-bar button/],
+  ["亮色灰字兜底", /\.lcolor--grey-3/],
+  ["登录灰按钮文字", /\.lcolor-var-grey-4/],
+  ["页面级滚动条", /html::-webkit-scrollbar/],
+]) {
+  if (needle.test(skinSource)) ok("皮肤覆盖 " + name);
+  else fail("luogu-skin.css 缺少" + name);
+}
+if (/ERR_ABORTED/.test(read("src/main/views.js"))) ok("页面被切走导致的 ERR_ABORTED 不弹失败提示");
+else fail("views.js 会把 ERR_ABORTED 当成打开失败");
+if (/dimCount/.test(read("src/main/smoke.js")) && /contrast/.test(read("src/main/smoke.js"))) {
+  ok("皮肤审计覆盖低对比度文字（亮/暗两种主题）");
+} else {
+  fail("smoke.js 缺少低对比度审计");
+}
 
 const shellCss = read("src/renderer/shell/shell.css");
 const baseCss = read("src/renderer/shared/base.css");
@@ -487,10 +548,10 @@ if (/pinned:\s*false/.test(configSource) && /performanceMode:\s*false/.test(conf
 } else {
   fail("config.js 缺少 pinned/performanceMode 默认值");
 }
-if (/const perf = !!\(cfg\.general && cfg\.general\.performanceMode\)/.test(themeSource) && /blurPx = perf \? 0/.test(themeSource)) {
-  ok("性能模式关闭模糊（theme.js）");
+if (/materialLevels/.test(themeSource) && /blurPx: perf \? 0/.test(materialSource)) {
+  ok("性能模式关闭模糊（material.js）");
 } else {
-  fail("theme.js 没有把性能模式接入模糊计算");
+  fail("material.js 没有把性能模式接入模糊计算");
 }
 if (/id="perf-mode"/.test(settingsHtml) && /setGeneral\(\{ performanceMode/.test(read("src/renderer/settings/settings.js"))) {
   ok("设置页提供性能模式开关");
@@ -537,7 +598,7 @@ if (/class="pane-head"/.test(settingsHtml) && /class="settings-group"/.test(sett
 const homeSrc2 = read("src/renderer/shell/home.js");
 for (const [name, needle] of [
   ["两栏仪表盘", /home-grid/],
-  ["学习概览", /buildStats/],
+  ["学习概览", /buildStatGrid/],
   ["热力图图例", /heat-legend/],
   ["空寄语不渲染", /if \(home\.quote\)/],
 ]) {
@@ -650,6 +711,54 @@ for (const [name, needle] of [
   else fail("luogu-skin.css 缺少" + name);
 }
 
+/* R64：皮肤不能再改写官方主容器的宽度/外边距，也不能给官方按钮塞死高度 */
+if (
+  /#app > \.main-container \{[\s\S]*?padding-top: var\(--lg-gutter-top/.test(skinSrc) &&
+  !/#app > \.main-container \{[\s\S]*?margin: 0 auto/.test(skinSrc) &&
+  !/#app > \.main-container \{[\s\S]*?width: calc/.test(skinSrc)
+) {
+  ok("皮肤只补顶部空隙，不改写官方主容器几何");
+} else {
+  fail("皮肤仍在改写官方主容器宽度/外边距（右侧裁切/空白根因）");
+}
+if (/a\.l-button[\s\S]*?display: inline-flex;[\s\S]*?align-items: center;[\s\S]*?justify-content: center;/.test(skinSrc)) {
+  ok("链接型官方按钮用 inline-flex 真正居中");
+} else {
+  fail("官方按钮缺少 flex 居中（文字偏上根因）");
+}
+if (!/line-height: 20px/.test(skinSrc) && !/min-height: 32px/.test(skinSrc)) {
+  ok("皮肤不再给官方按钮/输入框塞死行高与最小高度");
+} else {
+  fail("皮肤仍给官方控件塞死行高/最小高度（莫名空白根因）");
+}
+for (const selector of [".side", ".lfe-side", ".list", ".lfe-list", ".box", ".panel", ".comment"]) {
+  const cardBlock = skinSrc.match(/#app \.l-card,[\s\S]*?\{/);
+  if (!cardBlock || cardBlock[0].indexOf(selector) === -1) {
+    ok("卡片选择器已排除布局容器 " + selector);
+  } else {
+    fail("卡片选择器仍包含布局容器 " + selector + "（大片空白根因）");
+  }
+}
+
+/* R64：侧栏几何按官方 64px 栏等比缩到 56px */
+const railCss = read("src/renderer/shell/shell.css");
+if (
+  /#rail \{[\s\S]*?padding: 12px 8px;/.test(railCss) &&
+  /\.rail-btn \{[\s\S]*?height: 30px;[\s\S]*?margin: 4px 0;/.test(railCss) &&
+  /body:not\(\.rail-pinned\):not\(\.rail-overlay\) \.rail-btn \{[\s\S]*?width: 40px;/.test(railCss) &&
+  /body:not\(\.rail-pinned\):not\(\.rail-overlay\) #rail-user \{[\s\S]*?width: 32px;[\s\S]*?height: 32px;/.test(railCss) &&
+  /body:not\(\.rail-pinned\):not\(\.rail-overlay\) #rail-jump \{\s*display: none;/.test(railCss)
+) {
+  ok("侧栏按官方 40×30 热区/32px 头像/收起隐藏跳转框");
+} else {
+  fail("侧栏几何没有对齐官方实现");
+}
+if (!/box-shadow: 8px 0 24px/.test(read("src/renderer/rail/rail.css"))) {
+  ok("侧栏悬停展开不再浮出投影（同一栏变宽）");
+} else {
+  fail("rail.css 仍有浮层投影");
+}
+
 const viewsSrc3 = read("src/main/views.js");
 if (/--lg-accent-text/.test(viewsSrc3) && /--lg-hover/.test(viewsSrc3) && /--lg-shadow/.test(viewsSrc3) && /--lg-border-strong/.test(viewsSrc3)) {
   ok("views.js 向阅读面注入 4.0 状态令牌");
@@ -728,7 +837,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.6.0";
+const EXPECTED_VERSION = "0.7.0";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

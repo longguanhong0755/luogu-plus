@@ -37,6 +37,7 @@ const DEFAULTS = {
   general: {
     closeAction: "tray", // tray | quit
     autoLaunch: false,
+    adBlock: false, // 拦截广告与推广，默认关闭
     performanceMode: false, // 关闭壁纸运动 / 背景模糊 / 切换动画
   },
   notify: {
@@ -141,6 +142,7 @@ function sanitize() {
   const g = data.general;
   if (!["tray", "quit"].includes(g.closeAction)) g.closeAction = "tray";
   g.autoLaunch = !!g.autoLaunch;
+  g.adBlock = !!g.adBlock;
   g.performanceMode = !!g.performanceMode;
 
   const n = data.notify;

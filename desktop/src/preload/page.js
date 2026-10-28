@@ -15,7 +15,16 @@ function argValue(prefix) {
 const bootBg = argValue("--lg-boot-bg=");
 let motionOn = argValue("--lg-motion=") === "1";
 let zoomOn = argValue("--lg-zoom=") === "1";
+const adBlockOn = argValue("--lg-adblock=") === "1";
 let bootPainted = false;
+
+/* 广告拦截的页面级兜底：CSS 规则挂在 html[data-lg-adblock="1"] 上，
+   必须在 document-start 置位，避免推广卡先画出来再消失。 */
+try {
+  document.documentElement.dataset.lgAdblock = adBlockOn ? "1" : "0";
+} catch {
+  /* ignore */
+}
 
 function paintBoot() {
   if (bootPainted || !bootBg) return;

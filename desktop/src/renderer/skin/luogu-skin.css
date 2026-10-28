@@ -16,7 +16,7 @@ body {
   font-family: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "Microsoft YaHei", system-ui, sans-serif !important;
   font-size: 14px;
-  line-height: 1.8;
+  line-height: normal;
   font-synthesis: none;
 }
 
@@ -72,11 +72,13 @@ body,
   display: none !important;
 }
 
+/* 官方主容器自己负责宽度与左右留白，皮肤不再改写几何。
+   站点顶栏被隐藏后，官方给固定顶栏预留的 margin-top 会变成一片空白，
+   这里只清掉它，再补一个可控的顶部空隙（实测 56px 纯空白）。 */
 #app > .main-container {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: 100% !important;
-  max-width: none !important;
+  margin-top: 0 !important;
+  padding-top: var(--lg-gutter-top, 20px) !important;
+  box-sizing: border-box;
 }
 
 #app .theme-page::before,
@@ -89,6 +91,17 @@ body,
   color: var(--lg-text) !important;
 }
 
+/* glass 接近 100 时正文直接压在壁纸上，给一层很淡的阴影保可读；
+   默认值 none，不影响正常透明度下的观感。 */
+#app .theme-page,
+#app .l-card,
+#app .lfe-card,
+#app .lg-article {
+  text-shadow: var(--lg-text-shadow, none);
+}
+
+/* 标题只上色。官方卡头、按钮组、表单标题也用 h1-h4，
+   在这里改字号/行高/外边距会把官方布局顶开，出现莫名空白。 */
 #app h1,
 #app h2,
 #app h3,
@@ -101,33 +114,26 @@ body,
 #app .lfe-h4 {
   color: var(--lg-text) !important;
   letter-spacing: 0;
-  font-weight: 600;
-  line-height: 1.4;
 }
 
-#app h1,
-#app .lfe-h1 {
+/* 阅读正文里的标题才使用阅读排版 */
+#app :is(.lfe-marked, .markdown, .article-content, .problem-content, .lfe-problem-content, .lfe-markdown)
+  :is(h1, h2, h3, h4) {
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 18px 0 8px;
+}
+#app :is(.lfe-marked, .markdown, .article-content, .problem-content, .lfe-problem-content, .lfe-markdown) h1 {
   font-size: 24px;
-  line-height: 32px;
-  margin: 0 0 16px;
 }
-#app h2,
-#app .lfe-h2 {
+#app :is(.lfe-marked, .markdown, .article-content, .problem-content, .lfe-problem-content, .lfe-markdown) h2 {
   font-size: 20px;
-  line-height: 28px;
-  margin: 28px 0 10px;
 }
-#app h3,
-#app .lfe-h3 {
+#app :is(.lfe-marked, .markdown, .article-content, .problem-content, .lfe-problem-content, .lfe-markdown) h3 {
   font-size: 16px;
-  line-height: 24px;
-  margin: 22px 0 8px;
 }
-#app h4,
-#app .lfe-h4 {
+#app :is(.lfe-marked, .markdown, .article-content, .problem-content, .lfe-problem-content, .lfe-markdown) h4 {
   font-size: 14px;
-  line-height: 22px;
-  margin: 18px 0 6px;
 }
 
 #app a {
@@ -158,6 +164,41 @@ body,
   margin: 0 0 12px;
 }
 
+/* ---- 文章详情：站点允许作者自定义文章底色 ----
+   作者选的浅色主题会把内联 background-color 写在文章外层 div 上，
+   深色模式下就会变成一块白板。这里只清底色，不动正文/代码块自身配色。 */
+#app main.lcolor-bg-background,
+#app main.lcolor-bg-background > div:has(> .article-content),
+#app .article-content {
+  background-color: transparent !important;
+}
+#app main.lcolor-bg-background {
+  color: var(--lg-text) !important;
+}
+#app main.lcolor-bg-background :is(time, .metas, .meta, .comment-filter-line) {
+  color: var(--lg-text-2) !important;
+}
+#app .article-content .actions {
+  background: color-mix(in srgb, var(--lg-surface) 92%, transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+}
+#app .article-content .actions :is(.text, .button-2line, .count) {
+  color: var(--lg-text-2) !important;
+}
+#app .article-content .actions svg {
+  color: var(--lg-text-2);
+}
+
+/* 讨论列表右侧的板块名默认是 #333，深色下几乎看不见 */
+#app span.name {
+  color: var(--lg-text-2) !important;
+}
+
+/* 评论区每条回复的头部是站点写死的浅灰条，深色下会变成一条亮带 */
+#app .reply-item .meta {
+  background: transparent !important;
+}
+
 #app .lfe-marked ul,
 #app .lfe-marked ol,
 #app .markdown ul,
@@ -171,24 +212,25 @@ body,
   color: var(--lg-text);
 }
 
-/* ---- 承载面：只给顶层卡片，不给表格行/正文再叠模糊 ---- */
+/* ---- 承载面：只给实测确认的顶层卡片 ----
+   不要收 .side / .list / .box / .panel / .comment 这类结构容器：
+   它们本来只是布局壳，加边框和阴影就会变成大片空框。 */
 #app .l-card,
 #app .lfe-card,
 #app .card,
-#app .header-card,
-#app .user-header-top,
-#app .lfe-panel,
-#app .panel,
-#app .box,
-#app .lfe-box,
-#app .side,
-#app .lfe-side,
-#app .list,
-#app .lfe-list,
-#app .comment,
-#app .am-comment,
-#app .lfe-comment {
+#app .lg-article {
   background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow:
+    0 1px 2px var(--lg-shadow),
+    0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent),
+    inset 0 1px 0 var(--lg-highlight) !important;
+}
+
+/* 用户页头图是站点自己铺的装饰面（图片/渐变），文字是白色：
+   皮肤不碰它的底色，只补边框与圆角，否则亮色下会变成白字白底。 */
+#app .user-header-top {
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-lg, 12px) !important;
   box-shadow:
@@ -236,12 +278,9 @@ body,
 #app th,
 #app .cute-table th,
 #app .mtable th {
-  height: 38px;
-  padding: 0 12px !important;
-  font-size: 12px;
-  line-height: 18px;
   font-weight: 600;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 #app tbody,
@@ -257,10 +296,7 @@ body,
 #app td,
 #app .cute-table td,
 #app .mtable td {
-  height: 42px;
-  padding: 10px 12px !important;
-  font-size: 13px;
-  line-height: 20px;
+  vertical-align: middle;
 }
 
 #app tbody tr:hover {
@@ -276,24 +312,14 @@ body,
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-sm, 6px) !important;
   box-shadow: none !important;
-  font-size: 13px;
-  line-height: 20px;
   outline: none;
   transition:
     border-color var(--lg-dur, 120ms) var(--lg-ease, ease),
     box-shadow var(--lg-dur, 120ms) var(--lg-ease, ease);
 }
 
-#app input:not([type="checkbox"]):not([type="radio"]),
-#app select {
-  min-height: 32px;
-  padding: 0 10px !important;
-}
-
 #app textarea {
-  min-height: 96px;
-  padding: 8px 10px !important;
-  line-height: 1.6;
+  resize: vertical;
 }
 
 #app input:not([type="checkbox"]):not([type="radio"]):hover,
@@ -338,7 +364,10 @@ body,
   box-shadow: none !important;
 }
 
-/* ---- 按钮 ---- */
+/* ---- 按钮 ----
+   只改配色，不改官方盒模型：官方按钮的 padding/line-height 已经负责垂直居中，
+   这里再写 min-height + line-height 会把文字顶到上沿（“返回题目”偏上的根因）。
+   边框用内阴影而不是 border，避免改变元素尺寸。 */
 #app .l-button,
 #app [class*="l-button"],
 #app .lfe-button,
@@ -346,18 +375,23 @@ body,
 #app .am-btn,
 #app button.solid,
 #app button.lg-plain {
-  min-height: 32px;
-  padding: 0 12px !important;
   border-radius: var(--lg-radius-sm, 6px) !important;
-  border: 1px solid var(--lg-border);
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--lg-border);
   color: var(--lg-text);
   background: color-mix(in srgb, var(--lg-surface-2) 68%, transparent);
   transition:
     background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
-    border-color var(--lg-dur, 120ms) var(--lg-ease, ease);
+    box-shadow var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+
+/* 官方用 <a> 做按钮时默认是 block/inline-block，文字会贴顶；
+   只对锚点补 flex 居中，不动 <button> 的官方布局。 */
+#app a.l-button,
+#app a[class*="l-button"],
+#app a.lfe-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #app .l-button:hover,
@@ -365,7 +399,7 @@ body,
 #app .btn:hover,
 #app .am-btn:hover {
   background: var(--lg-hover) !important;
-  border-color: var(--lg-border-strong) !important;
+  box-shadow: inset 0 0 0 1px var(--lg-border-strong) !important;
 }
 
 #app .l-button:active,
@@ -381,7 +415,7 @@ body,
 #app .l-button.primary,
 #app button.solid {
   background: var(--lg-accent-fill, var(--lg-accent)) !important;
-  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
+  box-shadow: inset 0 0 0 1px var(--lg-accent-fill, var(--lg-accent)) !important;
   color: var(--lg-on-accent, #fff) !important;
 }
 
@@ -493,14 +527,75 @@ body,
   color: var(--lg-on-accent, #fff) !important;
 }
 
+/* ---- 题库 / 比赛筛选条 ----
+   站点把筛选标签、下拉框和底部分页条写死成白底黑字，深色下整块看不见。 */
+#app .filter-section .title,
+#app .tag-select-area .title,
+#app .l-card > section .title,
+#app .filter-label,
+#app .filter .title {
+  color: var(--lg-text-2) !important;
+}
+#app .filter-section .count .number,
+#app .filter-result-count .number,
+#app .count .number {
+  color: var(--lg-text) !important;
+}
+#app .filter-section .text,
+#app .filter-section .tag-button,
+#app .tag-select-area .toggle-tag,
+#app .combo-wrapper .text,
+#app .combo-wrapper .tag-button,
+#app .filter .text,
+#app .filter .tag-button,
+#app .filter .toggle-tag {
+  background: color-mix(in srgb, var(--lg-surface) 92%, transparent) !important;
+  border-color: var(--lg-border) !important;
+  color: var(--lg-text-2) !important;
+}
+#app ul.luogu {
+  background: transparent !important;
+}
+#app ul.luogu li {
+  color: var(--lg-text-2) !important;
+}
+#app .l-options .option {
+  color: var(--lg-text-2) !important;
+}
+#app .l-options .option.active,
+#app .l-options .option[aria-checked="true"] {
+  color: var(--lg-text) !important;
+}
+#app .bottom-wrap.float {
+  background: color-mix(in srgb, var(--lg-surface) 95%, transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent) !important;
+}
+#app .bottom-wrap .toolbar,
+#app .bottom-wrap .pagination {
+  color: var(--lg-text-2) !important;
+}
+#app .page-bar button {
+  background: color-mix(in srgb, var(--lg-surface) 70%, transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+  color: var(--lg-text-2) !important;
+}
+#app .page-bar button.active,
+#app .page-bar button.selected,
+#app .page-bar button[aria-current="page"] {
+  background: var(--lg-accent-fill, var(--lg-accent)) !important;
+  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
+  color: var(--lg-on-accent, #fff) !important;
+}
+
 /* ---- 站点页头 / 用户页 ---- */
 #app .header-card,
 #app .top-row,
 #app .bottom-row {
   color: var(--lg-text) !important;
 }
-#app .user-header-top,
-#app .user-header,
 #app .user-header-bottom,
 #app .profile-header {
   background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
@@ -544,6 +639,20 @@ body,
 #app .colored-link-selector .name,
 #app .colored-link-selector a {
   color: var(--lg-text) !important;
+}
+/* 站点灰色说明文字（如“暂无筛选条件”提示）在亮色下只有 1.8:1 */
+#app .lcolor--grey-3,
+#app .lcolor-var-grey-3 {
+  color: var(--lg-text-3) !important;
+}
+/* 站点把灰色按钮的文字写死成 #595959，深色卡片上只有 1.5:1：
+   登录页“通过通行密钥登录”因此像消失了。禁用态也要能读出来。 */
+#app button.lcolor-var-grey-4,
+#app a.lcolor-var-grey-4,
+#app .lauth-container button[class*="lcolor-var-grey"],
+#app .lauth-container a[class*="lcolor-var-grey"] {
+  color: var(--lg-text-3) !important;
+  border-color: var(--lg-border) !important;
 }
 
 /* ---- 列表标题/摘要 ---- */
@@ -606,22 +715,45 @@ body,
 
 /* ---- 滚动条与焦点 ---- */
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--lg-text-3) 45%, transparent);
+  background: color-mix(in srgb, var(--lg-text-3) 35%, transparent);
   border-radius: 999px;
-  border: 3px solid transparent;
+  border: 2px solid transparent;
   background-clip: padding-box;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--lg-text-3) 35%, transparent) !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--lg-text-3) 70%, transparent);
-  border: 3px solid transparent;
+  background: color-mix(in srgb, var(--lg-text-3) 60%, transparent);
+  border: 2px solid transparent;
   background-clip: padding-box;
 }
-::-webkit-scrollbar-track {
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--lg-text-3) 60%, transparent) !important;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner {
+  background: transparent !important;
 }
 
 :focus-visible {
@@ -630,6 +762,15 @@ body,
 }
 
 /* ---- 代码高亮（深色）---- */
+@media (prefers-color-scheme: light) {
+  /* 站点亮色高亮主题的注释是 #a0a1a7（2.4:1），读不清 */
+  #app .token.comment,
+  #app .token.prolog,
+  #app .token.doctype,
+  #app .token.cdata {
+    color: var(--lg-text-3) !important;
+  }
+}
 @media (prefers-color-scheme: dark) {
   #app .token.comment,
   #app .token.prolog,
@@ -677,4 +818,20 @@ body,
   #app .token.important {
     color: var(--lg-orange) !important;
   }
+}
+
+/* ---- 广告拦截（默认关闭；html[data-lg-adblock="1"] 才生效） ----
+   请求级已在主进程按 /qiafan/ 直接 cancel；这里只处理取消后可能留下的
+   推广卡空壳和第三方广告 iframe。:has() 按链接域名静态判断，不误伤正常卡片。 */
+html[data-lg-adblock="1"] ins.adsbygoogle,
+html[data-lg-adblock="1"] iframe[src*="googlesyndication"],
+html[data-lg-adblock="1"] iframe[src*="doubleclick"],
+html[data-lg-adblock="1"] iframe[src*="adsserver"],
+html[data-lg-adblock="1"] [id*="qiafan" i],
+html[data-lg-adblock="1"] [class*="qiafan" i],
+html[data-lg-adblock="1"] .lg-right .lg-article:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-adblock="1"] .lg-right .card:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-adblock="1"] .am-u-lg-3 .lg-article:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-adblock="1"] .am-u-lg-3 .card:has(a[href*="class.luogu.com.cn"]) {
+  display: none !important;
 }

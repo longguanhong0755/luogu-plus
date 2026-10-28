@@ -135,14 +135,16 @@ body.rail-pinned {
 }
 
 /* ---------- 左侧导航 ---------- */
+/* 几何取自洛谷官方侧栏：56px 栏内收 8px，导航项 40×30、图标 20px、
+   相邻项 8px 间距（用上下各 4px 外边距实现），展开与收起共用同一行高。 */
 #rail {
   grid-column: 1;
   grid-row: 2;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  padding: 10px 10px 12px;
+  gap: 0;
+  padding: 12px 8px;
   background: color-mix(in srgb, var(--rail) var(--panel-alpha, 83%), transparent);
   -webkit-backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
   backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
@@ -155,35 +157,35 @@ body.rail-pinned {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 2px;
+  gap: 0;
   flex: 0 0 auto;
 }
+/* 侧栏可能比窗口高，但滚动条会挤掉 40px 热区的宽度，所以只保留滚动、隐藏条 */
 #rail-top {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 #rail-top::-webkit-scrollbar {
-  width: 6px;
-}
-#rail-top::-webkit-scrollbar-thumb {
-  border-width: 2px;
+  width: 0;
+  height: 0;
 }
 #rail-bottom {
   padding-top: 8px;
+  margin-top: 8px;
   border-top: 1px solid var(--border);
 }
 
 /* 展开/折叠共用同一行头部：行高固定，悬停展开时导航项不会上下跳 */
 #rail-head {
-  height: 36px;
-  flex: 0 0 36px;
+  height: 40px;
+  flex: 0 0 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px 0 5px;
+  padding: 0 4px 4px;
 }
 #rail-mark {
   width: 20px;
@@ -231,8 +233,12 @@ body.rail-pinned #rail-pin {
   pointer-events: auto;
 }
 
-/* 折叠态：只留图标。头部行保留，所以悬停展开时行位置不动 */
+/* 折叠态：只留图标。头部行保留，所以悬停展开时行位置不动。
+   横向收成官方那种 40×30 的方形热区，纵向节拍由统一的 4px 外边距维持。 */
 body:not(.rail-pinned):not(.rail-overlay) .rail-btn {
+  width: 40px;
+  margin-left: auto;
+  margin-right: auto;
   justify-content: center;
   padding: 0;
 }
@@ -240,18 +246,7 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-label {
   display: none;
 }
 body:not(.rail-pinned):not(.rail-overlay) #rail-jump {
-  justify-content: center;
-  padding: 0;
-  cursor: pointer;
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-jump-input {
   display: none;
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-jump .rj-icon {
-  color: var(--text-2);
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-jump:hover .rj-icon {
-  color: var(--text);
 }
 
 .rail-spacer {
@@ -260,9 +255,10 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump:hover .rj-icon {
 
 .rail-btn {
   width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: var(--r-md);
+  height: 30px;
+  margin: 4px 0;
+  padding: 0 8px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -287,11 +283,13 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump:hover .rj-icon {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 官方侧栏没有分组标题；这里只在展开态用一行很小的弱化标签，
+   折叠态让位给导航项本身，不再画分隔线。 */
 .rail-group {
   display: flex;
   align-items: flex-end;
-  height: 24px;
-  padding: 4px 10px 2px;
+  height: 22px;
+  padding: 4px 8px 0;
   flex: 0 0 auto;
   overflow: hidden;
 }
@@ -303,32 +301,23 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump:hover .rj-icon {
   white-space: nowrap;
 }
 body:not(.rail-pinned):not(.rail-overlay) .rail-group {
-  align-items: center;
-  height: 9px;
-  padding: 0 8px;
+  height: 6px;
+  padding: 0;
 }
 body:not(.rail-pinned):not(.rail-overlay) .rail-group-label {
   display: none;
 }
-body:not(.rail-pinned):not(.rail-overlay) .rail-group::after {
-  content: "";
-  width: 100%;
-  height: 1px;
-  background: var(--divider);
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-top > .rail-group:first-child {
-  height: 4px;
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-top > .rail-group:first-child::after,
-body:not(.rail-pinned):not(.rail-overlay) #rail-bottom > .rail-group:first-child::after {
+body:not(.rail-pinned):not(.rail-overlay) #rail-top > .rail-group:first-child,
+body:not(.rail-pinned):not(.rail-overlay) #rail-bottom > .rail-group:first-child {
   display: none;
 }
 
 #rail-user {
   width: 100%;
-  height: 48px;
-  padding: 0 8px;
-  border-radius: var(--r-md);
+  height: 40px;
+  margin-top: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -388,9 +377,11 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-bottom > .rail-group:first-child
   text-overflow: ellipsis;
 }
 body:not(.rail-pinned):not(.rail-overlay) #rail-user {
-  justify-content: center;
-  height: 40px;
+  width: 32px;
+  height: 32px;
+  margin: 8px auto 0;
   padding: 0;
+  justify-content: center;
 }
 body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   display: none;
@@ -410,8 +401,8 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 #rail-jump {
   width: 100%;
   height: var(--h-md);
-  margin: 6px 0;
-  padding: 0 10px;
+  margin: 8px 0;
+  padding: 0 8px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2098,14 +2089,10 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   color: var(--text);
 }
 .home-quote {
-  max-width: 520px;
+  max-width: 560px;
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
   color: var(--text-2);
-  padding: 5px 12px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2158,8 +2145,8 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 
 .home-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: var(--sp-5);
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: var(--sp-4);
   align-items: start;
 }
 .home-grid.single {
@@ -2169,13 +2156,13 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 .home-side {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-5);
+  gap: var(--sp-4);
   min-width: 0;
 }
 
 .home-main .card,
 .home-side .card {
-  padding: var(--sp-5);
+  padding: var(--sp-4);
 }
 .home-main .list-card,
 .home-side .list-card {
@@ -2299,10 +2286,16 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   margin-bottom: 2px;
 }
 
+.heat-body {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-5);
+  margin-top: var(--sp-4);
+}
 .heat-wrap {
   display: flex;
   gap: var(--sp-2);
-  margin-top: var(--sp-4);
+  flex: 0 0 auto;
 }
 .heat-days {
   display: grid;
@@ -2385,6 +2378,36 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 }
 .heat-legend .lg-label {
   margin: 0 2px;
+}
+
+/* 学习概览并进打卡卡片的右半区：竖排三行，和热力图等高 */
+.heat-side {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.heat-side .stats-grid {
+  margin-top: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.heat-side .stat {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 7px 10px;
+}
+.heat-side .stat-value {
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+}
+.heat-side .stat-label {
+  order: -1;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
 }
 
 .contest-card {
@@ -3000,6 +3023,22 @@ body.perf .toast {
   }
   .lib-search {
     width: 180px;
+  }
+}
+
+@media (max-width: 860px) {
+  .heat-body {
+    flex-direction: column;
+  }
+  .heat-side .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .heat-side .stat {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .heat-side .stat-label {
+    order: 0;
   }
 }
 

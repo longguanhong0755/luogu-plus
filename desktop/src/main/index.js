@@ -12,6 +12,7 @@ const { LuoguService } = require("./luogu");
 const { createNotifier } = require("./notify");
 const { createTray } = require("./tray");
 const { registerIpc, broadcastState, state } = require("./ipc");
+const adblock = require("./adblock");
 const { runSmoke, seedDemo } = require("./smoke");
 
 const UA =
@@ -206,6 +207,8 @@ function bootstrap() {
     ctx.session.setUserAgent(UA);
     ctx.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     ctx.session.setPermissionCheckHandler(() => false);
+    // 广告拦截只在这个会话上挂一次；开关状态由回调实时读取。
+    adblock.wire(ctx.session, () => ctx.cfg.get().general.adBlock);
     // 页面里的下载（附件/素材）自动落到系统「下载」文件夹，完成后 toast，不弹另存为
     ctx.session.on("will-download", (_event, item) => {
       try {

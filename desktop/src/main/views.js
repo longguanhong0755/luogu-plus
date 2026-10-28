@@ -747,6 +747,7 @@ class ViewManager {
           "--lg-view-y=" + (TITLE_H + TOOLBAR_H),
           "--lg-motion=" + (!perf && this.ctx.cfg.get().appearance.wallpaperMotion ? "1" : "0"),
           "--lg-zoom=" + (!perf && this.ctx.cfg.get().appearance.wallpaperZoom ? "1" : "0"),
+          "--lg-adblock=" + (this.ctx.cfg.get().general.adBlock ? "1" : "0"),
         ],
       },
     });
@@ -793,6 +794,9 @@ class ViewManager {
           }
         });
         wc.loadURL(url).catch((err) => {
+          // 页面还没加载完就被切走/重载时，Chromium 以 ERR_ABORTED 结束旧请求；
+          // 这不是打开失败，弹出来只会吓人。
+          if (/ERR_ABORTED|\(-3\)/.test(String((err && err.message) || ""))) return;
           this.ctx.toast && this.ctx.toast("页面打开失败", err.message);
         });
       }
@@ -1162,6 +1166,20 @@ class ViewManager {
     this.layout();
   }
 
+  /* 广告开关：页面 CSS 由 data-lg-adblock 控制，新文档由 page preload 在
+     document-start 置位；已打开的页面在这里即时切换，不需要重载。 */
+  applyAdBlock() {
+    const on = !!(this.ctx.cfg && this.ctx.cfg.get().general.adBlock);
+    const value = on ? "1" : "0";
+    for (const entry of this.entries.values()) {
+      const wc = entry.view.webContents;
+      if (!wc || wc.isDestroyed()) continue;
+      const url = wc.getURL();
+      if (!url || url === "about:blank" || isOfflineUrl(url)) continue;
+      wc.executeJavaScript(`document.documentElement.dataset.lgAdblock="${value}";`, true).catch(() => {});
+    }
+  }
+
   /* ---------- 统一皮肤 + 壁纸复刻 ---------- */
 
   skinStatic() {
@@ -1215,6 +1233,7 @@ class ViewManager {
       `--lg-card-alpha:${t.cardAlpha}%`,
       `--lg-overlay-alpha:${t.overlayAlpha}%`,
       `--lg-scrim:${t.pageScrim}%`,
+      `--lg-text-shadow:${t.cardAlpha <= 30 ? "0 1px 2px rgba(0,0,0,.35)" : "none"}`,
       `--lg-blur:${perf ? 0 : t.blurPx}px`,
       `--lg-font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace`,
       `--lg-radius-sm:6px`,

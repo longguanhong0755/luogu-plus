@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
 const ocr = require("./ocr");
+const adblock = require("./adblock");
 const { STATUS_TEXT } = require("./luogu");
 
 /* ---------- 真实账号登录测试（LG_SMOKE_LOGIN=<账号文件>）---------- */
@@ -1189,16 +1190,38 @@ async function runSmoke(ctx) {
           const rail = document.getElementById("rail");
           const labels = [...document.querySelectorAll(".rail-group-label")];
           const text = document.querySelector(".rail-user-text");
+          const btn = document.querySelector("#rail-top .rail-btn");
+          const br = btn ? btn.getBoundingClientRect() : null;
+          const ir = btn && btn.querySelector("svg") ? btn.querySelector("svg").getBoundingClientRect() : null;
+          const ur = document.getElementById("rail-user") ? document.getElementById("rail-user").getBoundingClientRect() : null;
+          const jr = document.getElementById("rail-jump") ? document.getElementById("rail-jump") : null;
           return {
             groupsHidden: labels.length > 0 && labels.every((el) => getComputedStyle(el).display === "none"),
             userTextHidden: !!text && getComputedStyle(text).display === "none",
             userLast: !!rail.lastElementChild && rail.lastElementChild.id === "rail-user",
             userLabel: ((document.getElementById("rail-user") || {}).innerText || "").replace(/\\s+/g, " ").trim(),
+            btnW: br ? Math.round(br.width) : 0,
+            btnH: br ? Math.round(br.height) : 0,
+            iconW: ir ? Math.round(ir.width) : 0,
+            userW: ur ? Math.round(ur.width) : 0,
+            userH: ur ? Math.round(ur.height) : 0,
+            jumpHidden: !!jr && getComputedStyle(jr).display === "none",
+            railPad: getComputedStyle(rail).padding,
           };
         })()`);
         console.log("SMOKE_RAIL_COLLAPSED " + JSON.stringify(collapsedRail));
-        if (!collapsedRail.groupsHidden || !collapsedRail.userTextHidden || !collapsedRail.userLast) {
-          console.log("SMOKE_FAIL 侧栏折叠态分组/账户卡");
+        if (
+          !collapsedRail.groupsHidden ||
+          !collapsedRail.userTextHidden ||
+          !collapsedRail.userLast ||
+          collapsedRail.btnW !== 40 ||
+          collapsedRail.btnH !== 30 ||
+          collapsedRail.iconW !== 20 ||
+          collapsedRail.userW !== 32 ||
+          collapsedRail.userH !== 32 ||
+          !collapsedRail.jumpHidden
+        ) {
+          console.log("SMOKE_FAIL 侧栏折叠态分组/账户卡/官方几何");
         }
         ctx.views.setRailHover(true, "jump");
         await wait(800);
@@ -1224,6 +1247,9 @@ async function runSmoke(ctx) {
             const rail = document.getElementById("rail");
             const labels = [...document.querySelectorAll(".rail-label")].filter((el) => getComputedStyle(el).display !== "none");
             const pin = document.getElementById("rail-pin");
+            const btn = document.querySelector("#rail-top .rail-btn");
+            const br = btn ? btn.getBoundingClientRect() : null;
+            const jump = document.getElementById("rail-jump");
             return {
               railW: Math.round(rail.getBoundingClientRect().width),
               labels: labels.length,
@@ -1233,6 +1259,10 @@ async function runSmoke(ctx) {
               pinVisible: !!pin && getComputedStyle(pin).opacity !== "0",
               pinned: document.body.classList.contains("rail-pinned"),
               jumpFocused: document.activeElement === document.getElementById("rail-jump-input"),
+              btnW: br ? Math.round(br.width) : 0,
+              btnH: br ? Math.round(br.height) : 0,
+              jumpVisible: !!jump && getComputedStyle(jump).display !== "none",
+              shadow: getComputedStyle(rail).boxShadow,
             };
           })()`);
           console.log("SMOKE_RAIL " + JSON.stringify(metrics));
@@ -1241,9 +1271,14 @@ async function runSmoke(ctx) {
             !metrics.groups.includes("社区") ||
             !metrics.groups.includes("工具") ||
             !metrics.userLast ||
-            !/未登录|个人主页/.test(metrics.user)
+            !/未登录|个人主页/.test(metrics.user) ||
+            metrics.btnW < 188 ||
+            metrics.btnW > 193 ||
+            metrics.btnH !== 30 ||
+            !metrics.jumpVisible ||
+            metrics.shadow !== "none"
           ) {
-            console.log("SMOKE_FAIL 侧栏分组/账户卡");
+            console.log("SMOKE_FAIL 侧栏分组/账户卡/展开几何");
           }
         }
         ctx.views.setRailPinned(true);
@@ -1731,13 +1766,36 @@ async function runSmoke(ctx) {
           try {
             const skin = await entry.view.webContents.executeJavaScript(`(() => {
               const probe = getComputedStyle(document.body, "::before");
+              const rect = (el) => {
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+              };
+              const app = document.querySelector("#app");
+              const main = document.querySelector("#app > .main-container");
+              const card = document.querySelector("#app .l-card");
+              const appCS = app ? getComputedStyle(app) : null;
+              const mainCS = main ? getComputedStyle(main) : null;
               return {
                 bgImage: probe.backgroundImage.slice(0, 160),
                 bgSize: probe.backgroundSize,
                 scrim: getComputedStyle(document.documentElement).getPropertyValue("--lg-scrim").trim(),
                 backdrop: probe.transform,
                 bodyBg: getComputedStyle(document.body).backgroundColor,
-                htmlBg: getComputedStyle(document.documentElement).backgroundColor
+                htmlBg: getComputedStyle(document.documentElement).backgroundColor,
+                innerWidth: window.innerWidth,
+                scrollWidth: document.documentElement.scrollWidth,
+                app: rect(app),
+                appPad: appCS ? appCS.padding : "",
+                appMargin: appCS ? appCS.margin : "",
+                main: rect(main),
+                mainPad: mainCS ? mainCS.padding : "",
+                mainMargin: mainCS ? mainCS.margin : "",
+                card: rect(card),
+                scrollbar: {
+                  width: getComputedStyle(document.documentElement).scrollbarWidth,
+                  thumb: (() => { try { return getComputedStyle(document.documentElement, "::-webkit-scrollbar-thumb").backgroundColor; } catch { return ""; } })(),
+                },
               };
             })()`);
             console.log("SMOKE_SKIN " + JSON.stringify(skin));
@@ -1964,12 +2022,15 @@ async function runSmoke(ctx) {
       }
 
       if (process.env.LG_SMOKE_GLASS === "1") {
-        // R55 回归：「壁纸透出」滑杆必须真实改变内容面/纱层透明度，且不低于可读下限
+        // R64 回归：「壁纸透出」滑杆必须真实改变内容面/纱层透明度，100% 时归零，
+        // 浮层仍保留 60% 可读下限（0.7.0 语义：70→100 线性压到全透）。
         const readGlassVars = () =>
           ctx.win.webContents.executeJavaScript(`(() => ({
             scrim: getComputedStyle(document.documentElement).getPropertyValue("--page-scrim").trim(),
             card: getComputedStyle(document.documentElement).getPropertyValue("--card-alpha").trim(),
             panel: getComputedStyle(document.documentElement).getPropertyValue("--panel-alpha").trim(),
+            overlay: getComputedStyle(document.documentElement).getPropertyValue("--overlay-alpha").trim(),
+            textShadow: getComputedStyle(document.documentElement).getPropertyValue("--lg-text-shadow").trim(),
           }))()`);
         ctx.cfg.setAppearance({ glass: 0 });
         await ctx.refreshAppearance({ reschedule: false });
@@ -1981,16 +2042,64 @@ async function runSmoke(ctx) {
         const glass100 = await readGlassVars();
         const pctNum = (value) => Number(String(value).replace("%", "")) || 0;
         const glassOk =
-          pctNum(glass100.scrim) < pctNum(glass0.scrim) - 20 &&
-          pctNum(glass100.card) < pctNum(glass0.card) - 15 &&
-          pctNum(glass100.scrim) >= 50 &&
-          pctNum(glass100.card) >= 55 &&
-          pctNum(glass100.panel) >= 58;
+          pctNum(glass0.scrim) >= 50 &&
+          pctNum(glass0.card) >= 55 &&
+          pctNum(glass100.scrim) === 0 &&
+          pctNum(glass100.card) === 0 &&
+          pctNum(glass100.panel) === 0 &&
+          pctNum(glass100.overlay) >= 60;
         console.log("SMOKE_GLASS " + JSON.stringify({ glass0, glass100, ok: glassOk }));
-        if (!glassOk) console.log("SMOKE_FAIL 壁纸透出滑杆没有生效或击穿可读下限");
+        if (!glassOk) console.log("SMOKE_FAIL 壁纸透出 100% 没有归零或浮层可读下限丢失");
         ctx.cfg.setAppearance({ glass: 45 });
         await ctx.refreshAppearance({ reschedule: false });
         await wait(300);
+      }
+
+      if (process.env.LG_SMOKE_ADBLOCK === "1") {
+        // R64 回归：广告默认关闭；开启后请求级 cancel 生效，页面拿到 data-lg-adblock=1。
+        const defaultOff = ctx.cfg.get().general.adBlock === false;
+        const wired = adblock.stats().wired;
+        const before = adblock.stats().blocked;
+        let offErr = "";
+        try {
+          await ctx.session.fetch("https://doubleclick.net/lgprobe-off-" + Date.now(), { cache: "no-store" });
+        } catch (err) {
+          offErr = String((err && err.message) || err).slice(0, 80);
+        }
+        await wait(250);
+        const offBlocked = adblock.stats().blocked - before;
+
+        ctx.cfg.setGeneral({ adBlock: true });
+        await wait(250);
+        const afterToggle = adblock.stats().blocked;
+        let onErr = "";
+        try {
+          await ctx.session.fetch("https://doubleclick.net/lgprobe-on-" + Date.now(), { cache: "no-store" });
+        } catch (err) {
+          onErr = String((err && err.message) || err).slice(0, 80);
+        }
+        await wait(300);
+        const onBlocked = adblock.stats().blocked - afterToggle;
+
+        // 已打开的页面必须即时拿到 CSS 兜底标记（离线页没有广告，跳过）
+        let dataset = "";
+        const wc = ctx.views.currentWebContents();
+        if (wc) {
+          try {
+            const url = wc.getURL();
+            if (/^https?:/i.test(url)) dataset = await wc.executeJavaScript("document.documentElement.dataset.lgAdblock || ''");
+          } catch {
+            dataset = "";
+          }
+        }
+        const adOk = defaultOff && wired && offBlocked === 0 && onBlocked >= 1;
+        console.log(
+          "SMOKE_ADBLOCK " +
+            JSON.stringify({ defaultOff, wired, offBlocked, onBlocked, dataset, offErr, onErr, ok: adOk })
+        );
+        if (!adOk) console.log("SMOKE_FAIL 广告拦截开关没有生效");
+        ctx.cfg.setGeneral({ adBlock: false });
+        await wait(200);
       }
 
       if (process.env.LG_SMOKE_HISTORY === "1") {
@@ -2080,6 +2189,15 @@ async function runSmoke(ctx) {
           return "typed";
         })()`);
         await wait(1300); // 防抖 800ms + 落盘
+        // 矩阵里 IDE 探针可能先打开过本题，编辑器内存里仍是默认语言；
+        // 这里显式设一次偏好，验证「切题继承全局语言」而不是依赖前序状态。
+        await ctx.win.webContents.executeJavaScript(`(() => {
+          const langSel = document.querySelector("#ide-pane .ide-lang");
+          langSel.value = "C++17";
+          langSel.dispatchEvent(new Event("change", { bubbles: true }));
+          return langSel.value;
+        })()`);
+        await wait(1200);
         ctx.views.openProblem("P1002");
         await wait(1500);
         ctx.views.setIde(true);
@@ -2094,7 +2212,8 @@ async function runSmoke(ctx) {
           };
         })()`);
         console.log("SMOKE_DRAFT_UI " + JSON.stringify(draftUi));
-        if (draftUi.leaked || !draftUi.isDefault) console.log("SMOKE_FAIL 切题后编辑器没有换成本题草稿/默认模板");
+        const draftUiOk = !draftUi.leaked && draftUi.isDefault && draftUi.lang === "C++17";
+        if (!draftUiOk) console.log("SMOKE_FAIL 切题后编辑器没有换成本题草稿/默认模板，或没继承语言偏好");
         ctx.views.setIde(false);
         ctx.views.showHome();
         await wait(300);
@@ -2181,6 +2300,9 @@ async function runSmoke(ctx) {
 
       if (process.env.LG_SMOKE_AUDIT === "1") {
         await runAudit(ctx, outDir, wait);
+      }
+      if (process.env.LG_SMOKE_SKIN_AUDIT === "1") {
+        await runSkinAudit(ctx, outDir, wait);
       }
 
       ctx.openSettings();
@@ -2434,6 +2556,303 @@ async function runAudit(ctx, outDir, wait) {
   }
   fs.writeFileSync(path.join(outDir, "audit-dark.json"), JSON.stringify(report, null, 2));
   console.log("SMOKE_AUDIT " + path.join(outDir, "audit-dark.json"));
+}
+
+/* 皮肤几何审计：真实页面上找“深底深字 / 横向溢出 / 容器空白”，并逐页截图。
+   只读 DOM，不发任何提交请求。 */
+async function runSkinAudit(ctx, outDir, wait) {
+  const only = String(process.env.LG_AUDIT_ONLY || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const pages = [
+    ["problem", "https://www.luogu.com.cn/problem/P1001"],
+    ["problem-list", "https://www.luogu.com.cn/problem/list"],
+    ["contest-list", "https://www.luogu.com.cn/contest/list"],
+    ["solution", "https://www.luogu.com.cn/problem/solution/P1001"],
+    ["article", "https://www.luogu.com.cn/article"],
+    ["article-detail", "https://www.luogu.com.cn/article/q3usb3ep"],
+    ["discuss", "https://www.luogu.com.cn/discuss"],
+    ["training", "https://www.luogu.com.cn/training/100"],
+    ["user", "https://www.luogu.com.cn/user/1"],
+  ].filter(([name]) => !only.length || only.includes(name));
+  const report = {};
+  for (const [name, url] of pages) {
+    const wc = await loadAndWait(ctx, url, name);
+    if (!wc) continue;
+    try {
+      const data = await wc.executeJavaScript(`(() => {
+        const isDark = matchMedia("(prefers-color-scheme: dark)").matches;
+        const parse = (c) => {
+          const s = String(c || "").trim();
+          let m = s.match(/^rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)(?:,\\s*([\\d.]+))?\\)/);
+          if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+          m = s.match(/^color\\(srgb\\s+([\\d.]+)\\s+([\\d.]+)\\s+([\\d.]+)(?:\\s*\\/\\s*([\\d.]+))?\\)/);
+          if (m) return { r: +m[1] * 255, g: +m[2] * 255, b: +m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
+          return null;
+        };
+        const lum = (c) => (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) / 255;
+        const pathOf = (el) => {
+          const cls = typeof el.className === "string" ? el.className.trim().split(/\\s+/).slice(0, 3).join(".") : "";
+          return el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (cls ? "." + cls : "");
+        };
+        const dark = [];
+        const dim = [];
+        const over = [];
+        const light = [];
+        const vw = window.innerWidth;
+        const relLum = (c) => {
+          const f = (v) => {
+            v /= 255;
+            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+          };
+          return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+        };
+        const contrast = (a, b) => {
+          const l1 = relLum(a);
+          const l2 = relLum(b);
+          return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+        };
+        for (const el of document.querySelectorAll("#app *")) {
+          const r = el.getBoundingClientRect();
+          if (r.width < 12 || r.height < 8) continue;
+          if (r.bottom <= 0 || r.top >= document.documentElement.scrollHeight) continue;
+          const cs = getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
+          if (r.right > vw + 1) {
+            over.push({
+              path: pathOf(el),
+              x: Math.round(r.x),
+              right: Math.round(r.right),
+              w: Math.round(r.width),
+              tag: el.tagName.toLowerCase(),
+              text: (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40),
+              parent: el.parentElement ? pathOf(el.parentElement) : "",
+            });
+          }
+          const bgc = parse(cs.backgroundColor);
+          if (
+            isDark &&
+            bgc &&
+            bgc.a > 0.5 &&
+            lum(bgc) > 0.55 &&
+            r.width * r.height > 2000 &&
+            !el.closest(".difficulty, .luogu-username")
+          ) {
+            light.push({
+              path: pathOf(el),
+              bg: cs.backgroundColor,
+              color: cs.color,
+              area: Math.round(r.width * r.height),
+              text: (el.innerText || "").trim().slice(0, 30),
+              chain: (() => {
+                const out = [];
+                let n = el;
+                for (let i = 0; i < 5 && n; i++) { out.push(pathOf(n)); n = n.parentElement; }
+                return out.join(" < ");
+              })(),
+              style: (el.getAttribute("style") || "").slice(0, 120),
+              html: el.outerHTML.slice(0, 180),
+            });
+          }
+          const direct = [...el.childNodes]
+            .filter((n) => n.nodeType === 3)
+            .map((n) => n.textContent)
+            .join("")
+            .trim();
+          if (direct.length < 3 || direct.length > 90) continue;
+          const fg = parse(cs.color);
+          if (!fg || fg.a <= 0.5) continue;
+          // 只审计深色主题：祖先实际底色是深色时，深色/灰暗文字都难读
+          let node = el;
+          let bg = null;
+          let hasImage = false;
+          while (node) {
+            const ncs = getComputedStyle(node);
+            if (!hasImage && ncs.backgroundImage && ncs.backgroundImage !== "none") hasImage = true;
+            const c = parse(ncs.backgroundColor);
+            if (c && c.a > 0.5) { bg = c; break; }
+            node = node.parentElement;
+          }
+          if (hasImage) continue; // 装饰图/渐变上的文字无法用纯色对比度判定
+          if (el.closest(".difficulty, .luogu-username, .tags")) continue; // 站点品牌色徽标/标签
+          if (isDark && bg && lum(bg) > 0.35) continue;
+          const chainOf = (n) => {
+            const out = [];
+            let cur = n;
+            for (let i = 0; i < 4 && cur; i++) { out.push(pathOf(cur)); cur = cur.parentElement; }
+            return out.join(" < ");
+          };
+          if (isDark && lum(fg) <= 0.45) {
+            dark.push({
+              path: pathOf(el),
+              color: cs.color,
+              text: direct.slice(0, 40),
+              w: Math.round(r.width),
+              h: Math.round(r.height),
+              chain: chainOf(el),
+              html: el.outerHTML.slice(0, 160),
+            });
+          } else {
+            const ratio = bg ? contrast(fg, bg) : 0;
+            if (ratio >= 0.1 && ratio < 2.6) {
+              dim.push({
+                path: pathOf(el),
+                color: cs.color,
+                text: direct.slice(0, 40),
+                ratio: Math.round(ratio * 100) / 100,
+                w: Math.round(r.width),
+                h: Math.round(r.height),
+                chain: chainOf(el),
+                html: el.outerHTML.slice(0, 160),
+              });
+            }
+          }
+        }
+        const main = document.querySelector("#app > .main-container");
+        const bigText = [];
+        const controls = [];
+        for (const el of document.querySelectorAll(
+          "#app a.l-button, #app button.l-button, #app .l-button, #app a[class*='l-button'], #app button[class*='l-button']"
+        )) {
+          const r = el.getBoundingClientRect();
+          if (r.width < 8 || r.height < 8) continue;
+          const cs = getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
+          let tr = null;
+          try {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            tr = range.getBoundingClientRect();
+          } catch {
+            tr = null;
+          }
+          if (!tr || !tr.width) continue;
+          controls.push({
+            path: pathOf(el),
+            text: (el.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 24),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+            dx: Math.round(tr.left + tr.width / 2 - (r.left + r.width / 2)),
+            dy: Math.round(tr.top + tr.height / 2 - (r.top + r.height / 2)),
+            clipped: el.scrollWidth > el.clientWidth + 1,
+            display: cs.display,
+            align: cs.alignItems,
+            justify: cs.justifyContent,
+          });
+        }
+        for (const el of document.querySelectorAll("#app *")) {
+          const direct = [...el.childNodes]
+            .filter((n) => n.nodeType === 3)
+            .map((n) => n.textContent)
+            .join("")
+            .trim();
+          if (direct.length < 8 || direct.length > 90) continue;
+          const r = el.getBoundingClientRect();
+          if (r.width < 40 || r.height < 10 || r.top < 0 || r.top > 700) continue;
+          const cs = getComputedStyle(el);
+          if (parseFloat(cs.fontSize) < 15) continue;
+          bigText.push({
+            path: pathOf(el),
+            text: direct.slice(0, 30),
+            color: cs.color,
+            fill: cs.webkitTextFillColor,
+            size: cs.fontSize,
+            y: Math.round(r.top),
+            opacity: cs.opacity,
+            bgImage: cs.backgroundImage.slice(0, 120),
+            bgClip: cs.webkitBackgroundClip || cs.backgroundClip,
+            blend: cs.mixBlendMode,
+            filter: cs.filter,
+            chain: (() => {
+              const out = [];
+              let n = el;
+              for (let i = 0; i < 4 && n; i++) { out.push(pathOf(n)); n = n.parentElement; }
+              return out.join(" < ");
+            })(),
+          });
+        }
+        const rect = (el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+        };
+        return {
+          url: location.href,
+          isDark,
+          vw,
+          scrollW: document.documentElement.scrollWidth,
+          main: rect(main),
+          mainStyle: main ? { pad: getComputedStyle(main).padding, margin: getComputedStyle(main).margin } : null,
+          darkCount: dark.length,
+          dark: dark.slice(0, 24),
+          dimCount: dim.length,
+          dim: dim.sort((a, b) => a.ratio - b.ratio).slice(0, 20),
+          overCount: over.length,
+          over: over.sort((a, b) => b.right - a.right).slice(0, 8),
+          lightCount: light.length,
+          light: light.sort((a, b) => b.area - a.area).slice(0, 10),
+          bigText: bigText.slice(0, 10),
+          headers: [...document.querySelectorAll('#app [class*="user-header"], #app [class*="banner"]')].slice(0, 10).map((el) => {
+            const cs = getComputedStyle(el);
+            const b = el.getBoundingClientRect();
+            return {
+              path: pathOf(el),
+              bg: cs.backgroundColor,
+              image: cs.backgroundImage.slice(0, 140),
+              y: Math.round(b.y),
+              h: Math.round(b.height),
+            };
+          }),
+          controlCount: controls.length,
+          controls: controls
+            .sort((a, b) => Math.abs(b.dy) + Math.abs(b.dx) - (Math.abs(a.dy) + Math.abs(a.dx)))
+            .slice(0, 12),
+        };
+      })()`);
+      report[name] = data;
+      let image = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          image = await wc.capturePage();
+          if (image && !image.isEmpty()) break;
+        } catch {
+          image = null;
+        }
+        await wait(600);
+      }
+      if (image && !image.isEmpty()) {
+        fs.writeFileSync(path.join(outDir, `skin-${name}.png`), image.toPNG());
+        console.log("SMOKE_SHOT skin-" + name);
+      }
+      console.log(
+        "SMOKE_SKIN_AUDIT_" +
+          name.toUpperCase() +
+          " " +
+          JSON.stringify({
+            isDark: data.isDark,
+            vw: data.vw,
+            scrollW: data.scrollW,
+            main: data.main,
+            darkCount: data.darkCount,
+            dimCount: data.dimCount,
+            overCount: data.overCount,
+            lightCount: data.lightCount,
+            dark: data.dark.slice(0, 5),
+            dim: data.dim.slice(0, 6),
+            over: data.over.slice(0, 4),
+            light: data.light.slice(0, 4),
+            controlCount: data.controlCount,
+            controls: data.controls.slice(0, 4),
+          })
+      );
+    } catch (err) {
+      console.log("SMOKE_SKIN_AUDIT_FAIL_" + name + " " + err.message);
+    }
+    await wait(400);
+  }
+  fs.writeFileSync(path.join(outDir, "skin-audit.json"), JSON.stringify(report, null, 2));
+  console.log("SMOKE_SKIN_AUDIT " + path.join(outDir, "skin-audit.json"));
 }
 
 /* 演示数据：只给截图用，不代表真实账号。 */
