@@ -1,6 +1,6 @@
 # 洛谷桌面版（Luogu Desktop）
 
-为 Windows 打造的洛谷客户端，v0.7.8。**不是网页套壳**：
+为 Windows 打造的洛谷客户端，v0.7.9。**不是网页套壳**：
 
 - **题库 / 训练 / 比赛 / 记录 / 讨论 / 文章是原生列表**——搜索、筛选、翻页都不加载整页，
   **鼠标点行直接打开**（键盘 Enter/方向键同样可用）；点进详情「后退」即回来源列表。
@@ -69,6 +69,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1
 LG_SMOKE_NET=1  npm run smoke            # 允许真实网络
 LG_SMOKE_LIB=1  npm run smoke            # 逐个截图原生列表
 LG_SMOKE_LUOGU=1 npm run smoke           # 打开 P1001 并截图阅读面
+LG_SMOKE_FIND=1 npm run smoke            # R76：Ctrl+F 查找条/缩放 HUD 行为探针（真实键鼠链）
+LG_SMOKE_SEC=1 npm run smoke             # R77：安全注入探针（window.open/跨源导航断言全拒）
 LG_SMOKE_AUDIT=1 npm run smoke           # 深色/浅色对比度审计 → ../.lg-dev/audit-dark.json
 LG_SMOKE_THEME=light npm run smoke       # 以浅色模式跑同一套
 LG_SMOKE_RAIL=1 npm run smoke            # 折叠→悬停展开→固定→导航/钉子点击端到端

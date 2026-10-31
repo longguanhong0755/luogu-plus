@@ -2,6 +2,22 @@
 const { app, ipcMain, dialog, clipboard } = require("electron");
 const { LIBRARY_IDS, resolveRail, canonicalPid } = require("./sections");
 
+/* 冒烟裁决洞 #2 修复：ipc handler 抛错只走 Electron 内部日志，启动器扫不到。
+   冒烟模式下包一层守卫——handler 异常即打 SMOKE_FAIL，假 PASS 不再可能。
+   频道名字面量仍是 ipcMain.handle 的第一个参数，check.js 通道对齐扫描不受影响。 */
+if (process.env.LG_SMOKE === "1") {
+  const origHandle = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, fn) =>
+    origHandle(channel, async (...args) => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        console.error("SMOKE_FAIL ipc:" + channel + " " + String((err && err.message) || err).slice(0, 140));
+        throw err;
+      }
+    });
+}
+
 function publicWallpaper(wallpaper) {
   const out = Object.assign({}, wallpaper);
   out.items = [];

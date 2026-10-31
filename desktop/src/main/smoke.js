@@ -2328,6 +2328,48 @@ async function runSmoke(ctx) {
         await wait(300);
       }
 
+      if (process.env.LG_SMOKE_SEC === "1") {
+        // R77 行为级安全门禁：向各宿主注入 window.open / 跨源导航攻击并断言全拒。
+        // 攻击串用自定义 scheme（lg-sec://）：非 http(s) 会被安全出口静默丢弃，
+        // 探针全程零外部副作用（不会弹出系统浏览器）。
+        const atk = "lg-sec://probe";
+        const sec = {};
+        sec.shellOpen = await ctx.win.webContents
+          .executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`)
+          .catch(() => null);
+        await ctx.win.webContents.executeJavaScript(`location.href = ${JSON.stringify(atk)}; "sent"`).catch(() => null);
+        await wait(700);
+        sec.shellUrl = String(ctx.win.webContents.getURL() || "").slice(0, 40);
+        ctx.views.openProblem("P1001");
+        await wait(1300);
+        const pw = ctx.views.currentWebContents();
+        sec.pageOpen = await pw.executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`).catch(() => null);
+        await pw.executeJavaScript(`location.href = ${JSON.stringify(atk)}; "sent"`).catch(() => null);
+        await wait(800);
+        sec.pageUrl = String(pw.getURL() || "").slice(0, 60);
+        sec.hiddenOpen =
+          ctx.luogu && ctx.luogu.win && !ctx.luogu.win.isDestroyed()
+            ? await ctx.luogu.win.webContents.executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`).catch(() => null)
+            : null;
+        const railView = ctx.views.railOverlay;
+        if (railView && !railView.webContents.isDestroyed()) {
+          await railView.webContents.executeJavaScript(`location.href = ${JSON.stringify(atk)}; "sent"`).catch(() => null);
+          await wait(500);
+          sec.railUrl = String(railView.webContents.getURL() || "").slice(0, 40);
+        }
+        const secOk =
+          sec.shellOpen === true &&
+          sec.pageOpen === true &&
+          sec.hiddenOpen === true &&
+          sec.shellUrl.indexOf("file:") === 0 &&
+          String(sec.pageUrl || "").indexOf("luogu.com.cn") !== -1 &&
+          (sec.railUrl === undefined || sec.railUrl.indexOf("file:") === 0);
+        console.log("SMOKE_SEC " + JSON.stringify({ ...sec, ok: secOk }));
+        if (!secOk) console.log("SMOKE_FAIL 安全注入未被全拒");
+        ctx.views.showHome();
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_KEYS === "1") {
         // R60 回归：Ctrl+W 关页面回来源列表、Alt+← 后退——用真实合成键盘事件
         //（键发给当前页面视图的 webContents）。强制离线让页面落 lgoff:// 单条历史，
@@ -3040,7 +3082,7 @@ async function runSkinAudit(ctx, outDir, wait) {
     const overAllowHit =
       name === "user" &&
       data.overCount > 0 &&
-      (data.over || []).every((o) => o.tag === "a" && o.parent === "div.right");
+      (data.over || []).every((o) => o.tag === "a" && o.parent === "div.right" && /LGR-|月赛/.test(o.text || ""));
     if (overAllowHit) {
       data.overAllowed = data.overCount;
       data.overAllowedItems = data.over;
@@ -3080,8 +3122,14 @@ async function runSkinAudit(ctx, outDir, wait) {
   // 零阈值门禁（真实判定，不再只靠人眼/源码 grep）：实测页 dark/dim/over/light
   // 任一超零即 SMOKE_FAIL（overAllowed 白名单计数不计入）。
   let auditBad = 0;
+  let auditGated = 0;
+  const auditChecked = [];
   for (const [name, data] of Object.entries(report)) {
-    if (!data || data.authGated) continue;
+    if (!data || data.authGated) {
+      auditGated++;
+      continue;
+    }
+    auditChecked.push(name);
     const bad =
       (data.darkCount || 0) > 0 ||
       (data.dimCount || 0) > 0 ||
@@ -3094,7 +3142,7 @@ async function runSkinAudit(ctx, outDir, wait) {
       );
     }
   }
-  console.log("SMOKE_SKIN_AUDIT_GATE " + JSON.stringify({ checked: Object.keys(report).length, bad: auditBad }));
+  console.log("SMOKE_SKIN_AUDIT_GATE " + JSON.stringify({ checked: auditChecked.length, gated: auditGated, bad: auditBad }));
 }
 
 /* 演示数据：只给截图用，不代表真实账号。 */

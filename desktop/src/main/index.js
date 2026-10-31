@@ -262,7 +262,14 @@ function bootstrap() {
     ctx.views = new ViewManager(ctx);
     ctx.views.setWindow(ctx.win);
     ctx.luogu = new LuoguService(ctx);
-    if (process.env.LG_DEMO === "1") smoke().seedDemo(ctx);
+    if (process.env.LG_DEMO === "1") {
+    // 便携包已剥离探针 harness：模块缺失时静默跳过演示数据（正常使用不触发）
+    try {
+      smoke().seedDemo(ctx);
+    } catch (err) {
+      console.warn("[demo] smoke harness not available:", err.message);
+    }
+  }
     ctx.tray = createTray(ctx);
     registerIpc(ctx);
 
@@ -453,7 +460,13 @@ function bootstrap() {
     if (ctx.win.webContents.isLoading()) ctx.win.webContents.on("did-finish-load", pushState);
     else pushState();
 
-    if (ctx.smoke) smoke().runSmoke(ctx);
+    if (ctx.smoke) {
+    try {
+      smoke().runSmoke(ctx);
+    } catch (err) {
+      console.error("[smoke] harness not available:", err.message);
+    }
+  }
   });
 
   app.on("second-instance", () => {

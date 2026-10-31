@@ -1034,6 +1034,21 @@ if (/LG_SMOKE_FIND === "1"/.test(smoke74) && /SMOKE_FIND /.test(smoke74)) ok("R7
 else fail("R76 缺 FIND 行为探针");
 if (/atOk/.test(smoke74)) ok("R76 PALETTE 探针含 AT_ 规范化断言");
 else fail("R76 PALETTE 探针缺 AT 断言");
+
+/* ---------- R77 六轮评审整改（裁决洞 #2/SEC 探针/GATE 三元/证据纪律） ---------- */
+const idx77 = read("src/main/index.js");
+if (/SMOKE_FAIL ipc:" \+ channel/.test(read("src/main/ipc.js")) && /origHandle/.test(read("src/main/ipc.js"))) ok("R77 ipc handler 冒烟守卫（裁决洞 #2）");
+else fail("R77 缺 ipc handler 冒烟守卫");
+if (/LG_SMOKE_SEC === "1"/.test(smoke74) && /SMOKE_SEC /.test(smoke74) && /lg-sec:\/\/probe/.test(smoke74)) ok("R77 SEC 安全行为探针");
+else fail("R77 缺 SEC 探针");
+if (/gated: auditGated/.test(smoke74) && /checked: auditChecked\.length/.test(smoke74)) ok("R77 GATE 三元计数（checked/gated/bad）");
+else fail("R77 GATE 仍为二元");
+if (/fails/.test(fs.readFileSync(path.join(__dirname, "smoke.js"), "utf8")) && /failLog/.test(fs.readFileSync(path.join(__dirname, "smoke.js"), "utf8"))) ok("R77 失败证据时间戳归档");
+else fail("R77 缺失败归档");
+if (/LGR-\|月赛/.test(smoke74)) ok("R77 over 白名单双锚");
+else fail("R77 白名单仍单锚");
+if (/harness not available/.test(idx77)) ok("R77 剥离后 LG_DEMO/--smoke 路径守卫");
+else fail("R77 缺剥离后守卫");
 if (parity76.trim().indexOf("# Parity") === 0 && /4 旅程/.test(parity76)) ok("R76 PARITY.md 首批（4 旅程×3 模式）在位");
 else fail("R76 缺 PARITY.md");
 if (/smoke\.js/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8")) && /剥离/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8"))) ok("R76 打包后剥离探针 harness");
@@ -1097,7 +1112,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.8";
+const EXPECTED_VERSION = "0.7.9";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

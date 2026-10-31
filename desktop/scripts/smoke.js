@@ -58,4 +58,14 @@ if (ok) {
 }
 
 console.error("smoke: FAIL status=" + result.status);
+// 失败证据按时间戳归档，不覆盖（探针抓 bug 的失败现场可追溯）
+try {
+  const failDir = path.join(repo, ".lg-dev", "fails");
+  fs.mkdirSync(failDir, { recursive: true });
+  const failLog = path.join(failDir, "fail-" + new Date().toISOString().replace(/[:.]/g, "-") + ".log");
+  fs.writeFileSync(failLog, "exit=" + result.status + "\n" + String(result.stdout || "") + String(result.stderr || ""));
+  console.error("fail log: " + failLog);
+} catch {
+  /* ignore */
+}
 process.exit(1);
