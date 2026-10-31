@@ -1224,12 +1224,20 @@ async function runSmoke(ctx) {
           console.log("SMOKE_FAIL 侧栏折叠态分组/账户卡/官方几何");
         }
         ctx.views.setRailHover(true, "jump");
-        await wait(800);
+        await wait(60);
+        // 0.7.2 抽屉补间：60ms 时宽度应仍在滑动途中（≥208 说明瞬跳，补间缺失）
+        const drawerMid = ctx.views.railOverlay ? ctx.views.railOverlay.getBounds().width : -1;
+        await wait(740);
         const railWc = ctx.views.railWebContents();
         if (railWc) {
           const railView = ctx.views.railOverlay;
           const visible = !!(railView && railView.getVisible());
-          console.log("SMOKE_RAIL_VISIBLE " + JSON.stringify({ visible, bounds: railView ? railView.getBounds() : null }));
+          const openBounds = railView ? railView.getBounds() : null;
+          if (drawerMid >= 208) console.log("SMOKE_FAIL 侧栏抽屉补间缺失（60ms 已全宽瞬跳）");
+          if (openBounds && (openBounds.width !== 208 || openBounds.y !== 40)) {
+            console.log("SMOKE_FAIL 侧栏抽屉终态几何（应 y=40 宽 208）");
+          }
+          console.log("SMOKE_RAIL_VISIBLE " + JSON.stringify({ visible, bounds: openBounds, drawerMid }));
           // 透明 view 在不可见/失焦的冒烟窗口里 capturePage 可能得到空图；
           // 有图才落盘，视觉验收以固定态窗口截图 + DOM 断言为准。
           if (visible) {
@@ -1684,7 +1692,11 @@ async function runSmoke(ctx) {
             heatLegend: !!q(".heat-legend"),
             statsCard: !!q(".stats-card"),
             sidebarLabel: q("#rail-top .rail-label") ? q("#rail-top .rail-label").textContent : "",
-            homeCards: document.querySelectorAll(".home-wrap .card").length
+            homeCards: document.querySelectorAll(".home-wrap .card").length,
+            homeHello: !!q(".home-hello"),
+            welcomeCard: !!q(".welcome-card"),
+            calRows: document.querySelectorAll(".cal-row").length,
+            cdRows: document.querySelectorAll(".cd-row").length
           };
         })()`);
         console.log("SMOKE_VISUAL_METRICS " + JSON.stringify(metrics));
@@ -2592,6 +2604,7 @@ async function runSkinAudit(ctx, outDir, wait) {
     .map((item) => item.trim())
     .filter(Boolean);
   const pages = [
+    ["home", "https://www.luogu.com.cn/"],
     ["problem", "https://www.luogu.com.cn/problem/P1001"],
     ["problem-list", "https://www.luogu.com.cn/problem/list"],
     ["contest-list", "https://www.luogu.com.cn/contest/list"],
@@ -2694,7 +2707,7 @@ async function runSkinAudit(ctx, outDir, wait) {
           if (r.bottom <= 0 || r.top >= document.documentElement.scrollHeight) continue;
           const cs = getComputedStyle(el);
           if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
-          if (r.right > vw + 1) {
+          if (r.right > vw + 1 && !el.closest(".am-slider")) {
             over.push({
               path: pathOf(el),
               x: Math.round(r.x),
@@ -2852,6 +2865,21 @@ async function runSkinAudit(ctx, outDir, wait) {
           const r = el.getBoundingClientRect();
           return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
         };
+        // 0.7.2 同层透出：承载面孤岛（卡片/chips/输入/分页）透明度必须同层
+        const tierAlphas = [];
+        for (const el of document.querySelectorAll(
+          '#app .l-card, #app .lfe-card, #app .card, #app .lg-article, #app .filter-section .text, #app .tag-select-area .toggle-tag, #app .combo-wrapper .text, #app .filter .tag-button, #app input:not([type="checkbox"]):not([type="radio"]), #app textarea, #app .pagination > *, #app .page-bar button, #app .bottom-wrap.float'
+        )) {
+          const r = el.getBoundingClientRect();
+          if (r.width < 24 || r.height < 8) continue;
+          const cs = getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden") continue;
+          const c = parse(cs.backgroundColor);
+          if (!c) continue;
+          tierAlphas.push({ path: pathOf(el), a: c.a });
+        }
+        const tierMax = tierAlphas.reduce((m, t) => Math.max(m, t.a), 0);
+        const tierMin = tierAlphas.length ? tierAlphas.reduce((m, t) => Math.min(m, t.a), 1) : 0;
         const firstLink = document.querySelector("#app a");
         return {
           url: location.href,
@@ -2888,6 +2916,12 @@ async function runSkinAudit(ctx, outDir, wait) {
           controls: controls
             .sort((a, b) => Math.abs(b.dy) + Math.abs(b.dx) - (Math.abs(a.dy) + Math.abs(a.dx)))
             .slice(0, 12),
+          tiers: {
+            count: tierAlphas.length,
+            min: Math.round(tierMin * 100) / 100,
+            max: Math.round(tierMax * 100) / 100,
+            spread: Math.round((tierMax - tierMin) * 100) / 100,
+          },
         };
       })()`);
       report[name] = data;
@@ -2947,6 +2981,7 @@ async function runSkinAudit(ctx, outDir, wait) {
             light: data.light.slice(0, 4),
             controlCount: data.controlCount,
             controls: data.controls.slice(0, 4),
+            tiers: data.tiers,
           })
       );
     } catch (err) {
@@ -2980,6 +3015,19 @@ function seedDemo(ctx) {
       start: Date.now() + 2 * 3600 * 1000 + 14 * 60 * 1000 + 36000,
       end: Date.now() + 5 * 3600 * 1000,
       live: false,
+    },
+    contests: [
+      { id: 1, name: "CSP-S 模拟赛 #12", start: Date.now() + 2 * 3600 * 1000, end: Date.now() + 5 * 3600 * 1000, live: false },
+      { id: 2, name: "洛谷 11 月月赛 I", start: Date.now() + 26 * 3600 * 1000, end: Date.now() + 29 * 3600 * 1000, live: false },
+    ],
+    official: {
+      ok: true,
+      countdowns: [
+        { name: "CSP-J/S 2026 第二轮", days: 3 },
+        { name: "NOIP 2026", days: 27 },
+      ],
+      welcome: "示例用户",
+      fortune: "宜刷题，忌摆烂。",
     },
     recent: [
       { pid: "P1001", title: "A+B Problem", status: 12, statusText: "AC", score: 100, time: Date.now() - 2 * 60 * 1000 },

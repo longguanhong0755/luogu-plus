@@ -917,6 +917,23 @@ class LuoguService {
     return null;
   }
 
+  /* 0.7.2 主页比赛日历：进行中的排前，取前 5 场 */
+  buildContests(contests) {
+    const now = Date.now();
+    const prepared = contests
+      .map((contest) => ({
+        id: contest.id,
+        name: contest.name || contest.title || "比赛",
+        start: toMillis(contest.startTime),
+        end: toMillis(contest.endTime) || (toMillis(contest.startTime) + (Number(contest.duration) || 0) * 1000),
+      }))
+      .filter((contest) => contest.start)
+      .sort((a, b) => a.start - b.start);
+    const live = prepared.filter((contest) => contest.start <= now && contest.end && now <= contest.end);
+    const upcoming = prepared.filter((contest) => contest.start > now);
+    return live.concat(upcoming).slice(0, 5);
+  }
+
   /* ---------- 主刷新 ---------- */
 
   async refresh(force = false) {
@@ -937,6 +954,8 @@ class LuoguService {
         quote: quoteFor(new Date()),
         heat: [],
         contest: null,
+        contests: [],
+        official: null,
         recent: [],
         punched: null,
         streak: 0,
@@ -947,9 +966,18 @@ class LuoguService {
       // 比赛列表是公开数据：未登录也抓，主页不至于空着
       try {
         const contestContext = await this.fetchContext("/contest/list");
-        next.contest = this.pickContest(this.parseContests(contestContext));
+        const all = this.parseContests(contestContext);
+        next.contest = this.pickContest(all);
+        next.contests = this.buildContests(all);
       } catch (err) {
         console.error("[luogu] contest fetch threw", err && err.message);
+      }
+
+      // 0.7.2 官方主页融合块：比赛倒计时/欢迎/运势（旧版首页 DOM，游客可见倒计时）
+      try {
+        next.official = await this.fetchOfficialHome();
+      } catch (err) {
+        console.error("[luogu] official home scrape failed:", err && err.message);
       }
 
       if (login.loggedIn) {
@@ -1000,6 +1028,8 @@ class LuoguService {
       // 抓取中途断网：保留上一次的打卡/热力/最近提交，只更新拿到的部分
       if (networkFailed) {
         if (!next.contest && prev.contest) next.contest = prev.contest;
+        if (!next.contests.length && prev.contests && prev.contests.length) next.contests = prev.contests;
+        if (!next.official && prev.official) next.official = prev.official;
         if (!next.heat.length && prev.heat && prev.heat.length) next.heat = prev.heat;
         if (!next.recent.length && prev.recent && prev.recent.length) next.recent = prev.recent;
         if (next.punched === null && prev.punched !== null) {
@@ -1028,6 +1058,34 @@ class LuoguService {
     if (!store) return;
     store.set("home", this.home, 800);
     store.set("user", this.user, 800);
+  }
+
+  /* 0.7.2 官方主页融合：抓旧版首页 #app-old 的比赛倒计时与欢迎/运势文本。
+     游客可见倒计时；欢迎/运势登录态才有，字段缺席就不出现在返回值里。 */
+  async fetchOfficialHome() {
+    const data = await this.exec(`(() => {
+      const root = document.querySelector("#app-old .lg-index-content");
+      if (!root) return { ok: false };
+      const text = (el) => ((el && el.textContent) || "").replace(/\\s+/g, " ").trim();
+      const countdowns = [];
+      const cal = root.querySelector(".am-u-md-12");
+      for (const raw of String((cal && cal.innerText) || "").split("\\n")) {
+        const s = raw.trim();
+        const m = s.match(/^距(.+)还剩\\s*(\\d+)\\s*天$/);
+        if (m) countdowns.push({ name: m[1].trim(), days: Number(m[2]) });
+      }
+      const welcomeEl = Array.from(root.querySelectorAll(".lg-article")).find((n) => /欢迎回来/.test(n.textContent || ""));
+      const wm = welcomeEl ? (welcomeEl.textContent || "").match(/欢迎回来[，,]\\s*([^\\n]+)/) : null;
+      const punch = root.querySelector(".lg-punch");
+      return {
+        ok: true,
+        countdowns: countdowns.slice(0, 3),
+        welcome: wm ? String(wm[1] || "").trim().slice(0, 40) : "",
+        fortune: punch ? text(punch).slice(0, 60) : "",
+      };
+    })()`);
+    if (!data || data.ok !== true) return null;
+    return data;
   }
 
   async readPunchState() {

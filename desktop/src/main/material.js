@@ -1,12 +1,17 @@
 /* 透明度分级：配置 → 内容面/纱层/外壳的不透明度。
    纯函数，不依赖 Electron，check.js 可以直接 require 做数值断言。
 
-   语义（0.7.0 起）：
-   - material：材质强度，控制基线透明度与模糊半径；
-   - glass   ：壁纸透出程度，0-70 在基线上继续压低，70-100 把剩余底色
-               线性压到 0。因此 glass=100 时内容面、页面纱层、外壳都是
-               真正的 0%，壁纸完整透出；
-   - 浮层（菜单/下拉/tooltip）单独保留 60% 可读下限，不跟着归零；
+   语义（0.7.2 同层透出）：
+   - material：材质强度；glass：壁纸透出程度，0-70 在基线上继续压低，
+     70-100 把剩余底色线性压到 0。glass=100 时 pageScrim/raiseAlpha 真 0，
+     壁纸完整透出（0.7.0「100% 壁纸透出」承诺保持）；
+   - pageScrim：壁纸之上的主题色纱层（地板），所有正文落在它上面；
+   - raiseAlpha：承载面统一浮起档 —— 卡片/筛选 chips/输入框/分页条/分页按钮
+     同一深度，同屏只有「地板 + 一档浮起」，随 glass 一同归零
+     （0.7.0 的 cardAlpha 高卡面 + 55% 下限被 0.7.2 用户决定取代）；
+   - codeAlpha：代码块例外层 = 浮起档 + 55，密集正文保读，下限 55%；
+   - cardAlpha：外壳原生卡片（主页/设置）沿用 0.7.0 高卡面公式，行为不变；
+   - 浮层（菜单/下拉/tooltip）保留 60% 可读下限，不跟着归零；
    - 性能模式只影响模糊与外壳基线，不再把 glass=100 顶回去。 */
 
 function clamp(value, lo, hi, fallback) {
@@ -30,13 +35,18 @@ function levels(appearance, performanceMode) {
 
   let panelBase = clamp(Math.round(94 - material * 0.2 - glass * 0.25), 58, 98);
   const scrimBase = clamp(Math.round(97 - material * 0.06 - glass * 0.42), 50, 99);
+  /* 外壳原生卡片沿用 0.7.0 公式（外壳观感不变） */
   const cardBase = clamp(Math.round(99 - material * 0.08 - glass * 0.32), 55, 99);
+  /* 0.7.2 同层浮起档：默认观感从「80% 白卡」降为「地板上一档浅浮起」 */
+  const raiseBase = clamp(Math.round(30 - material * 0.18 - glass * 0.2), 0, 30);
 
   if (perf) panelBase = Math.min(98, panelBase + 8);
 
   const panelAlpha = tail(panelBase, glass);
   const pageScrim = tail(scrimBase, glass);
   const cardAlpha = tail(cardBase, glass);
+  const raiseAlpha = tail(raiseBase, glass);
+  const codeAlpha = Math.max(55, tail(raiseBase + 55, glass));
   const overlayAlpha = Math.max(60, Math.min(98, cardAlpha + 2));
 
   return {
@@ -45,6 +55,8 @@ function levels(appearance, performanceMode) {
     panelAlpha,
     pageScrim,
     cardAlpha,
+    raiseAlpha,
+    codeAlpha,
     overlayAlpha,
     blurPx: perf ? 0 : Math.round((6 + material * 0.24) * 10) / 10,
     performanceMode: perf,

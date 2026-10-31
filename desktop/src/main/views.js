@@ -138,7 +138,7 @@ class ViewManager {
     this.railOverlay.setBounds({
       x: 0,
       y: TITLE_H,
-      width: RAIL_W,
+      width: Math.max(RAIL_COLLAPSED_W, Math.min(RAIL_W, this.railDrawerW || RAIL_W)),
       height: Math.max(0, bounds.height - TITLE_H),
     });
   }
@@ -159,10 +159,13 @@ class ViewManager {
         if (this.railOverlayAttached) this.win.contentView.removeChildView(view);
         this.win.contentView.addChildView(view);
         this.railOverlayAttached = true;
-        view.setVisible(true);
-        // 悬停展开的浮层淡入 120ms（CSS 挂 html.rail-revealed）
-        wc.executeJavaScript("document.documentElement.classList.add('rail-revealed')", true).catch(() => {});
+        // 抽屉从当前宽度起步（首次 56，折返悬停从半开宽度反向），再滑向 208
+        this.railDrawerW = Math.min(RAIL_W, Math.max(RAIL_COLLAPSED_W, this.railDrawerW || RAIL_COLLAPSED_W));
         this.layoutRailOverlay();
+        view.setVisible(true);
+        // 内容快速淡入（几何由主进程宽度补间驱动）
+        wc.executeJavaScript("document.documentElement.classList.add('rail-revealed')", true).catch(() => {});
+        this.animateRailDrawer(true);
         if (this.ctx.broadcastState) this.ctx.broadcastState();
         if (focus) wc.send("rail:focus", focus);
       };
@@ -203,28 +206,101 @@ class ViewManager {
     const hadFocus = this.railOverlay.webContents.isFocused();
     const view = this.railOverlay;
     const seq = (this.railSeq = (this.railSeq || 0) + 1);
-    const finish = () => {
+    const wc = view.webContents;
+    try {
+      // 内容先快速淡出(90ms)；几何由宽度补间收回，补间完成才把视图藏起 ——
+      // 开/关时序对称，替换掉 executeJavaScript 往返+固定 130ms 的腰斩链路
+      wc.executeJavaScript("document.documentElement.classList.remove('rail-revealed')", true).catch(() => {});
+    } catch {
+      // 页面可能还没加载好，直接收
+    }
+    this.animateRailDrawer(false, () => {
       if (seq !== this.railSeq || view.webContents.isDestroyed()) return;
       view.setVisible(false);
       if (hadFocus && this.win && !this.win.isDestroyed() && this.win.isFocused()) this.win.webContents.focus();
-    };
-    const wc = view.webContents;
-    try {
-      // 先淡出（CSS 120ms）再把视图藏起来；executeJavaScript 失败则立即藏
-      wc.executeJavaScript("document.documentElement.classList.remove('rail-revealed')", true)
-        .catch(() => {})
-        .then(() => setTimeout(finish, 130));
-    } catch {
-      finish();
+    });
+  }
+
+  /* 0.7.2 抽屉化：打开 56→208 / 关闭 208→56 的宽度补间。
+     token 作废旧补间——折返悬停从当前宽度反向，动画天然连续；
+     性能模式瞬切。关闭在补间完成后才 setVisible(false)，与打开对称。 */
+  animateRailDrawer(open, onDone) {
+    const view = this.railOverlay;
+    if (!view || view.webContents.isDestroyed()) return;
+    if (this.ctx.cfg && this.ctx.cfg.get().general.performanceMode) {
+      this.railDrawerW = open ? RAIL_W : RAIL_COLLAPSED_W;
+      this.layoutRailOverlay();
+      if (!open) {
+        view.setVisible(false);
+        if (onDone) onDone();
+      }
+      return;
     }
+    const token = (this.railDrawerToken = (this.railDrawerToken || 0) + 1);
+    const from = Math.min(RAIL_W, Math.max(RAIL_COLLAPSED_W, this.railDrawerW || (open ? RAIL_COLLAPSED_W : RAIL_W)));
+    const to = open ? RAIL_W : RAIL_COLLAPSED_W;
+    const dur = open ? 170 : 150;
+    const start = Date.now();
+    const easeOut = (t) => 1 - (1 - t) * (1 - t);
+    const step = () => {
+      if (token !== this.railDrawerToken || view.webContents.isDestroyed()) return;
+      const t = Math.min(1, (Date.now() - start) / dur);
+      this.railDrawerW = Math.round(from + (to - from) * easeOut(t));
+      this.layoutRailOverlay();
+      if (t < 1) {
+        this.railDrawerTimer = setTimeout(step, 16);
+      } else {
+        this.railDrawerTimer = null;
+        if (!open && onDone) onDone();
+      }
+    };
+    step();
+  }
+
+  /* 0.7.2 钉住/取消钉住：外壳 grid（CSS 过渡）与页面 view（主进程补间）
+     同步 180ms 滑动；layout()/resize 作废补间并直接落定。 */
+  animateRailLayout(fromW, toW) {
+    const entry = this.currentEntry();
+    if (!entry) return;
+    const view = entry.view;
+    const bounds = this.win.getContentBounds();
+    const y = TITLE_H + TOOLBAR_H;
+    const height = Math.max(240, bounds.height - TITLE_H - TOOLBAR_H);
+    const ideOn = this.ideOn && entry.kind === "problem";
+    const token = (this.railLayoutToken = (this.railLayoutToken || 0) + 1);
+    const start = Date.now();
+    const dur = 180;
+    const easeOut = (t) => 1 - (1 - t) * (1 - t);
+    const step = () => {
+      if (token !== this.railLayoutToken) return;
+      if (!this.win || this.win.isDestroyed() || view.isDestroyed()) return;
+      const t = Math.min(1, (Date.now() - start) / dur);
+      const w = Math.round(fromW + (toW - fromW) * easeOut(t));
+      let width = Math.max(320, bounds.width - w);
+      if (ideOn) width = Math.max(320, Math.floor(width * (1 - this.ideSplit)));
+      view.setBounds({ x: w, y, width, height });
+      if (t < 1) {
+        setTimeout(step, 12);
+      } else {
+        this.layout();
+      }
+    };
+    step();
   }
 
   setRailPinned(pinned) {
     const next = !!pinned;
+    const prevW = this.railWidth();
     if (this.ctx.cfg) this.ctx.cfg.setRail({ pinned: next });
     this.railPinned = next;
     if (next) this.hideRailOverlay();
-    this.layout();
+    const entry = this.currentEntry();
+    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
+    if (entry && !this.overlayOpen && !this.library && !perf) {
+      this.animateRailLayout(prevW, this.railWidth());
+    } else {
+      this.layout();
+    }
     this.emit();
   }
 
@@ -1078,6 +1154,7 @@ class ViewManager {
 
   layout() {
     if (!this.win || this.win.isDestroyed()) return;
+    this.railLayoutToken = (this.railLayoutToken || 0) + 1; // 作废钉住补间
     if (this.railHoverOpen) this.layoutRailOverlay();
     const entry = this.currentEntry();
     if (!entry || this.overlayOpen || this.library) {
@@ -1253,10 +1330,11 @@ class ViewManager {
       `--lg-orange:${c.orange}`,
       `--lg-material:${t.material}`,
       `--lg-panel-alpha:${t.panelAlpha}%`,
-      `--lg-card-alpha:${t.cardAlpha}%`,
+      `--lg-raise:${t.raiseAlpha}%`,
+      `--lg-code-alpha:${t.codeAlpha}%`,
       `--lg-overlay-alpha:${t.overlayAlpha}%`,
       `--lg-scrim:${t.pageScrim}%`,
-      `--lg-text-shadow:${t.cardAlpha <= 30 ? "0 1px 2px rgba(0,0,0,.35)" : "none"}`,
+      `--lg-text-shadow:${t.pageScrim <= 40 ? "0 1px 2px rgba(0,0,0,.35)" : "none"}`,
       `--lg-blur:${perf ? 0 : t.blurPx}px`,
       `--lg-font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace`,
       `--lg-radius-sm:6px`,

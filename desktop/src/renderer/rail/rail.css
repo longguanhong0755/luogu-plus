@@ -12,15 +12,18 @@ body.rail-overlay #app {
   height: 100%;
 }
 
-/* 悬停展开不是“浮出小面板”，而是同一根侧栏变宽：去掉投影，
-   底色、分隔线与外壳里的折叠栏完全一致。 */
+/* 悬停展开不是“浮出小面板”，而是同一根侧栏变宽：
+   宽度由主进程补间驱动（56→208），内容固定 208 布局、随 view 变宽逐段露出；
+   面板近实心（96%），不再与壳层折叠栏叠染/重影。 */
 body.rail-overlay #rail {
+  width: var(--sidebar-w);
   height: 100%;
   border-right: 1px solid var(--border);
   box-shadow: none;
-  /* 悬停浮层淡入/淡出：主进程 show/hide 时切换 html.rail-revealed */
+  background: color-mix(in srgb, var(--rail) 96%, transparent);
+  /* 内容快速淡入/淡出（几何由主进程宽度补间驱动） */
   opacity: 0;
-  transition: opacity 120ms var(--ease);
+  transition: opacity 90ms var(--ease);
 }
 html.rail-revealed body.rail-overlay #rail {
   opacity: 1;

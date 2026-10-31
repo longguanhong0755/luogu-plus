@@ -1,5 +1,7 @@
 /* 洛谷页面统一皮肤（4.0）。
-   规则：壁纸只作为页面底纹；承载面用高不透明度卡片，正文不在模糊上；
+   规则（0.7.2 同层透出）：壁纸+纱层是唯一地板，承载面（卡片/筛选条/输入框/
+   分页）统一用 --lg-raise 一档浅浮起，同屏只有「地板 + 一档浮起」两种深度；
+   代码块走 --lg-code-alpha 例外保读；浮层保留可读下限。glass=100 全透。
    阅读排版 14/1.8，卡片 12px 圆角，按钮/表单 32px 高，焦点环 2px。 */
 
 :root {
@@ -55,7 +57,7 @@ body,
   --theme-body-image: none !important;
   --theme-body-mid-mask: transparent !important;
   --theme-body-color-filter: none !important;
-  --theme-card-background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
+  --theme-card-background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   --theme-card-backdrop-filter: none !important;
   --theme-navi-back: color-mix(in srgb, var(--lg-title) var(--lg-panel-alpha, 83%), transparent) !important;
   --theme-navi-fore: var(--lg-text) !important;
@@ -180,7 +182,7 @@ body,
   color: var(--lg-text-2) !important;
 }
 #app .article-content .actions {
-  background: color-mix(in srgb, var(--lg-surface) 92%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   border: 1px solid var(--lg-border) !important;
 }
 #app .article-content .actions :is(.text, .button-2line, .count) {
@@ -214,7 +216,7 @@ body,
 #app .cs-main,
 #app .cs-header,
 #app .cs-footer {
-  background: color-mix(in srgb, var(--lg-surface-2) 84%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-code-alpha, 66%), transparent) !important;
   color: var(--lg-text) !important;
 }
 #app .cs-toolbar,
@@ -258,11 +260,12 @@ body,
 /* ---- 承载面：只给实测确认的顶层卡片 ----
    不要收 .side / .list / .box / .panel / .comment 这类结构容器：
    它们本来只是布局壳，加边框和阴影就会变成大片空框。 */
+/* 承载面统一浮起档：卡片与 chips/输入框/分页同深度（0.7.2 同层透出） */
 #app .l-card,
 #app .lfe-card,
 #app .card,
 #app .lg-article {
-  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-lg, 12px) !important;
   box-shadow:
@@ -350,8 +353,8 @@ body,
 }
 
 /* 表格的 <col> 列底色（如题库“算法标签”列的灰带）矩形是 0×0，
-   审计量不出来，深色下却是一整条亮带 —— 只在深色清掉，亮色保留官方设计。 */
-html[data-lg-mode="dark"] #app col {
+   审计量不出来，深色下却是一整条亮带；0.7.2 起同层透出亮暗通用。 */
+#app col {
   background: transparent !important;
 }
 
@@ -366,7 +369,7 @@ html[data-lg-mode="dark"] #app col {
 #app input:not([type="checkbox"]):not([type="radio"]),
 #app textarea,
 #app select {
-  background: color-mix(in srgb, var(--lg-surface-2) 84%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-raise, 12%), transparent) !important;
   color: var(--lg-text) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-sm, 6px) !important;
@@ -411,7 +414,7 @@ html[data-lg-mode="dark"] #app col {
 #app .refined-input.text,
 #app .lfe-search,
 #app .search-input {
-  background: color-mix(in srgb, var(--lg-surface-2) 84%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-raise, 12%), transparent) !important;
   color: var(--lg-text) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-sm, 6px) !important;
@@ -438,7 +441,7 @@ html[data-lg-mode="dark"] #app col {
   border-radius: var(--lg-radius-sm, 6px) !important;
   box-shadow: inset 0 0 0 1px var(--lg-border);
   color: var(--lg-text);
-  background: color-mix(in srgb, var(--lg-surface-2) 68%, transparent);
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-raise, 12%), transparent);
   transition:
     background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
     box-shadow var(--lg-dur, 120ms) var(--lg-ease, ease),
@@ -498,7 +501,7 @@ html[data-lg-mode="dark"] #app col {
 #app [class*="code-block"],
 #app .code-container,
 #app .cm-editor {
-  background: color-mix(in srgb, var(--lg-surface-2) 82%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-code-alpha, 66%), transparent) !important;
   color: var(--lg-text) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-md, 8px) !important;
@@ -587,7 +590,7 @@ html[data-lg-mode="dark"] #app col {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--lg-surface) 70%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   color: var(--lg-text-2) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-sm, 6px) !important;
@@ -632,7 +635,7 @@ html[data-lg-mode="dark"] #app col {
 #app .filter .text,
 #app .filter .tag-button,
 #app .filter .toggle-tag {
-  background: color-mix(in srgb, var(--lg-surface) 92%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   border-color: var(--lg-border) !important;
   color: var(--lg-text-2) !important;
   transition:
@@ -681,7 +684,7 @@ html[data-lg-mode="dark"] #app col {
   color: var(--lg-text) !important;
 }
 #app .bottom-wrap.float {
-  background: color-mix(in srgb, var(--lg-surface) 95%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-lg, 12px) !important;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent) !important;
@@ -691,7 +694,7 @@ html[data-lg-mode="dark"] #app col {
   color: var(--lg-text-2) !important;
 }
 #app .page-bar button {
-  background: color-mix(in srgb, var(--lg-surface) 70%, transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   border: 1px solid var(--lg-border) !important;
   border-radius: var(--lg-radius-sm, 6px) !important;
   color: var(--lg-text-2) !important;
@@ -721,7 +724,7 @@ html[data-lg-mode="dark"] #app col {
 }
 #app .user-header-bottom,
 #app .profile-header {
-  background: color-mix(in srgb, var(--lg-surface) var(--lg-card-alpha, 95%), transparent) !important;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
   border-color: var(--lg-border) !important;
   color: var(--lg-text) !important;
 }
@@ -739,12 +742,58 @@ html[data-lg-mode="dark"] #app col {
   background: transparent !important;
 }
 /* 旧版布局（搜索/出错页）：官方用内联 style 写死浅灰底与白色顶卡，
-   内联样式只有 !important 能压过；只清深色主题，亮色保留官方样子。 */
-html[data-lg-mode="dark"] #app main.wrapped.lfe-body.mobile-body {
+   内联样式只有 !important 能压过；0.7.2 同层透出，亮暗都清。 */
+#app main.wrapped.lfe-body.mobile-body {
   background-color: transparent !important;
 }
-html[data-lg-mode="dark"] #app .wrapper.wrapped .background {
+#app .wrapper.wrapped .background {
   background: transparent !important;
+}
+
+/* ---- 旧版首页 #app-old（官方 2015 布局，主页融合数据源）----
+   AmazeUI 面板/促销轮播官方写死白底，深色下是整片亮块；只清色不动布局。
+   轮播轨道按设计横向溢出（overflow 裁切），不算版式问题。 */
+#app main {
+  background: transparent !important;
+}
+#app .lg-index-content .am-panel,
+#app .lg-index-content .am-panel-hd,
+#app .lg-index-content .am-panel-bd {
+  background: transparent !important;
+}
+#app .lg-index-content .am-panel {
+  border-color: var(--lg-divider) !important;
+}
+#app .lg-index-content .am-panel-bd {
+  color: var(--lg-text-2) !important;
+}
+#app .lg-index-content .am-panel-hd {
+  color: var(--lg-text) !important;
+}
+#app .lg-index-content .am-slider {
+  background: transparent !important;
+}
+/* 日历与倒计时文字官方写死深绿/深灰，面板透明后在暗底上不可读 */
+#app .lg-index-content .lg-punch [class*="lg-fg-"],
+#app .lg-index-content .lg-punch strong,
+#app .lg-index-content .lg-fg-greendark {
+  color: var(--lg-text-2) !important;
+}
+/* 比赛状态徽标（进行中/已结束）与页脚栏目：官方写死深蓝/暗红/深灰 */
+#app .lg-index-content .lg-fg-bluedark {
+  color: var(--lg-accent-text) !important;
+}
+#app .lg-index-content .lg-fg-red {
+  color: var(--lg-red) !important;
+}
+#app .lg-index-content .lg-article.am-hide-sm p,
+#app .lg-index-content .lg-article.am-hide-sm strong {
+  color: var(--lg-text-3) !important;
+}
+/* 官方徽标白字压黄/绿底对比不足（1.66/2.45:1），换深字保读 */
+#app .lg-index-content .am-badge.lg-bg-yellow,
+#app .lg-index-content .am-badge.lg-bg-green {
+  color: #101218 !important;
 }
 #app .main-wrapper::before,
 #app .main-wrapper::after,

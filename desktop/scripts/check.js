@@ -432,17 +432,19 @@ if (/accentText/.test(themeSource) && /borderStrong/.test(themeSource) && /color
 const materialSource = read("src/main/material.js");
 const material = require(path.join(ROOT, "src", "main", "material.js"));
 const baseLevel = material.levels({ material: 55, glass: 45 }, false);
-if (baseLevel.panelAlpha === 72 && baseLevel.pageScrim === 75 && baseLevel.cardAlpha === 80) {
-  ok("透明基线保持默认观感（panel 72 / scrim 75 / card 80）");
+if (baseLevel.panelAlpha === 72 && baseLevel.pageScrim === 75 && baseLevel.cardAlpha === 80 && baseLevel.raiseAlpha === 11 && baseLevel.codeAlpha === 66) {
+  ok("透明基线保持默认观感（panel 72 / scrim 75 / card 80 / raise 11 / code 66）");
 } else {
   fail("默认透明度偏离旧版", JSON.stringify(baseLevel));
 }
 const fullLevel = material.levels({ material: 55, glass: 100 }, false);
-if (fullLevel.panelAlpha === 0 && fullLevel.pageScrim === 0 && fullLevel.cardAlpha === 0) {
-  ok("壁纸透出 100% 时外壳/纱层/内容面全部为 0");
+if (fullLevel.panelAlpha === 0 && fullLevel.pageScrim === 0 && fullLevel.cardAlpha === 0 && fullLevel.raiseAlpha === 0) {
+  ok("壁纸透出 100% 时外壳/纱层/内容面/浮起档全部为 0");
 } else {
   fail("glass=100 没有真正全透", JSON.stringify(fullLevel));
 }
+if (fullLevel.codeAlpha >= 55) ok("代码块例外层保留 55% 保读下限");
+else fail("代码块跟着浮起档归零，密集正文不可读");
 if (fullLevel.overlayAlpha >= 60) ok("浮层保留 60% 可读下限");
 else fail("浮层跟着内容面一起归零，菜单不可读");
 const perfFull = material.levels({ material: 55, glass: 100 }, true);
@@ -454,10 +456,10 @@ if (/glass: 45,/.test(configSource) && /a\.glass = Math\.round/.test(configSourc
 else fail("config.js 缺少 glass 默认值/收敛");
 if (/id="glass"/.test(settingsHtml) && /setAppearance\(\{ glass:/.test(read("src/renderer/settings/settings.js"))) ok("设置页提供「壁纸透出」滑杆并即时生效");
 else fail("设置页缺少壁纸透出滑杆");
-if (/--lg-text-shadow/.test(read("src/main/views.js")) && /cardAlpha <= 30/.test(read("src/main/views.js"))) {
-  ok("高透明时正文自动加投影保护可读性");
+if (/--lg-text-shadow/.test(read("src/main/views.js")) && /pageScrim <= 40/.test(read("src/main/views.js"))) {
+  ok("低纱层时正文自动加投影保护可读性");
 } else {
-  fail("高透明正文缺少投影保护");
+  fail("低纱层正文缺少投影保护");
 }
 
 /* 广告拦截：默认关闭，配置/设置页/IPC/页面兜底四处齐 */
@@ -850,8 +852,8 @@ const skinNeedles = [
   ["富文本编辑器主题化", /\.casket,\s*#app \.cs-main/],
   ["编辑器行号槽主题化", /\.casket \.cm-gutters/],
   ["悬浮回复按钮主题化", /\.btn-float-container \.btn-float-open/],
-  ["题库标签列暗色清带", /html\[data-lg-mode="dark"\] #app col/],
-  ["旧版错误页清底", /html\[data-lg-mode="dark"\] #app main\.wrapped\.lfe-body\.mobile-body/],
+  ["题库标签列清带(0.7.2 起亮暗通用)", /^#app col \{[^}]*background: transparent/m],
+  ["旧版错误页清底(0.7.2 起亮暗通用)", /^#app main\.wrapped\.lfe-body\.mobile-body \{/m],
   ["旧版提示卡文字色", /#app \.card\.message,/],
 ];
 for (const [name, re] of skinNeedles) {
@@ -912,13 +914,68 @@ if (/--blur-lg:/.test(tokens69) && /--blur-sm:/.test(tokens69) && /--focus-w:/.t
   fail("tokens 缺少 blur/focus 档位");
 }
 
+/* ---------- R70 同层透出 · 主页融合 · 侧栏抽屉 ---------- */
+const views70 = read("src/main/views.js");
+const skin70 = read("src/renderer/skin/luogu-skin.css");
+const railCss70 = read("src/renderer/rail/rail.css");
+const shellCss70 = read("src/renderer/shell/shell.css");
+const shellHtml70 = read("src/renderer/shell/index.html");
+const railHtml70 = read("src/renderer/rail/index.html");
+const luogu70 = read("src/main/luogu.js");
+const homeJs70 = read("src/renderer/shell/home.js");
+const shellJs70 = read("src/renderer/shell/shell.js");
+
+for (const [name, re, src] of [
+  ["抽屉宽度补间", /animateRailDrawer\(open, onDone\)/, views70],
+  ["抽屉补间作废 token", /railDrawerToken/, views70],
+  ["钉住布局补间", /animateRailLayout\(fromW, toW\)/, views70],
+  ["layout 作废补间", /railLayoutToken/, views70],
+  ["浮层宽度跟随补间", /Math\.max\(RAIL_COLLAPSED_W, Math\.min\(RAIL_W, this\.railDrawerW/, views70],
+  ["官方主页抓取管线", /async fetchOfficialHome\(\)/, luogu70],
+  ["比赛日历数据", /buildContests\(contests\)/, luogu70],
+  ["refresh 容错挂载", /next\.official = await this\.fetchOfficialHome\(\)/, luogu70],
+  ["欢迎卡渲染", /function buildWelcome\(home\)/, homeJs70],
+  ["比赛日历行", /"cal-row"/, homeJs70],
+  ["官方倒计时行", /"cd-row"/, homeJs70],
+  ["主页问候", /home-hello/, homeJs70],
+  ["homeKey 含官方块", /home\.official\s*\?/, shellJs70],
+]) {
+  if (re.test(src)) ok("R70 " + name);
+  else fail("R70 缺少 " + name);
+}
+if (!/rail-mark/.test(shellHtml70) && !/rail-mark/.test(railHtml70)) ok("R70 侧栏 luogu 标志已删（两处）");
+else fail("R70 rail-mark 仍有残留");
+if (!/lg-card-alpha/.test(skin70) && /lg-raise/.test(skin70) && /lg-code-alpha/.test(skin70)) ok("R70 皮肤孤岛收编为 raise/code 档位");
+else fail("R70 皮肤仍有 --lg-card-alpha 或缺 raise/code");
+if (!/cardAlpha <= 30/.test(views70) && /--lg-raise:\$\{t\.raiseAlpha\}%/.test(views70)) ok("R70 skinVars 发射 raise/code 档位");
+else fail("R70 skinVars 未接入新档位");
+for (const [name, re] of [
+  ["浮层固定宽供裁切", /width: var\(--sidebar-w\)/],
+  ["浮层近实心底", /var\(--rail\) 96%, transparent/],
+  ["内容 90ms 淡入", /opacity 90ms var\(--ease\)/],
+]) {
+  if (re.test(railCss70)) ok("R70 浮层 " + name);
+  else fail("R70 浮层缺少 " + name);
+}
+for (const [name, re] of [
+  ["轨道宽 @property 注册", /@property --rail-current-w/],
+  ["外壳 grid 宽度过渡", /transition: grid-template-columns 180ms var\(--ease\)/],
+  ["性能模式关闭过渡", /body\.perf #app \{\s*\n\s*transition: none/],
+  ["钉子右对齐", /#rail-pin \{\s*\n\s*margin-left: auto/],
+]) {
+  if (re.test(shellCss70)) ok("R70 外壳 " + name);
+  else fail("R70 外壳缺少 " + name);
+}
+if (!/92%, transparent/.test(skin70) && !/95%, transparent/.test(skin70) && !/84%, transparent/.test(skin70)) ok("R70 皮肤孤岛百分比清零");
+else fail("R70 皮肤仍有写死百分比孤岛");
+
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.1";
+const EXPECTED_VERSION = "0.7.2";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

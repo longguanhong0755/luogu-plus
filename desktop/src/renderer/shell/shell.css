@@ -49,6 +49,12 @@ body.wall-fade .wall-layer {
 }
 
 /* ---------- 窗口骨架 ---------- */
+/* 0.7.2：钉住/取消钉住时轨道宽可插值，外壳栏与页面 view 同步 180ms 滑动 */
+@property --rail-current-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 56px;
+}
 #app {
   position: relative;
   z-index: 1;
@@ -56,6 +62,10 @@ body.wall-fade .wall-layer {
   display: grid;
   grid-template-columns: var(--rail-current-w, var(--sidebar-w-collapsed)) minmax(0, 1fr);
   grid-template-rows: var(--title-h) minmax(0, 1fr);
+  transition: grid-template-columns 180ms var(--ease);
+}
+body.perf #app {
+  transition: none;
 }
 body.rail-pinned {
   --rail-current-w: var(--sidebar-w);
@@ -198,15 +208,8 @@ body.rail-pinned {
   justify-content: space-between;
   padding: 0 4px 4px;
 }
-#rail-mark {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 auto;
-  object-fit: contain;
-  -webkit-user-drag: none;
-  opacity: 0.9;
-}
 #rail-pin {
+  margin-left: auto;
   width: 28px;
   height: 28px;
   flex: 0 0 auto;
@@ -2109,6 +2112,12 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   font-weight: 600;
   color: var(--text);
 }
+.home-hello {
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+  font-weight: 600;
+  color: var(--accent-text);
+}
 .home-quote {
   max-width: 560px;
   font-size: var(--fs-xs);
@@ -2432,46 +2441,10 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 }
 
 .contest-card {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-  cursor: pointer;
-  transition:
-    border-color var(--dur-1) var(--ease),
-    background-color var(--dur-1) var(--ease);
+  display: block;
 }
 .contest-card:hover {
   border-color: var(--border-strong);
-  background: color-mix(in srgb, var(--surface) var(--card-alpha, 95%), transparent);
-}
-.contest-card .cc-label {
-  width: 100%;
-  font-size: var(--fs-2xs);
-  line-height: var(--lh-2xs);
-  color: var(--text-3);
-}
-.contest-card .cc-name {
-  font-size: var(--fs-md);
-  line-height: var(--lh-lg);
-  font-weight: 600;
-  color: var(--text);
-}
-.contest-card .cc-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-  padding: 0 8px;
-  font-size: var(--fs-2xs);
-  color: var(--text-2);
-  white-space: nowrap;
-}
-.contest-card .cc-live {
-  color: var(--green);
-  border-color: color-mix(in srgb, var(--green) 40%, transparent);
-  background: color-mix(in srgb, var(--green) 10%, transparent);
 }
 .contest-card .cc-count {
   margin-left: auto;
@@ -2484,6 +2457,77 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 .contest-card .cc-empty {
   color: var(--text-2);
   font-size: var(--fs-xs);
+}
+
+/* 比赛日历：官方倒计时 + 近期比赛列表（0.7.2 主页融合） */
+.cd-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.cd-row .cd-name {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.cd-row .cd-days {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+.cal-divider {
+  height: 1px;
+  margin: var(--sp-2) var(--sp-5);
+  background: var(--divider);
+}
+.cal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease);
+}
+.cal-row:hover {
+  background: var(--hover);
+}
+.cal-row:active {
+  background: var(--pressed);
+}
+.cal-row .cal-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0 8px;
+  font-size: var(--fs-2xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.cal-row .cal-chip.live {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+.cal-row .cal-name {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 官方问候/运势卡（登录态，缺席隐藏） */
+.welcome-card .welcome-line {
+  padding: 0 var(--sp-5) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.welcome-card .welcome-line.sub {
+  color: var(--text-2);
 }
 
 .list-card {

@@ -45,6 +45,11 @@ function formatWhen(ms) {
   return `${d.getMonth() + 1}-${d.getDate()}`;
 }
 
+function formatCalDate(ms) {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}-${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function resClass(status) {
   if (status === 12) return "ok";
   if ([2, 3, 4, 5, 6, 7, 8].includes(status)) return "bad";
@@ -150,52 +155,58 @@ function buildHeat(home) {
 }
 
 function buildContest(home, actions) {
-  const contest = home.contest;
   const card = el("div", "contest-card card");
-  card.appendChild(cardHead("比赛", "contest"));
-  card.appendChild(el("span", "cc-label", contest ? (contest.live ? "正在进行" : "下一场比赛") : "赛程"));
-
-  if (!contest) {
+  const official = home.official || {};
+  const contests = home.contests || [];
+  card.appendChild(cardHead("比赛日历", "contest"));
+  const cds = Array.isArray(official.countdowns) ? official.countdowns : [];
+  if (!cds.length && !contests.length) {
     card.appendChild(el("span", "cc-empty", "暂无比赛信息"));
     return card;
   }
 
-  const name = el("span", "cc-name", contest.name);
-  card.appendChild(name);
-
-  if (contest.live) {
-    card.appendChild(el("span", "cc-chip cc-live", "进行中"));
-  } else {
-    const start = new Date(contest.start);
-    card.appendChild(
-      el("span", "cc-chip", `${start.getMonth() + 1} 月 ${start.getDate()} 日 ${pad(start.getHours())}:${pad(start.getMinutes())}`)
-    );
+  for (const cd of cds) {
+    const row = el("div", "cd-row");
+    row.appendChild(el("span", "cd-name", "距 " + cd.name));
+    row.appendChild(el("span", "cd-days nums", cd.days <= 0 ? "今天" : "还剩 " + cd.days + " 天"));
+    card.appendChild(row);
   }
+  if (cds.length && contests.length) card.appendChild(el("div", "cal-divider"));
 
-  const count = el("span", "cc-count");
-  card.appendChild(count);
-  const target = contest.live ? contest.end : contest.start;
-  const tick = () => {
-    count.textContent = formatClock(target - Date.now());
-  };
-  tick();
-  countdownTimer = setInterval(tick, 1000);
+  let live = null;
+  for (const contest of contests) {
+    if (contest.live) live = contest;
+    const row = el("div", "cal-row");
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", "打开比赛页面：" + contest.name);
+    const chip = el("span", "cal-chip" + (contest.live ? " live" : ""), contest.live ? "进行中" : formatCalDate(contest.start));
 
-  card.tabIndex = 0;
-  card.setAttribute("role", "button");
-  card.setAttribute("aria-label", "打开比赛页面：" + contest.name);
-  // 点卡片进这场比赛本身；没有 id（异常数据）才退回比赛列表
-  const open = () => {
-    if (contest.id) actions.openDetail({ url: "/contest/" + contest.id, title: contest.name });
-    else actions.nav("contest");
-  };
-  card.addEventListener("click", open);
-  card.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      open();
-    }
-  });
+    row.appendChild(chip);
+    row.appendChild(el("span", "cal-name", contest.name));
+    const open = () => {
+      if (contest.id) actions.openDetail({ url: "/contest/" + contest.id, title: contest.name });
+      else actions.nav("contest");
+    };
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+    card.appendChild(row);
+  }
+  if (live) {
+    const count = el("span", "cc-count");
+    card.appendChild(count);
+    const target = live.end;
+    const tick = () => {
+      count.textContent = (live.name || "比赛") + " · 剩余 " + formatClock(target - Date.now());
+    };
+    tick();
+    countdownTimer = setInterval(tick, 1000);
+  }
   return card;
 }
 
@@ -308,6 +319,16 @@ function buildStatGrid(home) {
   return grid;
 }
 
+function buildWelcome(home) {
+  const official = home.official || {};
+  if (!official.welcome && !official.fortune) return null;
+  const card = el("div", "welcome-card card");
+  card.appendChild(cardHead("官方问候", "home"));
+  if (official.welcome) card.appendChild(el("div", "welcome-line", official.welcome));
+  if (official.fortune) card.appendChild(el("div", "welcome-line sub", official.fortune));
+  return card;
+}
+
 function buildSign(state, actions) {
   const user = state.user || {};
   if (!user.loggedIn) {
@@ -387,6 +408,7 @@ export function renderHome(state, actions) {
   const offline = state.online === false;
 
   const head = el("div", "home-row");
+  if (user.name) head.appendChild(el("div", "home-hello", "你好，" + user.name));
   head.appendChild(el("div", "home-date", formatDate(new Date())));
   if (home.quote) head.appendChild(el("div", "home-quote", "每日寄语：" + home.quote));
   if (offline) {
@@ -418,8 +440,10 @@ export function renderHome(state, actions) {
     grid.classList.add("single");
   }
 
-  side.appendChild(buildSign(state, actions));
+  const welcomeCard = buildWelcome(home);
+  if (welcomeCard) side.appendChild(welcomeCard);
   side.appendChild(buildContest(home, actions));
+  side.appendChild(buildSign(state, actions));
   const queueCard = buildQueue(state, actions);
   if (queueCard) side.appendChild(queueCard);
 

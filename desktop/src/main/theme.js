@@ -5,7 +5,8 @@
    - glass：「壁纸透出程度」，70-100 把内容面/纱层/外壳线性压到 0，
      glass=100 时壁纸完整透出；浮层保留 60% 可读下限
    - pageScrim：内容画布与洛谷页面壁纸之上的主题色纱层
-   - cardAlpha：卡片/列表/输入框的不透明度
+   - cardAlpha：外壳原生卡片的不透明度（0.7.2 起仅外壳/设置页使用）
+   - raiseAlpha/codeAlpha：洛谷页面承载面浮起档与代码块例外层（同层透出）
    - blurPx：玻璃模糊半径（主要作用于外壳与浮层） */
 const { nativeTheme, systemPreferences } = require("electron");
 const materialLevels = require("./material").levels;
@@ -149,6 +150,8 @@ function payload(cfg) {
   const panelAlpha = level.panelAlpha;
   const pageScrim = level.pageScrim;
   const cardAlpha = level.cardAlpha;
+  const raiseAlpha = level.raiseAlpha;
+  const codeAlpha = level.codeAlpha;
   const overlayAlpha = level.overlayAlpha;
   const blurPx = level.blurPx;
   return {
@@ -161,6 +164,8 @@ function payload(cfg) {
     panelPct: panelAlpha,
     pageScrim,
     cardAlpha,
+    raiseAlpha,
+    codeAlpha,
     overlayAlpha,
     blurPx,
     performanceMode: perf,

@@ -903,3 +903,49 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
   表头/固定元素/模式探针。
 - **验收**：`npm run check` 330 项；14 个冒烟探针 3 批全 PASS；
   `SMOKE_SKIN_AUDIT` 17 页 × 亮/暗（游客可见 13 页全零，其余 authGated 标记）。
+
+### 15.14 0.7.2（R70）同层透出 · 主页融合 · 侧栏抽屉
+
+**用户三问**：题库页半白半透（截图实锤：筛选卡 80% 白 + 列表行全透 +
+chips/输入框各自写死 92%/84%/95%/70%，同屏多深度）；侧栏开合闪烁缩放不自然
++ 删左上角 luogu 标志；主页与官方主页融合（两问均由用户拍板：透明=全员同
+层、主页=原生融合）。
+
+- **同层透出**：material.js 新档位 `raiseAlpha`（承载面统一浮起档，默认
+  11%，随 glass 归零）与 `codeAlpha`（代码块例外层 = 浮起档+55，下限 55%）；
+  `cardAlpha` 保留但仅外壳原生卡片使用。皮肤孤岛全部收编：卡片白名单/
+  筛选 chips/输入框/搜索框/分页条/分页按钮/bottom-wrap/文章操作条/按钮底
+  → `var(--lg-raise)`；`--lg-card-alpha` 从皮肤移除。dark-only 三条
+  （col 灰带、mobile-body、wrapper background）改亮暗通用。正文投影保护
+  改挂 `pageScrim <= 40`。glass=100 时 raise/scrim 真 0（100% 透出承诺保持），
+  代码块保 55%、浮层保 60%。
+- **主页融合**：官方主页实为 2015 旧版 `#app-old`（lentille-context 只有
+  彩蛋注释），数据走 DOM 抓取：`fetchOfficialHome()` 在隐藏窗口抓日历块
+  倒计时（`距X还剩N天`）与欢迎/运势文本（`.lg-punch`），容错独立、失败保
+  留上轮 partial；`buildContests()` 把 /contest/list 扩成 5 场列表。主页
+  重排：头部「你好，name」+ 日期/寄语；右栏 官方问候卡（缺席隐藏）→ 比赛
+  日历卡（官方倒计时+近期比赛列表+进行中剩余时间钟）→ 签到 → 离线队列；
+  左栏不变（热力图/最近提交）。homeKey 加入 contests/official 摘要。
+- **侧栏抽屉**：`animateRailDrawer()` 宽度补间 56→208（170ms）/208→56
+  （150ms）ease-out，token 作废可折返反向；关闭在补间完成才 setVisible，
+  替换 executeJavaScript+固定 130ms 腰斩链路；浮层面板近实心 96% +
+  内容 90ms 淡入（消双层叠染/图标重影）；`#rail-mark` 两处删除，钉子
+  margin-left:auto。钉住/取消：`@property --rail-current-w` 注册为
+  <length> 使外壳 grid-template-columns 可过渡 + `animateRailLayout()`
+  页面 view 同步 180ms 补间（layout()/resize 作废并落定；perf 模式瞬切）。
+  **计划偏离说明**：浮层 y 保持 TITLE_H 未上移到工具条下（保钉子在浮层
+  头部可用、避免浮层与壳层头条错位拼接；工具条左段覆盖为既有行为，近实心
+  面板后无闪烁）。
+- **旧版首页补覆盖**（审计扩到 18 页后暴露）：`#app main` 内联
+  rgb(239,239,239)、`.am-panel` 系列白底、`#lg-slider`、日历深绿字、
+  倒计时深灰字、比赛状态徽标深蓝/暗红、页脚栏目灰字、黄/绿徽标白字
+  （1.66:1）—— 全部只清色；审计 over 指标排除 `.am-slider` 轮播轨道
+  （按设计横向溢出）。
+- **验收**：check 353 项；探针 PERF/RAIL/VISUAL/GLASS/PALETTE/TOAST/
+  LIST_CLICK/LANG/DRAFT/KEYS/HISTORY/IDE/OFFLINE/ADBLOCK 全 PASS；
+  `SMOKE_SKIN_AUDIT` 18 页 × 亮/暗全零；审计 tiers 同层指标
+  （承载面 alpha min=max=0.11、spread 0）。
+- **坑**：executeJavaScript 注入脚本的模板字符串里 `\n`/`\s` 会被 JS
+  转义成真实换行/丢反斜杠，注入即语法错误——源码里必须写双反斜杠
+  `\\n`/`\\s`（本轮 fetchOfficialHome 首跑即栽）。审计 tiers 指标可量化
+  「同层」验收。

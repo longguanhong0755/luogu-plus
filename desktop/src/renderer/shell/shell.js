@@ -83,6 +83,11 @@ function homeKey(state) {
     home.error,
     (home.recent || []).map((item) => [item.pid, item.status, item.time]).join(","),
     home.contest ? [home.contest.id, home.contest.start, home.contest.live].join("|") : "",
+    (home.contests || []).map((c) => [c.id, c.start, c.live ? 1 : 0].join(":")).join(","),
+    home.official
+      ? (home.official.countdowns || []).map((cd) => cd.name + ":" + cd.days).join(",") +
+        "|" + String(home.official.welcome || "") + "|" + String(home.official.fortune || "")
+      : "",
     (home.heat || []).length,
     state.online === false ? "off" : "on",
     (state.queue && state.queue.items || []).map((item) => [item.id, item.status, item.tries]).join(","),
