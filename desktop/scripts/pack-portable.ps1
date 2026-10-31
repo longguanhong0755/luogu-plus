@@ -8,7 +8,8 @@ $repo = Split-Path -Parent $desktop
 $pkgText = Get-Content (Join-Path $desktop "package.json") -Raw -Encoding UTF8
 $ver = [regex]::Match($pkgText, '"version"\s*:\s*"([0-9.]+)"').Groups[1].Value
 if (-not $ver) { throw "无法从 package.json 解析版本号" }
-$stage = Join-Path $env:TEMP ("lg-pack-" + $ver)
+# 唯一 stage 名：防上一次运行的残留句柄锁住同路径（Copy-Item IOException）
+$stage = Join-Path $env:TEMP ("lg-pack-" + $ver + "-" + (Get-Date -Format "HHmmss"))
 $dist = Join-Path $repo ".lg-dev\dist"
 $zip = Join-Path $dist ("luogu-desktop-" + $ver + "-portable.zip")
 
@@ -20,7 +21,12 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 
 # 1) Electron 运行时（node_modules/electron/dist 即完整运行时目录）
-Copy-Item (Join-Path $desktop "node_modules\electron\dist\*") $stage -Recurse -Force
+#    用户实例可能正从该目录运行（资源文件被读锁）：robocopy 自带重试，
+#    退出码 <=7 均视为成功。
+$src = Join-Path $desktop "node_modules\electron\dist"
+robocopy $src $stage /E /NFL /NDL /NJH /NJS /R:5 /W:1 | Out-Null
+if ($LASTEXITCODE -gt 7) { throw "robocopy 复制运行时失败（exit=$LASTEXITCODE）" }
+$LASTEXITCODE = 0
 # 2) 应用源码进 resources/app（Electron 约定：该目录存在则直接加载）
 $appDir = Join-Path $stage "resources\app"
 New-Item -ItemType Directory -Path $appDir | Out-Null

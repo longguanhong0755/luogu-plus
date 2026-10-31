@@ -122,6 +122,7 @@ async function boot() {
     openProblem: (pid) => window.lg.openProblem(pid),
     openDetail: (payload) => window.lg.openDetail(payload),
     queueAction: (payload) => window.lg.queueAction(payload),
+    setGeneral: (patch) => window.lg.setGeneral(patch),
   };
 
   const library = initLibrary({

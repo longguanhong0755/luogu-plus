@@ -39,6 +39,7 @@ const DEFAULTS = {
     autoLaunch: false,
     adBlock: false, // 拦截广告与推广，默认关闭
     performanceMode: false, // 关闭壁纸运动 / 背景模糊 / 切换动画
+    firstRunSeen: false, // 首启引导卡已看过（首次启动显示欢迎卡）
   },
   notify: {
     judge: true,
@@ -144,6 +145,7 @@ function sanitize() {
   g.autoLaunch = !!g.autoLaunch;
   g.adBlock = !!g.adBlock;
   g.performanceMode = !!g.performanceMode;
+  g.firstRunSeen = !!g.firstRunSeen;
 
   const n = data.notify;
   n.judge = !!n.judge;

@@ -1650,6 +1650,16 @@ async function runSmoke(ctx) {
       }
 
       if (process.env.LG_SMOKE_VISUAL === "1") {
+        // 显式回主页并等待渲染就绪（新 profile 下 home 数据异步到达，直读会拿空 DOM）
+        ctx.views.showHome();
+        for (let i = 0; i < 20; i++) {
+          const ready = await ctx.win.webContents
+            .executeJavaScript(`!!document.querySelector(".home-wrap")`)
+            .catch(() => false);
+          if (ready) break;
+          await wait(300);
+        }
+        await wait(400);
         await ctx.win.webContents.executeJavaScript(
           `window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, cancelable: true, bubbles: true }))`
         );
@@ -1694,6 +1704,7 @@ async function runSmoke(ctx) {
             sidebarLabel: q("#rail-top .rail-label") ? q("#rail-top .rail-label").textContent : "",
             homeCards: document.querySelectorAll(".home-wrap .card").length,
             homeHello: !!q(".home-hello"),
+            firstRunCard: !!q(".firstrun-card"),
             welcomeCard: !!q(".welcome-card"),
             calRows: document.querySelectorAll(".cal-row").length,
             cdRows: document.querySelectorAll(".cd-row").length
@@ -2867,6 +2878,7 @@ async function runSkinAudit(ctx, outDir, wait) {
               tag: el.tagName.toLowerCase(),
               text: (el.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40),
               parent: el.parentElement ? pathOf(el.parentElement) : "",
+              html: ${JSON.stringify(!!process.env.LG_AUDIT_OVER_DUMP)} ? el.outerHTML.slice(0, 300) : undefined,
             });
           }
           const bgc = parse(cs.backgroundColor);

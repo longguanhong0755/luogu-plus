@@ -288,6 +288,11 @@ function bootstrap() {
         pageWc.send("app:toast", payload);
       }
     };
+    if (ctx.smoke) {
+      ctx.win.webContents.on("console-message", (_e, _level, message, line, sourceId) => {
+        console.log("[renderer-console]", String(message).slice(0, 200), "@", String(sourceId).split(/[\/]/).pop() + ":" + line);
+      });
+    }
     ctx.showWindow = () => {
       if (ctx.win && !ctx.win.isDestroyed()) {
         ctx.win.show();

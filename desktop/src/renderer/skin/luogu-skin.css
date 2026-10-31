@@ -1019,3 +1019,13 @@ html[data-lg-adblock="1"] .am-u-lg-3 .lg-article:has(a[href*="class.luogu.com.cn
 html[data-lg-adblock="1"] .am-u-lg-3 .card:has(a[href*="class.luogu.com.cn"]) {
   display: none !important;
 }
+
+/* 用户页右栏「近期赛程」轮播（Vue 作用域滑件 data-v-12b24cc3）在窄窗越界：
+   链接收敛到容器宽度（省略号截断），审计 over 项转正（v0.8 票清偿） */
+#app .main-container .right a[data-v-12b24cc3] {
+  max-width: 100%;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

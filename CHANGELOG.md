@@ -2,6 +2,22 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
+## v0.7.14 (2026-11-01) — R82 v0.8 票提前清偿（溢出转正/首启引导）
+
+- **user 页轮播溢出收敛**（v0.8 票清偿）：审计新增 over 元素 DOM 侦察
+  （LG_AUDIT_OVER_DUMP，节点侧插值——曾误把 process.env 写进页面脚本致
+  注入即炸，已修），按真实标记（Vue 作用域滑件 a[data-v-12b24cc3]）出皮肤
+  规则收敛到容器宽度；实测 user 页 overCount:0/overAllowed:0（白名单转正）。
+- **首启引导卡**（v0.8 票清偿）：general.firstRunSeen 首次启动在主页右栏
+  显示三行要点（托盘退出/快捷键/离线快照），「知道了」置位不再出现；
+  VISUAL 探针 firstRunCard 指标实测 true，并修复探针主页等待时序
+  （显式 showHome+等 .home-wrap）。
+- **修复本轮自伤**：buildFirstRun 的 for 循环缺闭合大括号导致后续大括号
+  错位、home.js 模块解析炸掉（外壳 boot 失败、home 全空）——新增冒烟模式
+  渲染端 console 中继（console-message → 主进程日志）抓到并修复；
+  该中继保留为常驻可观测性。
+- check 420→421。
+
 ## v0.7.13 (2026-11-01) — R81 证据归档收口（评审 R2/R3 点名项）
 
 - 签名结果（thumbprint+UTC 时间戳）随 pack-smoke.log 落盘，SIGN-OK 可复核。

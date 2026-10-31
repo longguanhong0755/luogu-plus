@@ -1044,3 +1044,13 @@ production-observability / evidence-collection）把桌面版打到生产级。
 - **评审分数轨迹**：73/79/77 → 82/78/81 → 89/83/83 → 90/84/84 → 91/88/88 → 94/89/86 → 95/92/94（R80 待评）。
   剩余扣分项均为已披露结构性缓期：签名/NSIS/自动更新（v1.0）、parity 矩阵与
   登录态审计（v0.8）、check grep 断言行为化（增量）。
+
+### 15.16.2 R82（v0.7.14）v0.8 票提前清偿
+
+- user 页轮播溢出：over 元素 DOM 侦察（LG_AUDIT_OVER_DUMP，节点侧插值）
+  → 皮肤规则 a[data-v-12b24cc3] 收敛 → 审计 overCount:0/overAllowed:0
+  （overAllowed 白名单转正为安全网保留）。
+- 首启引导卡：general.firstRunSeen，主页右栏三行要点+知道了；
+  VISUAL firstRunCard 指标。
+- 渲染端可观测性：冒烟模式 console-message 中继（本轮抓到 for 缺大括号
+  引发的模块解析炸裂——大括号错位会把模块级 export 推进函数体）。

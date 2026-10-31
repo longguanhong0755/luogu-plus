@@ -1111,6 +1111,18 @@ if (/受信任的发布者/.test(fs.readFileSync(path.join(ROOT, "..", "README.m
 else fail("R80 缺信任说明");
 if ((fs.readFileSync(path.join(ROOT, "..", "docs", "PARITY.md"), "utf8").match(/^\| 6 \|/m) || []).length === 1) ok("R80 PARITY 扩至 6 旅程");
 else fail("R80 PARITY 未扩至 6 旅程");
+
+/* ---------- R82 v0.8 票提前清偿（溢出转正/首启引导/渲染可观测） ---------- */
+const skin82 = read("src/renderer/skin/luogu-skin.css");
+const config82 = read("src/main/config.js");
+if (/a\[data-v-12b24cc3\]/.test(skin82) && /text-overflow: ellipsis/.test(skin82)) ok("R82 user 页轮播溢出皮肤收敛（转正）");
+else fail("R82 缺溢出收敛皮肤规则");
+if (/firstRunSeen/.test(config82) && /buildFirstRun/.test(read("src/renderer/shell/home.js"))) ok("R82 首启引导卡（firstRunSeen + buildFirstRun）");
+else fail("R82 缺首启引导");
+if (/console-message/.test(read("src/main/index.js"))) ok("R82 冒烟模式渲染端 console 中继（可观测性）");
+else fail("R82 缺渲染端 console 中继");
+if (/firstRunCard/.test(smoke74)) ok("R82 VISUAL 探针含首启卡指标");
+else fail("R82 VISUAL 缺首启卡指标");
 if (parity76.trim().indexOf("# Parity") === 0 && /6 旅程/.test(parity76)) ok("R76 PARITY.md 首批（6 旅程×3 模式）在位");
 else fail("R76 缺 PARITY.md");
 if (/smoke\.js/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8")) && /剥离/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8"))) ok("R76 打包后剥离探针 harness");
@@ -1174,7 +1186,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.13";
+const EXPECTED_VERSION = "0.7.14";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
