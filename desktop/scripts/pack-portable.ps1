@@ -12,6 +12,9 @@ $stage = Join-Path $env:TEMP ("lg-pack-" + $ver)
 $dist = Join-Path $repo ".lg-dev\dist"
 $zip = Join-Path $dist ("luogu-desktop-" + $ver + "-portable.zip")
 
+# 0) 清理同前缀旧产物（防坏包误分发，如版本号解析失败的残包）
+if (Test-Path $dist) { Remove-Item (Join-Path $dist "luogu-desktop-*portable.zip") -Force -ErrorAction SilentlyContinue }
+
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Path $stage | Out-Null
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
@@ -34,4 +37,19 @@ if (-not (Test-Path (Join-Path $appDir "src\main\index.js"))) { throw "src/main/
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
 $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+
+# 5) 打包冒烟（证据落盘）：从暂存目录启动，隔离 userData，验证产物可启动
+$ud = Join-Path $env:TEMP ("lg-pack-ud-" + $ver)
+if (Test-Path $ud) { Remove-Item $ud -Recurse -Force }
+$env:LG_USERDATA = $ud
+$env:LG_SMOKE = "1"
+$env:LG_DEMO = "1"
+$log = Join-Path $dist "pack-smoke.log"
+$smokeOut = & $exe --smoke 2>&1 | Tee-Object -FilePath $log
+Remove-Item Env:LG_USERDATA, Env:LG_SMOKE, Env:LG_DEMO
+Remove-Item $ud -Recurse -Force
+if (-not ($smokeOut -match "SMOKE_OK")) {
+  throw "打包冒烟失败（SMOKE_OK 缺失）；日志见 $log"
+}
+
 Write-Output ("PACK-OK " + $zip + " (" + $mb + " MB)")

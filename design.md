@@ -992,6 +992,8 @@ production-observability / evidence-collection）把桌面版打到生产级。
   查找条与页面同生命周期， Esc 清除高亮。
 - **Ctrl+=/-/0 阅读缩放**：before-input-event 直接 setZoomLevel（entry.zoom
   会话内随视图保持），页面内 `app:zoom-hud` HUD 提示百分比，900ms 淡出。
+- **打包冒烟证据**：pack-portable.ps1 内建第 5 步冒烟（从暂存目录启动、隔离
+  userData），日志落 `.lg-dev/dist/pack-smoke.log`，SMOKE_OK 不过则拒绝出包。
 - **其他**：渲染崩溃重载上限（3 次后停+提示）；下载文件名 basename 收敛；
   权限检查放行洛谷源 clipboard-sanitized-write（站内代码块复制恢复）；
   uncaughtException 加用户可见 toast；smoke 惰性 require；
@@ -1000,5 +1002,8 @@ production-observability / evidence-collection）把桌面版打到生产级。
 - **明确缓期**（二次评审需知）：NSIS/签名/自动更新（v1.0，ROADMAP 排期）、
   AT 下划线题号（pid 大小写规范化涉及 store/快照键位，v0.8）、check.js
   grep 型断言升级为行为断言（已有 ~25 条行为断言，升级按增量做）、
-  登录态皮肤审计（需要真实账号登录态，见 §15.14 已知限制）。
+  parity 矩阵（ROADMAP 硬规则承诺的 12 旅程×3 模式，v0.8 首批交付）、
+  登录态皮肤审计（需要真实账号登录态；审计器对 authGated 页如实标记，见本文件
+  皮肤审计小节的 authGated 披露；2026-11-01 实测 r70 profile 会话已过期，
+  留痕 `.lg-dev/r73/profile-expiry-check.log`）。
 - check 358 → 369。

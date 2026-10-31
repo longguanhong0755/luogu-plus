@@ -659,11 +659,13 @@ class ViewManager {
         }
         const clone = pick.cloneNode(true);
         clone.querySelectorAll("script, noscript, iframe, #lg-boot").forEach((node) => node.remove());
-        // 深度防御：剥掉全部 on* 事件属性与 javascript: 链接（离线页 CSP 之外的第二道闸）
+        // 深度防御：剥 on* 事件属性、javascript: 等危险 URL 属性（离线页 CSP 之外的第二道闸）
         for (const node of [clone, ...clone.querySelectorAll("*")]) {
           for (const attr of [...node.attributes]) {
             const name = attr.name.toLowerCase();
-            if (name.startsWith("on") || (name === "href" && /^\s*javascript:/i.test(attr.value))) {
+            const isUrlAttr = name === "href" || name === "src" || name === "formaction" || name === "action" || name === "xlink:href";
+            const isSafeData = name === "src" && /^data:(image|font)\//i.test(attr.value);
+            if (name.startsWith("on") || (isUrlAttr && !isSafeData && /^\s*(javascript|data|vbscript):/i.test(attr.value))) {
               node.removeAttribute(attr.name);
             }
           }
@@ -1005,6 +1007,11 @@ class ViewManager {
       }
     });
 
+    // 加载成功即清零崩溃重载计数（「连续 3 次」语义）
+    wc.on("did-finish-load", () => {
+      wc.__lgReloadCount = 0;
+    });
+
     wc.on("render-process-gone", () => {
       // 重载上限：确定性崩溃页不能无限循环；连续 3 次后停止并提示
       wc.__lgReloadCount = (wc.__lgReloadCount || 0) + 1;
@@ -1053,7 +1060,7 @@ class ViewManager {
         if (entry && entry.view && !entry.view.webContents.isDestroyed()) {
           const wc = entry.view.webContents;
           entry.zoom =
-            command === "zoomreset" ? 0 : Math.max(-2, Math.min(2.5, (entry.zoom || 0) + (command === "zoomin" ? 0.2 : -0.2)));
+            command === "zoomreset" ? 0 : Math.max(-3.5, Math.min(3, (entry.zoom || 0) + (command === "zoomin" ? 0.2 : -0.2)));
           wc.setZoomLevel(entry.zoom);
           const pct = Math.round(Math.pow(1.2, entry.zoom) * 100);
           wc.send("app:zoom-hud", pct + "%");

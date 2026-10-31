@@ -48,7 +48,7 @@ function offlinePageHtml(snap, theme) {
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' https: http:; font-src https: data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' data:; font-src https: data:; base-uri 'none'; form-action 'none'">
 <title>${esc(snap.pid)} ${esc(snap.title || "")}</title>
 <base href="https://www.luogu.com.cn/">
 <style>
@@ -195,6 +195,15 @@ function bootstrap() {
     store: null,
   };
 
+  /* 全局兜底：任何 webContents（含未来新增宿主）默认拒绝 window.open 与
+     webview 挂载；具体宿主后续自行 set 的 handler 会覆盖这里的最严默认。 */
+  app.on("web-contents-created", (_event, wc) => {
+    wc.setWindowOpenHandler(() => ({ action: "deny" }));
+    wc.on("will-attach-webview", (event) => {
+      event.preventDefault();
+    });
+  });
+
   app.whenReady().then(async () => {
     ctx.cfg.init();
     ctx.store = new Store(require("node:path").join(app.getPath("userData"), "store")).init();
@@ -206,13 +215,18 @@ function bootstrap() {
 
     ctx.session = session.fromPartition("persist:luogu");
     ctx.session.setUserAgent(UA);
-    ctx.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-    // 站内代码块复制按钮走 clipboard API：仅对洛谷来源放行剪贴板写，其余权限一律拒绝
+    ctx.session.setPermissionRequestHandler((_wc, permission, _details, callback) => {
+      // 仅放行洛谷来源的 fullscreen（站内视频/答辩页全屏），其余权限一律拒绝
+      const origin = String((_wc && _wc.getURL && _wc.getURL()) || "");
+      const isLuogu = /^https?:\/\/([a-z0-9-]+\.)*luogu\.com\.cn/i.test(origin);
+      callback(permission === "fullscreen" && isLuogu);
+    });
+    // 站内代码块复制按钮走 clipboard API；站内视频全屏走 fullscreen——
+    // 仅对洛谷来源放行这两项，其余权限一律拒绝
     ctx.session.setPermissionCheckHandler((_wc, permission, origin) => {
-      return (
-        permission === "clipboard-sanitized-write" &&
-        /^https?:\/\/([a-z0-9-]+\.)*luogu\.com\.cn(:\d+)?$/i.test(String(origin || ""))
-      );
+      const isLuogu = /^https?:\/\/([a-z0-9-]+\.)*luogu\.com\.cn(:\d+)?$/i.test(String(origin || ""));
+      if (isLuogu && permission === "clipboard-sanitized-write") return true;
+      return isLuogu && permission === "fullscreen";
     });
     // 广告拦截只在这个会话上挂一次；开关状态由回调实时读取。
     adblock.wire(ctx.session, () => ctx.cfg.get().general.adBlock);
@@ -220,8 +234,9 @@ function bootstrap() {
     ctx.session.on("will-download", (_event, item) => {
       try {
         const dir = app.getPath("downloads");
-        // basename 收敛：服务端建议文件名绝不许带路径成分
-        const filename = require("node:path").basename(item.getFilename() || "download");
+        // basename 收敛 + Windows 非法字符清洗 + 防 ".." 穿透
+        let filename = require("node:path").basename(item.getFilename() || "download");
+        filename = filename.replace(/[\\/:*?"<>|]/g, "_").replace(/^\.+/, "").trim() || "download";
         let savePath = require("node:path").join(dir, filename);
         const dot = filename.lastIndexOf(".");
         const stem = dot > 0 ? filename.slice(0, dot) : filename;

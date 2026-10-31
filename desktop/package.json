@@ -1,10 +1,11 @@
 {
   "name": "luogu-desktop",
   "productName": "Luogu Desktop",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "洛谷桌面版 — 为 Windows 打造的洛谷客户端",
   "main": "src/main/index.js",
-  "author": "user",
+  "author": "longguanhong0755",
+  "repository": "github:longguanhong0755/luogu-plus",
   "license": "MIT",
   "scripts": {
     "start": "electron .",

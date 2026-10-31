@@ -2,6 +2,25 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
+## v0.7.5 (2026-11-01) — R73 二轮评审整改
+
+- 隐藏数据窗补齐三重导航防护（will-navigate 站内白名单 / window-open 拒绝 /
+  webview 拒绝），并加 app 级 web-contents-created 全局兜底（window-open 与
+  webview 默认全拒，具体宿主自己的 handler 后注册覆盖）。
+- 设置窗补 will-attach-webview（整改记录与代码对齐）；check 门禁改按窗口计数。
+- 缩放 HUD 加 pointer-events:none 并淡出后移除（修复 HUD 隐形截留页面点击）；
+  Esc 全局关闭查找条；查找清空输入即 stopFindInPage 清高亮。
+- 权限请求对洛谷源放行 fullscreen（站内视频全屏恢复）；下载文件名补 Windows
+  非法字符清洗与 ".." 穿透防护；崩溃重载计数在加载成功后清零（真「连续」语义）；
+  缩放范围放宽至 42%–173%；快照消毒扩展到 href/src/formaction/action/xlink:href
+  （data:image|font 放行）；离线 CSP style-src 收敛为 'unsafe-inline' data:。
+- 打包脚本内建冒烟步骤（SMOKE_OK 不过拒绝出包）+ 证据落盘
+  dist/pack-smoke.log；清理 dist 坏包；pack-ico.js 补覆盖守卫（ico/png/tray
+  不再绕过 gen-icons 守卫）。
+- 文档卫生：审计口径改为「14 页实测全零 + 4 页 authGated」；r70 profile
+  会话过期实测留痕；parity 矩阵写入缓期清单；修复失效交叉引用；
+  README 快捷键补 Ctrl+F / Ctrl+±缩放；package.json 补 author/repository。
+
 ## v0.7.4 (2026-11-01) — R72 评审团整改
 
 首次评审团锐评（73/79/77 分）后的问题整改轮：
@@ -20,7 +39,7 @@
   gen:icons 加覆盖守卫（-Force 才重生成）；README 修正 gen:icons 措辞。
 - **工程**：smoke 调试器改为惰性 require（不再无条件进生产主进程）；
   CHANGELOG 建立；版本 tag 体系建立（v0.5.0 → v0.7.4）。
-- check 369 项全绿；三批探针 + IDE 探针 PASS；18 页 × 亮暗审计全零。
+- check 369 项全绿；三批探针 + IDE 探针 PASS；皮肤审计 14 页实测全零 + 4 页 authGated（登录跳转，见已知限制）。
 
 ## v0.7.3 (2026-11-01) — R71 生产加固
 
@@ -38,7 +57,7 @@
 - 主页原生融合：抓官方旧版首页倒计时/欢迎/运势 + 比赛日历列表，重排两栏。
 - 侧栏抽屉化：宽度补间、近实心面板消叠染、钉住 @property 轨道宽过渡；
   删侧栏 luogu 标志。
-- check 353；18 页 × 亮暗审计全零（含官方主页）。
+- check 353；皮肤审计 14 页实测全零 + 4 页 authGated（含官方主页）。
 
 ## v0.7.1 (2026-10-31) — R69 丝滑与清瑕
 

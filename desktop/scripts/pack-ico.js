@@ -4,6 +4,14 @@ const path = require("node:path");
 
 const dir = path.join(__dirname, "..", "src", "assets");
 const sizes = [16, 24, 32, 48, 64, 128, 256];
+
+/* 覆盖守卫：与 gen-icons.ps1 同语义——目标资产已在且未传 -Force 时跳过，
+   防止误运行把已入库的官方标覆盖成自绘占位图。 */
+if (!process.argv.includes("-Force") && ["icon.ico", "icon.png", "tray.png"].every((f) => fs.existsSync(path.join(dir, f)))) {
+  console.log("ICON-KEEP icon.ico/icon.png/tray.png exist; pass -Force to regenerate.");
+  process.exit(0);
+}
+
 const entries = sizes.map((size) => {
   const file = path.join(dir, `icon-${size}.png`);
   return { size, data: fs.readFileSync(file) };

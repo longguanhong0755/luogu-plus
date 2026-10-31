@@ -442,6 +442,20 @@ class LuoguService {
       },
     });
     this.win.loadURL("https://www.luogu.com.cn/");
+    // 隐藏数据窗也锁导航：站内可跳，站外拒绝（不 openExternal——它没有用户可见面）；
+    // window.open 一律拒绝，防止站内内容弹可见原生窗（继承登录会话）。
+    this.win.webContents.on("will-navigate", (event, url) => {
+      try {
+        const host = new URL(url).hostname;
+        if (!(host === "www.luogu.com.cn" || host === "luogu.com.cn")) event.preventDefault();
+      } catch {
+        event.preventDefault();
+      }
+    });
+    this.win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    this.win.webContents.on("will-attach-webview", (event) => {
+      event.preventDefault();
+    });
     this.loadPromise = new Promise((resolve) => {
       const done = () => resolve();
       this.win.webContents.once("did-stop-loading", done);

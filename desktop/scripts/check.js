@@ -990,7 +990,7 @@ const idx72 = read("src/main/index.js");
 const page72 = read("src/preload/page.js");
 if (!/sandbox: false/.test(win72) && !/sandbox: false/.test(views70) && /sandbox: true/.test(win72)) ok("R72 全部渲染宿主 sandbox:true");
 else fail("R72 仍有 sandbox:false 渲染宿主");
-if ((win72.match(/will-navigate/g) || []).length >= 2 && (win72.match(/setWindowOpenHandler/g) || []).length >= 2 && /will-attach-webview/.test(win72)) ok("R72 主壳/设置窗导航防护（will-navigate/open/attach）");
+if ((win72.match(/will-navigate/g) || []).length >= 2 && (win72.match(/setWindowOpenHandler/g) || []).length >= 2 && (win72.match(/will-attach-webview/g) || []).length >= 2) ok("R72 主壳/设置窗导航防护（will-navigate/open/attach×2）");
 else fail("R72 主壳/设置窗缺导航防护");
 if (/Content-Security-Policy/.test(idx72) && /name\.startsWith\("on"\)/.test(views70)) ok("R72 离线页 CSP + 快照 on* 剥离");
 else fail("R72 离线页缺 CSP 或快照未剥 on*");
@@ -1007,13 +1007,47 @@ else fail("R72 缺 LICENSE");
 if (fs.existsSync(path.join(__dirname, "pack-portable.ps1"))) ok("R72 便携包脚本在位");
 else fail("R72 缺 scripts/pack-portable.ps1");
 
+/* ---------- R73 二轮评审整改（隐藏窗/权限/下载/HUD/证据卫生） ---------- */
+const luogu73 = read("src/main/luogu.js");
+const page73 = read("src/preload/page.js");
+const pkg73 = read("package.json");
+const packPs1 = fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8");
+if (/web-contents-created/.test(idx72) && /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/.test(idx72)) ok("R73 全局 web-contents-created 兜底");
+else fail("R73 缺全局 web-contents-created 兜底");
+if ((luogu73.match(/setWindowOpenHandler/g) || []).length >= 1 && /will-attach-webview/.test(luogu73) && /will-navigate/.test(luogu73)) ok("R73 隐藏数据窗三重防护");
+else fail("R73 隐藏数据窗缺防护");
+if (/permission === "fullscreen" && isLuogu/.test(idx72)) ok("R73 权限请求 fullscreen 洛谷源豁免");
+else fail("R73 缺 fullscreen 豁免");
+if (idx72.indexOf(String.raw`replace(/[\\/:*?"<>|]/g`) !== -1) ok("R73 下载文件名非法字符清洗");
+else fail("R73 缺下载文件名清洗");
+if (/pointer-events:none/.test(page73) && /hud && hud\.remove/.test(page73)) ok("R73 缩放 HUD 不截留点击");
+else fail("R73 缩放 HUD 仍会截留点击");
+if (/Escape/.test(page73) && /app:find.*close/.test(page73)) ok("R73 Esc 全局关闭查找条");
+else fail("R73 缺 Esc 全局兜底");
+if (/__lgReloadCount = 0/.test(views70) && /did-finish-load/.test(views70)) ok("R73 崩溃重载计数成功加载后清零");
+else fail("R73 缺重载计数清零");
+if (/Math.max\(-3\.5, Math.min\(3,/.test(views70)) ok("R73 缩放范围放宽至 42%-173%");
+else fail("R73 缩放范围仍窄");
+if (/formaction/.test(views70) && /xlink:href/.test(views70) && /data:\(image\|font\)/.test(views70)) ok("R73 快照消毒覆盖 URL 属性全族");
+else fail("R73 快照消毒未覆盖 URL 属性全族");
+if (/style-src 'unsafe-inline' data:/.test(idx72)) ok("R73 离线 CSP style-src 收敛");
+else fail("R73 离线 CSP style-src 未收敛");
+if (/ICON-KEEP icon\.ico/.test(fs.readFileSync(path.join(__dirname, "pack-ico.js"), "utf8"))) ok("R73 pack-ico 覆盖守卫");
+else fail("R73 pack-ico 缺覆盖守卫");
+if (/SMOKE_OK/.test(packPs1) && /pack-smoke\.log/.test(packPs1)) ok("R73 打包内建冒烟+证据落盘");
+else fail("R73 打包缺内建冒烟");
+if (/"author": "longguanhong0755"/.test(pkg73) && /repository/.test(pkg73)) ok("R73 package.json 元数据");
+else fail("R73 package.json 缺元数据");
+if (/Ctrl\+F` 页内查找/.test(fs.readFileSync(path.join(ROOT, "..", "README.md"), "utf8"))) ok("R73 README 快捷键收录查找/缩放");
+else fail("R73 README 快捷键未收录新功能");
+
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.4";
+const EXPECTED_VERSION = "0.7.5";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

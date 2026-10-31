@@ -262,7 +262,11 @@ function lgFindShow() {
     };
     const send = (action) => {
       const q = input.value;
-      if (q) ipcRenderer.invoke("app:find", { action, query: q });
+      if (!q) {
+        ipcRenderer.invoke("app:find", { action: "close" });
+        return;
+      }
+      ipcRenderer.invoke("app:find", { action, query: q });
     };
     input.addEventListener("input", () => {
       clearTimeout(lgFind.__t);
@@ -301,6 +305,19 @@ ipcRenderer.on("app:find-result", (_event, r) => {
   }
 });
 
+/* Esc 全局兜底：查找条可见时按 Esc 即关闭并清高亮（焦点在哪都行） */
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key !== "Escape" || !lgFind || lgFind.style.display === "none") return;
+    event.preventDefault();
+    event.stopPropagation();
+    ipcRenderer.invoke("app:find", { action: "close" });
+    lgFind.style.display = "none";
+  },
+  true
+);
+
 /* ---------- 缩放提示 HUD ---------- */
 let lgZoomTimer = 0;
 ipcRenderer.on("app:zoom-hud", (_event, text) => {
@@ -314,6 +331,7 @@ ipcRenderer.on("app:zoom-hud", (_event, text) => {
       "left:50%",
       "transform:translateX(-50%)",
       "z-index:2147483647",
+      "pointer-events:none",
       "padding:6px 16px",
       "border-radius:999px",
       "background:rgba(0,0,0,0.72)",
@@ -328,6 +346,7 @@ ipcRenderer.on("app:zoom-hud", (_event, text) => {
   if (lgZoomTimer) clearTimeout(lgZoomTimer);
   lgZoomTimer = setTimeout(() => {
     hud.style.opacity = "0";
+    setTimeout(() => hud && hud.remove(), 220);
   }, 900);
 });
 

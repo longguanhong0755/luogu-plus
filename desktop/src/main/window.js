@@ -148,6 +148,9 @@ function createSettingsWindow(ctx) {
     safeOpenExternal(url);
     return { action: "deny" };
   });
+  win.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
   win.once("ready-to-show", () => {
     if (ctx.smoke) {
       win.setOpacity(0);
