@@ -949,3 +949,26 @@ chips/输入框各自写死 92%/84%/95%/70%，同屏多深度）；侧栏开合�
   转义成真实换行/丢反斜杠，注入即语法错误——源码里必须写双反斜杠
   `\\n`/`\\s`（本轮 fetchOfficialHome 首跑即栽）。审计 tiers 指标可量化
   「同层」验收。
+
+## 15.15 R71（v0.7.3）生产加固 — heymegabyte/agent-skills 教义落地
+
+2026-11-01。目标：按 agent-skills（07 质量验证 / security-hardening / slop-detection /
+production-observability / evidence-collection）把桌面版打到生产级。
+
+- **slop 扫描**（TODO/FIXME/lorem/coming soon/写死 placeholder）：src+scripts 零命中
+  （仅合法 input placeholder / CSS / 探针引用）。`npm audit --omit=dev` 零漏洞。
+- **安全出口单源**：新 `src/main/external.js` 导出 `safeOpenExternal(raw)`——URL 解析
+  后仅放行 `https:`/`http:`，其余 scheme（file://、smb://、lgoff://、自定义协议）
+  静默丢弃；解析失败同样丢弃。views.js 六处（openDetail 非洛谷分支、openCustom、
+  openExternal() 方法、setWindowOpenHandler else、右键「在浏览器打开此页」、
+  will-navigate else）+ window.js 设置窗一处全部收口；`shell` 从两文件的 electron
+  解构中移除，全仓 `shell.openExternal` 仅剩 external.js 内一处。落地 Electron
+  安全清单「openExternal 必须验证协议」条款。
+- **崩溃可观测性**：index.js `persistCrash()` 把未捕获异常 JSON 行追加到
+  `logs/crash.log`（app.getPath("logs")，userData 标准 logs 目录；隔离测试实例落
+  自己的 profile）。仅追加、失败静默——崩溃路径上不允许二次抛出。
+- **自述文档**：新增 `desktop/README.md`（运行/验证/结构/安全边界）。
+- **check 353 → 358**：external.js 协议白名单、views/window 接入、裸调用清零、
+  六处收口计数、crash.log、版本 0.7.3 共 6 项新断言；旧断言「views.js 站外链接
+  出口」同步改为 safeOpenExternal 口径。
+- **证据**（evidence-collection 教义）：`.lg-dev/` 保留审计 JSON、截图与探针日志。

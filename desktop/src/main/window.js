@@ -1,8 +1,9 @@
 /* 主窗口与设置窗口。标题栏由外壳自绘，右上角窗口按钮用 Windows 原生
    titleBarOverlay（系统负责 Snap、双击最大化与右键系统菜单）。 */
 const path = require("node:path");
-const { BrowserWindow, app, screen, shell } = require("electron");
+const { BrowserWindow, app, screen } = require("electron");
 const { PRELOAD, RENDERER, ASSETS } = require("./paths");
+const { safeOpenExternal } = require("./external");
 
 const TITLE_H = 40;
 const RAIL_W = 208;
@@ -130,9 +131,7 @@ function createSettingsWindow(ctx) {
   win.loadFile(path.join(RENDERER, "settings", "index.html"));
   // 设置窗里的外链（关于页的仓库/反馈）交给系统浏览器，而不是把设置窗导航走
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//i.test(url)) {
-      shell.openExternal(url);
-    }
+    safeOpenExternal(url);
     return { action: "deny" };
   });
   win.once("ready-to-show", () => {

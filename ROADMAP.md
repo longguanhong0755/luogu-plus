@@ -185,6 +185,13 @@
 > 过渡 + view 同步补间）。check 353 项、14 探针全 PASS、18 页 × 亮/暗审计
 > 全零（新 home 页补齐旧版首页色板与徽标对比度）。
 
+> **✅ R71 已交付（2026-11-01，v0.7.3）**：生产加固（heymegabyte/agent-skills 教义落地）。
+> slop 扫描零命中、npm audit 零漏洞；`shell.openExternal` 七处裸调用收口为唯一
+> 安全出口 `src/main/external.js`（仅放行 http/https，file://、lgoff://、自定义
+> 协议一律丢弃，Electron 安全清单条款落地）；主进程未捕获异常落盘 `logs/crash.log`
+> （可观测性，隔离 profile 各自落盘）；新增 `desktop/README.md` 自述（运行/验证/
+> 结构/安全边界）。check 358 项。
+
 ### v0.8.0「像桌面端」——离线、IDE、系统集成（2–3 周）
 
 - [ ] 缓存优先：列表先出磁盘快照再后台刷新；详情页（文章/题单/比赛/个人页）纳入离线快照；题面图片本地化。

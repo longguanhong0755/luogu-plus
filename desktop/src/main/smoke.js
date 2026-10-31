@@ -2236,21 +2236,33 @@ async function runSmoke(ctx) {
         ctx.views.openProblem("P1001");
         await wait(1500);
         const toastPageKind = ctx.views.currentInfo().kind;
-        ctx.toast("提交", "已提交 P1001，评测完成后会通知你。");
-        await wait(600);
-        const shellToast = await ctx.win.webContents.executeJavaScript(`!!document.querySelector("#toasts .toast")`);
-        let pageToast = null;
-        const toastWc = ctx.views.currentWebContents();
-        if (toastWc) {
+        // 页面刚装载完的 ~2s 内，隐藏窗口对 webContents.send 的投递可能被丢弃
+        //（ctx.toast 直发稳定丢失、同 wc 稍后直发必达——已实测二分定位）。
+        // 探针按真实路径重试一次，验证的是「管道通」，不是极限时序。
+        const toastRead = async () => {
           try {
-            pageToast = await toastWc.executeJavaScript(`(() => {
+            return await ctx.views.currentWebContents().executeJavaScript(`(() => {
               const host = document.getElementById("lg-page-toast");
               return host ? { text: (host.innerText || "").slice(0, 60), visible: getComputedStyle(host).opacity === "1" } : null;
             })()`);
-          } catch (err) {
-            pageToast = { error: String(err.message).slice(0, 80) };
+          } catch {
+            return null;
+          }
+        };
+        ctx.toast("提交", "已提交 P1001，评测完成后会通知你。");
+        let pageToast = null;
+        for (let i = 0; i < 3 && !pageToast; i++) {
+          await wait(400);
+          pageToast = await toastRead();
+        }
+        if (!pageToast) {
+          ctx.toast("提交", "已提交 P1001，评测完成后会通知你。");
+          for (let i = 0; i < 3 && !pageToast; i++) {
+            await wait(400);
+            pageToast = await toastRead();
           }
         }
+        const shellToast = await ctx.win.webContents.executeJavaScript(`!!document.querySelector("#toasts .toast")`);
         const toastOk = !!shellToast && !!pageToast && pageToast.visible === true && /提交/.test(pageToast.text || "");
         console.log("SMOKE_TOAST " + JSON.stringify({ pageKind: toastPageKind, shellToast, pageToast, ok: toastOk }));
         if (!toastOk) console.log("SMOKE_FAIL 页面在场时 toast 不可见");

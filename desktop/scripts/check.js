@@ -148,7 +148,7 @@ if (/shell\.openExternal/.test(luoguSource)) fail("luogu.js 不应直接调用 s
 else ok("站外链接不在数据层处理");
 
 const viewsSource = read("src/main/views.js");
-if (/openExternal\(url\)/.test(viewsSource)) ok("站外链接交给系统浏览器");
+if (/safeOpenExternal\(/.test(viewsSource) || /openExternal\(url\)/.test(viewsSource)) ok("站外链接交给系统浏览器");
 else fail("views.js 没有站外链接出口");
 
 /* R57 导航契约 */
@@ -969,13 +969,28 @@ for (const [name, re] of [
 if (!/92%, transparent/.test(skin70) && !/95%, transparent/.test(skin70) && !/84%, transparent/.test(skin70)) ok("R70 皮肤孤岛百分比清零");
 else fail("R70 皮肤仍有写死百分比孤岛");
 
+/* ---------- R71 生产加固（agent-skills 教义落地） ---------- */
+const external71 = read("src/main/external.js");
+const idx71 = read("src/main/index.js");
+const win71 = read("src/main/window.js");
+if (/function safeOpenExternal/.test(external71) && /u\.protocol === "https:" \|\| u\.protocol === "http:"/.test(external71)) ok("R71 安全出口模块+协议白名单");
+else fail("R71 external.js 缺 safeOpenExternal 或协议白名单");
+if (/require\("\.\/external"\)/.test(views70) && /require\("\.\/external"\)/.test(win71)) ok("R71 views/window 已接入安全出口");
+else fail("R71 views/window 未接入 safeOpenExternal");
+if (!/shell\.openExternal/.test(views70) && !/shell\.openExternal/.test(win71)) ok("R71 shell.openExternal 全仓唯一出口（external.js）");
+else fail("R71 仍有裸 shell.openExternal 残留");
+if ((views70.match(/safeOpenExternal\(/g) || []).length >= 6) ok("R71 views 六处外开调用点全收口");
+else fail("R71 views.js safeOpenExternal 调用点不足 6 处");
+if (/persistCrash/.test(idx71) && /crash\.log/.test(idx71) && /uncaughtException/.test(idx71)) ok("R71 崩溃落盘 crash.log");
+else fail("R71 index.js 缺崩溃落盘");
+
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.2";
+const EXPECTED_VERSION = "0.7.3";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

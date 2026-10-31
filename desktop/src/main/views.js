@@ -6,9 +6,10 @@
    玻璃化：页面内注入一个与窗口同坐标的壁纸复刻层，卡片/输入框按材质半透明。 */
 const fs = require("node:fs");
 const path = require("node:path");
-const { WebContentsView, shell, screen, Menu, clipboard } = require("electron");
+const { WebContentsView, screen, Menu, clipboard } = require("electron");
 const { PRELOAD, SKIN_DIR, RENDERER } = require("./paths");
 const { TITLE_H, RAIL_W, RAIL_COLLAPSED_W, TOOLBAR_H } = require("./window");
+const { safeOpenExternal } = require("./external");
 const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
 const { SOURCE: PASSKEY_GUARD } = require("./passkey-guard");
 
@@ -404,7 +405,7 @@ class ViewManager {
     }
     if (url.startsWith("/")) url = "https://www.luogu.com.cn" + url;
     if (!isLuoguUrl(url)) {
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+      safeOpenExternal(url);
       return;
     }
     const pid = pidFromUrl(url);
@@ -432,7 +433,7 @@ class ViewManager {
   openCustom(url, label) {
     if (!/^https?:\/\//i.test(String(url || ""))) return;
     if (isLuoguUrl(url)) this.openDetail(url, label || "自定义页面");
-    else shell.openExternal(url);
+    else safeOpenExternal(url);
   }
 
   openLogin() {
@@ -536,7 +537,7 @@ class ViewManager {
 
   openExternal() {
     const entry = this.currentEntry();
-    if (entry) shell.openExternal(entry.view.webContents.getURL());
+    if (entry) safeOpenExternal(entry.view.webContents.getURL());
   }
 
   navigate(pathname) {
@@ -1022,7 +1023,7 @@ class ViewManager {
       } else if (isLuoguUrl(url)) {
         this.openDetail(url, "", "detail:" + url);
       } else {
-        shell.openExternal(url);
+        safeOpenExternal(url);
       }
       return { action: "deny" };
     });
@@ -1053,7 +1054,7 @@ class ViewManager {
         label: "在浏览器打开此页",
         click: () => {
           try {
-            shell.openExternal(wc.getURL());
+            safeOpenExternal(wc.getURL());
           } catch {
             /* ignore */
           }
@@ -1071,7 +1072,7 @@ class ViewManager {
       if (url.startsWith("devtools://") || url.startsWith("about:") || isOfflineUrl(url)) return;
       if (!isLuoguUrl(url)) {
         event.preventDefault();
-        shell.openExternal(url);
+        safeOpenExternal(url);
       }
     });
   }
