@@ -26,6 +26,21 @@ npm run smoke    # 隔离 profile 冒烟：隐藏窗口跑探针矩阵与皮肤�
 - `src/renderer/` — 外壳（shell）、折叠侧栏（rail）、原生列表、设置、皮肤 CSS。
 - `scripts/check.js` — 静态门禁（CI 与本地共用）；`scripts/smoke.js` — 探针/审计运行器。
 
+## 打包与分发
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1
+```
+
+产物为未签名便携 zip（electron 运行时 + resources/app），解压双击 electron.exe 即用；
+NSIS 安装器/代码签名/自动更新按 ROADMAP 在 v1.0 接入 electron-builder。
+
+## 已知行为披露
+
+- 自动重交队列会用本地 OCR（ddddocr 模型）识别图形验证码后自动重放提交；
+  易盾交互式滑块不会被自动化，会转成页面内辅助由用户手动完成。
+  这是针对洛谷既有验证码体系的自动化，账号存在被平台风控的理论风险。
+
 ## 安全边界
 
 - 全部窗口 `contextIsolation: true`、`nodeIntegration: false`；权限请求默认拒绝。

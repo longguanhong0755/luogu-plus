@@ -5,6 +5,12 @@ Add-Type -AssemblyName System.Drawing
 $dir = Join-Path $PSScriptRoot "..\src\assets"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
+# Overwrite guard: keep the official icon already in the repo unless -Force
+if ((Test-Path (Join-Path $dir "icon-256.png")) -and -not ($args -contains "-Force")) {
+  Write-Output "ICON-KEEP icon-256.png exists; pass -Force to regenerate."
+  exit 0
+}
+
 $sizes = @(16, 24, 32, 48, 64, 128, 256)
 $glyph = [char]0x6D1B
 

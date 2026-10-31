@@ -117,7 +117,7 @@ class ViewManager {
         preload: path.join(PRELOAD, "rail.js"),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         spellcheck: false,
         // 浮层只在悬停时出现，隐藏时也不能被节流，否则第一次悬停会慢半拍
         backgroundThrottling: false,
@@ -274,7 +274,7 @@ class ViewManager {
     const easeOut = (t) => 1 - (1 - t) * (1 - t);
     const step = () => {
       if (token !== this.railLayoutToken) return;
-      if (!this.win || this.win.isDestroyed() || view.isDestroyed()) return;
+      if (!this.win || this.win.isDestroyed() || view.webContents.isDestroyed()) return;
       const t = Math.min(1, (Date.now() - start) / dur);
       const w = Math.round(fromW + (toW - fromW) * easeOut(t));
       let width = Math.max(320, bounds.width - w);
@@ -659,6 +659,15 @@ class ViewManager {
         }
         const clone = pick.cloneNode(true);
         clone.querySelectorAll("script, noscript, iframe, #lg-boot").forEach((node) => node.remove());
+        // 深度防御：剥掉全部 on* 事件属性与 javascript: 链接（离线页 CSP 之外的第二道闸）
+        for (const node of [clone, ...clone.querySelectorAll("*")]) {
+          for (const attr of [...node.attributes]) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith("on") || (name === "href" && /^\s*javascript:/i.test(attr.value))) {
+              node.removeAttribute(attr.name);
+            }
+          }
+        }
         const html = clone.innerHTML;
         if (html.length < 200) return { ok: false, reason: "thin-html" };
         return {
@@ -832,7 +841,7 @@ class ViewManager {
         preload: path.join(PRELOAD, "page.js"),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         session: this.ctx.session,
         spellcheck: false,
         backgroundThrottling: !this.ctx.smoke,
@@ -988,7 +997,21 @@ class ViewManager {
       console.error("[views] did-fail-load", url, code, description);
     });
 
+    wc.on("found-in-page", (_event, result) => {
+      try {
+        wc.send("app:find-result", { matches: result.matches, active: result.activeMatchOrdinal });
+      } catch {
+        /* ignore */
+      }
+    });
+
     wc.on("render-process-gone", () => {
+      // 重载上限：确定性崩溃页不能无限循环；连续 3 次后停止并提示
+      wc.__lgReloadCount = (wc.__lgReloadCount || 0) + 1;
+      if (wc.__lgReloadCount > 3) {
+        this.ctx.toast && this.ctx.toast("页面崩溃", "该页面连续崩溃，已停止自动恢复。");
+        return;
+      }
       setTimeout(() => {
         if (!wc.isDestroyed()) wc.reload();
       }, 600);
@@ -1011,8 +1034,32 @@ class ViewManager {
       else if (input.alt && input.key === "ArrowLeft") command = "back";
       else if (input.alt && input.key === "ArrowRight") command = "forward";
       else if (ctrl && !input.shift && key === "w") command = "closepage";
+      else if (ctrl && !input.shift && key === "f") command = "find";
+      else if (ctrl && !input.shift && (input.key === "=" || input.key === "+")) command = "zoomin";
+      else if (ctrl && !input.shift && input.key === "-") command = "zoomout";
+      else if (ctrl && !input.shift && input.key === "0") command = "zoomreset";
       if (!command) return;
       event.preventDefault();
+      // 查找/缩放是页面级能力，直接操作当前页面视图，不走全局命令路由
+      if (command === "find") {
+        const entry = this.currentEntry();
+        if (entry && entry.view && !entry.view.webContents.isDestroyed()) {
+          entry.view.webContents.send("app:find-open");
+        }
+        return;
+      }
+      if (command === "zoomin" || command === "zoomout" || command === "zoomreset") {
+        const entry = this.currentEntry();
+        if (entry && entry.view && !entry.view.webContents.isDestroyed()) {
+          const wc = entry.view.webContents;
+          entry.zoom =
+            command === "zoomreset" ? 0 : Math.max(-2, Math.min(2.5, (entry.zoom || 0) + (command === "zoomin" ? 0.2 : -0.2)));
+          wc.setZoomLevel(entry.zoom);
+          const pct = Math.round(Math.pow(1.2, entry.zoom) * 100);
+          wc.send("app:zoom-hud", pct + "%");
+        }
+        return;
+      }
       this.ctx.command && this.ctx.command(command);
     });
 

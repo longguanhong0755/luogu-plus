@@ -984,13 +984,36 @@ else fail("R71 views.js safeOpenExternal 调用点不足 6 处");
 if (/persistCrash/.test(idx71) && /crash\.log/.test(idx71) && /uncaughtException/.test(idx71)) ok("R71 崩溃落盘 crash.log");
 else fail("R71 index.js 缺崩溃落盘");
 
+/* ---------- R72 评审团整改（sandbox/导航防护/离线CSP/查找缩放/便携包） ---------- */
+const win72 = read("src/main/window.js");
+const idx72 = read("src/main/index.js");
+const page72 = read("src/preload/page.js");
+if (!/sandbox: false/.test(win72) && !/sandbox: false/.test(views70) && /sandbox: true/.test(win72)) ok("R72 全部渲染宿主 sandbox:true");
+else fail("R72 仍有 sandbox:false 渲染宿主");
+if ((win72.match(/will-navigate/g) || []).length >= 2 && (win72.match(/setWindowOpenHandler/g) || []).length >= 2 && /will-attach-webview/.test(win72)) ok("R72 主壳/设置窗导航防护（will-navigate/open/attach）");
+else fail("R72 主壳/设置窗缺导航防护");
+if (/Content-Security-Policy/.test(idx72) && /name\.startsWith\("on"\)/.test(views70)) ok("R72 离线页 CSP + 快照 on* 剥离");
+else fail("R72 离线页缺 CSP 或快照未剥 on*");
+if (/__lgReloadCount/.test(views70) && (views70.match(/__lgReloadCount/g) || []).length >= 2) ok("R72 渲染崩溃重载上限");
+else fail("R72 缺渲染崩溃重载上限");
+if (/"app:find"/.test(ipcSource) && /app:find-open/.test(page72) && /app:find-result/.test(page72) && /app:zoom-hud/.test(page72) && /findInPage/.test(ipcSource)) ok("R72 页内查找/缩放 HUD（IPC 对齐由第 5 节保证）");
+else fail("R72 查找/缩放通道缺失");
+if (/clipboard-sanitized-write/.test(idx72) && /basename\(item\.getFilename/.test(idx72)) ok("R72 剪贴板豁免 + 下载文件名收敛");
+else fail("R72 缺剪贴板豁免或下载文件名收敛");
+if (/内部错误/.test(idx72)) ok("R72 崩溃时用户可见提示");
+else fail("R72 缺崩溃用户提示");
+if (fs.existsSync(path.join(ROOT, "..", "LICENSE"))) ok("R72 LICENSE 文件在位");
+else fail("R72 缺 LICENSE");
+if (fs.existsSync(path.join(__dirname, "pack-portable.ps1"))) ok("R72 便携包脚本在位");
+else fail("R72 缺 scripts/pack-portable.ps1");
+
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.3";
+const EXPECTED_VERSION = "0.7.4";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

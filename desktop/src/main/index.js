@@ -13,7 +13,7 @@ const { createNotifier } = require("./notify");
 const { createTray } = require("./tray");
 const { registerIpc, broadcastState, state } = require("./ipc");
 const adblock = require("./adblock");
-const { runSmoke, seedDemo } = require("./smoke");
+const smoke = () => require("./smoke");
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
@@ -48,6 +48,7 @@ function offlinePageHtml(snap, theme) {
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' https: http:; font-src https: data:; base-uri 'none'; form-action 'none'">
 <title>${esc(snap.pid)} ${esc(snap.title || "")}</title>
 <base href="https://www.luogu.com.cn/">
 <style>
@@ -206,14 +207,21 @@ function bootstrap() {
     ctx.session = session.fromPartition("persist:luogu");
     ctx.session.setUserAgent(UA);
     ctx.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
-    ctx.session.setPermissionCheckHandler(() => false);
+    // 站内代码块复制按钮走 clipboard API：仅对洛谷来源放行剪贴板写，其余权限一律拒绝
+    ctx.session.setPermissionCheckHandler((_wc, permission, origin) => {
+      return (
+        permission === "clipboard-sanitized-write" &&
+        /^https?:\/\/([a-z0-9-]+\.)*luogu\.com\.cn(:\d+)?$/i.test(String(origin || ""))
+      );
+    });
     // 广告拦截只在这个会话上挂一次；开关状态由回调实时读取。
     adblock.wire(ctx.session, () => ctx.cfg.get().general.adBlock);
     // 页面里的下载（附件/素材）自动落到系统「下载」文件夹，完成后 toast，不弹另存为
     ctx.session.on("will-download", (_event, item) => {
       try {
         const dir = app.getPath("downloads");
-        const filename = item.getFilename() || "download";
+        // basename 收敛：服务端建议文件名绝不许带路径成分
+        const filename = require("node:path").basename(item.getFilename() || "download");
         let savePath = require("node:path").join(dir, filename);
         const dot = filename.lastIndexOf(".");
         const stem = dot > 0 ? filename.slice(0, dot) : filename;
@@ -239,7 +247,7 @@ function bootstrap() {
     ctx.views = new ViewManager(ctx);
     ctx.views.setWindow(ctx.win);
     ctx.luogu = new LuoguService(ctx);
-    if (process.env.LG_DEMO === "1") seedDemo(ctx);
+    if (process.env.LG_DEMO === "1") smoke().seedDemo(ctx);
     ctx.tray = createTray(ctx);
     registerIpc(ctx);
 
@@ -430,7 +438,7 @@ function bootstrap() {
     if (ctx.win.webContents.isLoading()) ctx.win.webContents.on("did-finish-load", pushState);
     else pushState();
 
-    if (ctx.smoke) runSmoke(ctx);
+    if (ctx.smoke) smoke().runSmoke(ctx);
   });
 
   app.on("second-instance", () => {
@@ -454,6 +462,11 @@ function bootstrap() {
   process.on("uncaughtException", (err) => {
     console.error("[fatal]", err);
     persistCrash(err);
+    try {
+      if (ctx && ctx.toast) ctx.toast("内部错误", "程序遇到未预期的异常，已记录到日志。");
+    } catch {
+      /* 崩溃路径上不允许再抛 */
+    }
   });
 }
 

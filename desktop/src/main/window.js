@@ -56,7 +56,7 @@ function createMainWindow(ctx) {
       preload: path.join(PRELOAD, "shell.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       spellcheck: false,
       // 冒烟窗口是不可见的；关闭后台节流才能稳定截到刚切换的面板
       backgroundThrottling: !ctx.smoke,
@@ -64,6 +64,16 @@ function createMainWindow(ctx) {
   });
 
   win.loadFile(path.join(RENDERER, "shell", "index.html"));
+
+  // 外壳窗口是纯本地页，永不导航：拖入链接/文件不改文档，外链走系统浏览器。
+  // 没有这条防护，被拖入的新文档会继承 preload 暴露的 window.lg 特权桥。
+  win.webContents.on("will-navigate", (event) => {
+    event.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-attach-webview", (event) => {
+    event.preventDefault();
+  });
 
   win.once("ready-to-show", () => {
     if (bounds.maximized) win.maximize();
@@ -125,10 +135,14 @@ function createSettingsWindow(ctx) {
       preload: path.join(PRELOAD, "settings.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
   win.loadFile(path.join(RENDERER, "settings", "index.html"));
+  // 设置窗永不导航：外链走安全出口，其余窗口打开请求一律拒绝
+  win.webContents.on("will-navigate", (event) => {
+    event.preventDefault();
+  });
   // 设置窗里的外链（关于页的仓库/反馈）交给系统浏览器，而不是把设置窗导航走
   win.webContents.setWindowOpenHandler(({ url }) => {
     safeOpenExternal(url);

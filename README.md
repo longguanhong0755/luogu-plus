@@ -1,6 +1,6 @@
 # 洛谷桌面版（Luogu Desktop）
 
-为 Windows 打造的洛谷客户端，v0.7.3。**不是网页套壳**：
+为 Windows 打造的洛谷客户端，v0.7.4。**不是网页套壳**：
 
 - **题库 / 训练 / 比赛 / 记录 / 讨论 / 文章是原生列表**——搜索、筛选、翻页都不加载整页，
   **鼠标点行直接打开**（键盘 Enter/方向键同样可用）；点进详情「后退」即回来源列表。
@@ -52,7 +52,15 @@ npm install
 npm start          # 启动
 npm run check      # 静态检查：语法、必需文件、HTML 引用、IPC 双向、产品关键约束
 npm run smoke      # 不可见启动 + 截图到 ../.lg-dev/（隔离 userData）
-npm run gen:icons  # 从官方标志重新生成应用/托盘/角标图标
+npm run gen:icons  # 自绘应用/托盘/角标图标（蓝底白洛字；已入库的官方标不会被覆盖，强制重生成加 -Force）
+```
+
+**便携包**（无需 Node 工具链，解压双击 electron.exe 即用）：
+
+```bash
+cd desktop
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1
+# 产物：.lg-dev/dist/luogu-desktop-<版本>-portable.zip（未签名；NSIS/签名/自动更新按 ROADMAP 在 v1.0 接入）
 ```
 
 调试用冒烟开关（都走隔离 userData、窗口 opacity=0）：

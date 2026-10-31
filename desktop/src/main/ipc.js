@@ -253,6 +253,29 @@ function registerIpc(ctx) {
     else if (action === "external") ctx.views.openExternal();
   });
 
+  /* 页内查找（Ctrl+F）：查找条画在页面 preload 顶层，主进程驱动 findInPage */
+  ipcMain.handle("app:find", (_event, payload) => {
+    const action = String((payload && payload.action) || "");
+    const query = String((payload && payload.query) || "").slice(0, 200);
+    const entry = ctx.views.currentEntry();
+    if (!entry || !entry.view || entry.view.webContents.isDestroyed()) return { ok: false };
+    const wc = entry.view.webContents;
+    try {
+      if (action === "start" && query) {
+        wc.findInPage(query, { findNext: false });
+      } else if (action === "next" && query) {
+        wc.findInPage(query, { forward: true, findNext: true });
+      } else if (action === "prev" && query) {
+        wc.findInPage(query, { forward: false, findNext: true });
+      } else if (action === "close") {
+        wc.stopFindInPage("clearSelection");
+      }
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
   ipcMain.handle("app:problemAction", (_event, payload) => {
     const pid = String((payload && payload.pid) || "").toUpperCase();
     const action = payload && payload.action;

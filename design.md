@@ -972,3 +972,33 @@ production-observability / evidence-collection）把桌面版打到生产级。
   六处收口计数、crash.log、版本 0.7.3 共 6 项新断言；旧断言「views.js 站外链接
   出口」同步改为 safeOpenExternal 口径。
 - **证据**（evidence-collection 教义）：`.lg-dev/` 保留审计 JSON、截图与探针日志。
+
+## 15.16 R72（v0.7.4）评审团整改 — sandbox/导航防护/查找缩放/便携包
+
+2026-11-01。首轮评审团 73/79/77 分后的整改轮，P0/P1 全修。
+
+- **sandbox:true ×4**：shell/rail/page/settings 四个 preload 只用
+  ipcRenderer/contextBridge/process.argv（沙箱全兼容），四个渲染宿主全部
+  `sandbox:true`（Electron 清单条款 1）。探针矩阵回归确认 argv 旗标链路
+  （boot-bg/adblock/motion）不受影响。
+- **主壳/设置窗导航防护**：两个 BrowserWindow 补 will-navigate 一律
+  preventDefault、window-open 一律 deny、will-attach-webview 拒绝——被拖入
+  页面不再能继承 shell preload 的 window.lg 特权桥。
+- **离线页 CSP**：lgoff 模板加 `default-src 'none'`（script 全禁）+ 快照
+  捕获侧剥 on* 事件属性与 javascript: 链接（深度防御双闸）。
+- **Ctrl+F 页内查找**：主进程 before-input-event 截键 → `app:find-open` 发
+  页面 preload → 查找条（输入/计数/上下翻/Esc）→ `app:find` invoke → 主进程
+  `findInPage`/`stopFindInPage` → found-in-page → `app:find-result` 回传。
+  查找条与页面同生命周期， Esc 清除高亮。
+- **Ctrl+=/-/0 阅读缩放**：before-input-event 直接 setZoomLevel（entry.zoom
+  会话内随视图保持），页面内 `app:zoom-hud` HUD 提示百分比，900ms 淡出。
+- **其他**：渲染崩溃重载上限（3 次后停+提示）；下载文件名 basename 收敛；
+  权限检查放行洛谷源 clipboard-sanitized-write（站内代码块复制恢复）；
+  uncaughtException 加用户可见 toast；smoke 惰性 require；
+  pack-portable.ps1 便携包（冒烟验证 SMOKE_OK）；LICENSE(MIT)；CHANGELOG；
+  版本 tag；gen:icons 覆盖守卫（-Force 才重生成）；README gen:icons 措辞修正。
+- **明确缓期**（二次评审需知）：NSIS/签名/自动更新（v1.0，ROADMAP 排期）、
+  AT 下划线题号（pid 大小写规范化涉及 store/快照键位，v0.8）、check.js
+  grep 型断言升级为行为断言（已有 ~25 条行为断言，升级按增量做）、
+  登录态皮肤审计（需要真实账号登录态，见 §15.14 已知限制）。
+- check 358 → 369。

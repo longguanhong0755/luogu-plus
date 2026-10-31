@@ -216,6 +216,121 @@ function dismissPageToast() {
   setTimeout(() => host && host.remove(), 200);
 }
 
+/* ---------- 页内查找条（Ctrl+F）与缩放提示（Ctrl +/- / 0） ----------
+   页面视图盖在外壳之上，查找条画在页面 preload 顶层；主进程驱动
+   findInPage，found-in-page 回传匹配数。Esc 关闭并清除高亮。 */
+let lgFind = null;
+function lgFindShow() {
+  const doc = document;
+  if (!lgFind || !lgFind.isConnected) {
+    lgFind = doc.createElement("div");
+    lgFind.id = "lg-find-bar";
+    lgFind.style.cssText = [
+      "position:fixed",
+      "top:10px",
+      "right:18px",
+      "z-index:2147483647",
+      "display:none",
+      "align-items:center",
+      "gap:6px",
+      "padding:6px 10px",
+      "border-radius:8px",
+      "border:1px solid rgba(255,255,255,0.18)",
+      "background:#20242d",
+      "box-shadow:0 8px 24px rgba(0,0,0,0.35)",
+      "font:13px/1.4 'Segoe UI','Microsoft YaHei UI',system-ui,sans-serif",
+      "color:#e8eaef",
+    ].join(";");
+    const input = doc.createElement("input");
+    input.type = "text";
+    input.placeholder = "在页面中查找";
+    input.spellcheck = false;
+    input.style.cssText =
+      "width:180px;padding:3px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);" +
+      "background:rgba(255,255,255,0.08);color:#e8eaef;outline:none;font:inherit";
+    const count = doc.createElement("span");
+    count.style.cssText = "min-width:44px;text-align:center;font-size:12px;opacity:0.8";
+    const mk = (label, title, fn) => {
+      const btn = doc.createElement("button");
+      btn.textContent = label;
+      btn.title = title;
+      btn.style.cssText =
+        "width:24px;height:24px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);" +
+        "background:rgba(255,255,255,0.08);color:#e8eaef;cursor:pointer;font:inherit;padding:0";
+      btn.addEventListener("click", fn);
+      return btn;
+    };
+    const send = (action) => {
+      const q = input.value;
+      if (q) ipcRenderer.invoke("app:find", { action, query: q });
+    };
+    input.addEventListener("input", () => {
+      clearTimeout(lgFind.__t);
+      lgFind.__t = setTimeout(() => send("start"), 260);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        send(e.shiftKey ? "prev" : "next");
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        ipcRenderer.invoke("app:find", { action: "close" });
+        lgFind.style.display = "none";
+      }
+    });
+    lgFind.appendChild(input);
+    lgFind.appendChild(count);
+    lgFind.appendChild(mk("↑", "上一个（Shift+Enter）", () => send("prev")));
+    lgFind.appendChild(mk("↓", "下一个（Enter）", () => send("next")));
+    lgFind.appendChild(mk("×", "关闭（Esc）", () => {
+      ipcRenderer.invoke("app:find", { action: "close" });
+      lgFind.style.display = "none";
+    }));
+    (doc.body || doc.documentElement).appendChild(lgFind);
+    lgFind.__count = count;
+  }
+  lgFind.style.display = "flex";
+  const box = lgFind.querySelector("input");
+  if (box) box.focus();
+}
+
+ipcRenderer.on("app:find-open", () => lgFindShow());
+ipcRenderer.on("app:find-result", (_event, r) => {
+  if (lgFind && lgFind.__count && r) {
+    lgFind.__count.textContent = (r.active || 0) + "/" + (r.matches || 0);
+  }
+});
+
+/* ---------- 缩放提示 HUD ---------- */
+let lgZoomTimer = 0;
+ipcRenderer.on("app:zoom-hud", (_event, text) => {
+  let hud = document.getElementById("lg-zoom-hud");
+  if (!hud) {
+    hud = document.createElement("div");
+    hud.id = "lg-zoom-hud";
+    hud.style.cssText = [
+      "position:fixed",
+      "top:14px",
+      "left:50%",
+      "transform:translateX(-50%)",
+      "z-index:2147483647",
+      "padding:6px 16px",
+      "border-radius:999px",
+      "background:rgba(0,0,0,0.72)",
+      "color:#f2f3f6",
+      "font:13px/1.4 'Segoe UI','Microsoft YaHei UI',system-ui,sans-serif",
+      "transition:opacity 180ms ease",
+    ].join(";");
+    (document.body || document.documentElement).appendChild(hud);
+  }
+  hud.textContent = String(text || "");
+  hud.style.opacity = "1";
+  if (lgZoomTimer) clearTimeout(lgZoomTimer);
+  lgZoomTimer = setTimeout(() => {
+    hud.style.opacity = "0";
+  }, 900);
+});
+
 /* ---------- 题目链接交给应用 ---------- */
 document.addEventListener(
   "click",
