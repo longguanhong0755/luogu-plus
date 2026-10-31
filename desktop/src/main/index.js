@@ -48,7 +48,7 @@ function offlinePageHtml(snap, theme) {
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline' data:; font-src https: data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline' data:; font-src https: data:; base-uri 'none'; form-action 'none'">
 <title>${esc(snap.pid)} ${esc(snap.title || "")}</title>
 <base href="https://www.luogu.com.cn/">
 <style>
@@ -218,7 +218,7 @@ function bootstrap() {
     ctx.session.setPermissionRequestHandler((_wc, permission, _details, callback) => {
       // 仅放行洛谷来源的 fullscreen（站内视频/答辩页全屏），其余权限一律拒绝
       const origin = String((_wc && _wc.getURL && _wc.getURL()) || "");
-      const isLuogu = /^https?:\/\/([a-z0-9-]+\.)*luogu\.com\.cn/i.test(origin);
+      const isLuogu = /^https?:\/\/([a-z0-9-]+\.)*luogu\.com\.cn(:\d+)?(\/|$)/i.test(origin);
       callback(permission === "fullscreen" && isLuogu);
     });
     // 站内代码块复制按钮走 clipboard API；站内视频全屏走 fullscreen——

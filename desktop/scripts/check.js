@@ -1007,6 +1007,22 @@ else fail("R72 缺 LICENSE");
 if (fs.existsSync(path.join(__dirname, "pack-portable.ps1"))) ok("R72 便携包脚本在位");
 else fail("R72 缺 scripts/pack-portable.ps1");
 
+/* ---------- R74 三轮评审整改（口径/白名单/文档一致性） ---------- */
+const readmeFront = fs.readFileSync(path.join(ROOT, "..", "README.md"), "utf8");
+const smoke74 = read("src/main/smoke.js");
+if (/为 Windows 打造的洛谷客户端，v0\.7\.6。/.test(readmeFront)) ok("R74 README 门面版本与 package.json 同步");
+else fail("R74 README 门面版本未同步");
+if (/overAllowed/.test(smoke74) && /name === "user"/.test(smoke74)) ok("R74 审计 over 显式白名单（user 轮播入册）");
+else fail("R74 缺 over 白名单");
+if ((read("src/main/views.js").match(/will-navigate/g) || []).length >= 2) ok("R74 rail 浮层导航防护（page+overlay）");
+else fail("R74 缺 rail 浮层导航防护");
+if (idx72.indexOf(String.raw`luogu\.com\.cn(:\d+)?(\/|$)`) !== -1) ok("R74 请求 handler 洛谷源正则尾边界");
+else fail("R74 缺正则尾边界");
+if (/endsWith\("\.luogu\.com\.cn"\)/.test(read("src/main/luogu.js"))) ok("R74 隐藏窗导航白名单含子域");
+else fail("R74 隐藏窗白名单缺子域");
+if (/captureProblem\(entry, round \+ 1\)/.test(read("src/main/views.js")) && /2\.5秒|2500/.test(read("src/main/views.js"))) ok("R74 快照抓取瞬时错误重试");
+else fail("R74 缺快照重试");
+
 /* ---------- R73 二轮评审整改（隐藏窗/权限/下载/HUD/证据卫生） ---------- */
 const luogu73 = read("src/main/luogu.js");
 const page73 = read("src/preload/page.js");
@@ -1047,7 +1063,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.5";
+const EXPECTED_VERSION = "0.7.6";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

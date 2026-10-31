@@ -943,7 +943,9 @@ chips/输入框各自写死 92%/84%/95%/70%，同屏多深度）；侧栏开合�
   （按设计横向溢出）。
 - **验收**：check 353 项；探针 PERF/RAIL/VISUAL/GLASS/PALETTE/TOAST/
   LIST_CLICK/LANG/DRAFT/KEYS/HISTORY/IDE/OFFLINE/ADBLOCK 全 PASS；
-  `SMOKE_SKIN_AUDIT` 18 页 × 亮/暗全零；审计 tiers 同层指标
+  `SMOKE_SKIN_AUDIT` 18 页 × 亮/暗审计（其中 4 页 authGated 仅登录跳转页、
+  user 页右栏月赛轮播 1 处站点自带横向溢出——更正口径见 §15.16 R74 条目）；
+  审计 tiers 同层指标
   （承载面 alpha min=max=0.11、spread 0）。
 - **坑**：executeJavaScript 注入脚本的模板字符串里 `\n`/`\s` 会被 JS
   转义成真实换行/丢反斜杠，注入即语法错误——源码里必须写双反斜杠
@@ -999,6 +1001,13 @@ production-observability / evidence-collection）把桌面版打到生产级。
   uncaughtException 加用户可见 toast；smoke 惰性 require；
   pack-portable.ps1 便携包（冒烟验证 SMOKE_OK）；LICENSE(MIT)；CHANGELOG；
   版本 tag；gen:icons 覆盖守卫（-Force 才重生成）；README gen:icons 措辞修正。
+- **审计 over 白名单（R74）**：user 页右栏「近期赛程」轮播为洛谷自带横向轮播，
+  2026-10 前后站点调整标记致 .am-slider 排除失效；审计器现把该溢出显式移入
+  overAllowed 计数（日志可见），溢出收敛排期 v0.8。R73 交付记录中「缩放
+  42%–173%」系笔误，实际下限 1.2^-3.5≈53%（上限 173% 不变）。
+- **便携包内含探针 harness 的取舍**：smoke.js（141KB）随包分发——打包门禁的
+  第 5 步冒烟需要它在产物里跑 --smoke；--smoke 门外无任何触发路径，属自验
+  能力而非攻击面（已文档化，v1.0 打包重构时再裁剪）。
 - **明确缓期**（二次评审需知）：NSIS/签名/自动更新（v1.0，ROADMAP 排期）、
   AT 下划线题号（pid 大小写规范化涉及 store/快照键位，v0.8）、check.js
   grep 型断言升级为行为断言（已有 ~25 条行为断言，升级按增量做）、

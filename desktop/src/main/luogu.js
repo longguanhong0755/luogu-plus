@@ -447,7 +447,11 @@ class LuoguService {
     this.win.webContents.on("will-navigate", (event, url) => {
       try {
         const host = new URL(url).hostname;
-        if (!(host === "www.luogu.com.cn" || host === "luogu.com.cn")) event.preventDefault();
+        const okHost =
+          host === "luogu.com.cn" ||
+          host === "www.luogu.com.cn" ||
+          host.endsWith(".luogu.com.cn");
+        if (!okHost) event.preventDefault();
       } catch {
         event.preventDefault();
       }

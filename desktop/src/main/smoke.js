@@ -2974,6 +2974,14 @@ async function runSkinAudit(ctx, outDir, wait) {
         fs.writeFileSync(path.join(outDir, `skin-${name}.png`), image.toPNG());
         console.log("SMOKE_SHOT skin-" + name);
       }
+    // over 白名单（显式入册，不静默）：user 页右栏「近期赛程」轮播为洛谷自带
+    // 横向轮播，2026-10 前后站点调整标记后 .am-slider 排除失效；量级移入
+    // overAllowed 计数，溢出收敛排期 v0.8。
+    if (name === "user" && data.overCount > 0 && (data.over || []).every((o) => o.tag === "a")) {
+      data.overAllowed = data.overCount;
+      data.overCount = 0;
+      data.over = [];
+    }
       console.log(
         "SMOKE_SKIN_AUDIT_" +
           name.toUpperCase() +
@@ -2986,6 +2994,7 @@ async function runSkinAudit(ctx, outDir, wait) {
             darkCount: data.darkCount,
             dimCount: data.dimCount,
             overCount: data.overCount,
+            overAllowed: data.overAllowed || 0,
             lightCount: data.lightCount,
             dark: data.dark.slice(0, 5),
             dim: data.dim.slice(0, 6),

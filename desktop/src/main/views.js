@@ -125,6 +125,10 @@ class ViewManager {
     });
     view.setBackgroundColor("#00000000");
     view.setVisible(false);
+    // 浮层是纯本地页（持有 lgRail 特权桥），永不导航；拖入链接/文件一律拒绝
+    view.webContents.on("will-navigate", (event) => {
+      event.preventDefault();
+    });
     view.webContents.loadFile(path.join(RENDERER, "rail", "index.html")).catch((err) => {
       console.error("[rail] load failed:", err.message);
     });
@@ -680,6 +684,8 @@ class ViewManager {
       })()`);
     } catch (err) {
       console.log("[views] 快照抓取失败 " + String(err && err.message).slice(0, 100));
+      // 导航竞态等瞬时错误也给一次机会（round 上限复用，防循环）
+      setTimeout(() => this.captureProblem(entry, round + 1).catch(() => {}), 2500);
       return;
     }
     if (probe && probe.ok && this.ctx.luogu) {
