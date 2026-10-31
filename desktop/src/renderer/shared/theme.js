@@ -48,6 +48,8 @@ function applyWallpaper(theme) {
 
   const layers = box.querySelectorAll(".wall-layer");
   if (!layers.length) return;
+  // “切换时淡入”开挂到 body 上（body.wall-fade），CSS 只有挂了它才给层加过渡
+  if (document.body) document.body.classList.toggle("wall-fade", !!(wall && wall.fade));
   const slot = first ? 0 : activeSlot;
   const next = layers[slot];
   const prev = layers[1 - slot];
@@ -105,6 +107,7 @@ export function applyThemeVars(theme) {
     "--pressed": theme.colors.pressed,
     "--shadow-color": theme.colors.shadow,
     "--glass-highlight": theme.colors.highlight,
+    "--scrim": theme.isDark ? "rgba(8,10,14,0.45)" : "rgba(20,24,32,0.24)",
     "--panel-alpha": theme.panelAlpha + "%",
     "--panel-pct": theme.panelAlpha + "%",
     "--page-scrim": theme.pageScrim + "%",

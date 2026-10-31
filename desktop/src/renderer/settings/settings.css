@@ -162,7 +162,7 @@ body.perf .set-pane {
   color: var(--text);
   font-weight: 600;
 }
-.snav.on::before {
+.snav::before {
   content: "";
   position: absolute;
   left: 0;
@@ -171,6 +171,11 @@ body.perf .set-pane {
   width: 3px;
   border-radius: var(--r-pill);
   background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.snav.on::before {
+  opacity: 1;
 }
 .snav.on .snav-icon {
   color: var(--accent);
@@ -319,7 +324,7 @@ section[data-panel] {
   box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow-color) 55%, transparent);
 }
 .seg button:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-w) solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -404,7 +409,14 @@ section[data-panel] {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
 .sw.on::after {
-  content: "✓";
+  /* CSS 勾线，和全应用的 SVG 线稿图标统一（原来是文本字符“✓”） */
+  content: "";
+  width: 10px;
+  height: 5px;
+  margin-top: -2px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg);
 }
 .custom-input {
   padding: 0;
@@ -487,7 +499,7 @@ section[data-panel] {
 }
 .check input:focus-visible + .box,
 .radio input:focus-visible + .box {
-  outline: 2px solid var(--accent);
+  outline: var(--focus-w) solid var(--accent);
   outline-offset: 2px;
 }
 .check:hover .box,
@@ -593,11 +605,15 @@ section[data-panel] {
   color: var(--text);
 }
 .src.on::after {
-  content: "✓";
+  content: "";
   position: absolute;
-  top: 8px;
+  top: 12px;
   right: 10px;
-  font-size: var(--fs-2xs);
+  width: 9px;
+  height: 4px;
+  border-left: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: rotate(-45deg);
   color: var(--accent);
   font-weight: 600;
 }
@@ -873,6 +889,18 @@ section[data-panel] {
   line-height: var(--lh-xs);
   color: var(--text-2);
 }
+.about-links {
+  display: inline-flex;
+  gap: 14px;
+}
+.about-links a {
+  font-size: var(--fs-xs);
+  color: var(--accent-text);
+  text-underline-offset: 2px;
+}
+.about-links a:hover {
+  text-decoration: underline;
+}
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 820px) {
@@ -919,4 +947,15 @@ section[data-panel] {
   .wall-layer {
     transition: none !important;
   }
+}
+
+/* ---------- 按压反馈补齐（R69） ---------- */
+.rail-mini:active,
+.rail-eye:active,
+.src:active,
+.we-item:active {
+  background: var(--pressed);
+}
+.sw:active {
+  transform: scale(0.94);
 }

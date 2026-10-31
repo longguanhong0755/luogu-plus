@@ -69,10 +69,16 @@ const META = {
 
 const WEEK = "日一二三四五六";
 
+/* 会截断的文本类统一补原生 tooltip */
+const ELLIPSIS_CLASSES = new Set(["sub-name", "q-note", "home-quote", "lib-name"]);
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
+  if (text !== undefined) {
+    node.textContent = text;
+    if (ELLIPSIS_CLASSES.has(className)) node.title = String(text);
+  }
   return node;
 }
 

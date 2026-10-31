@@ -51,7 +51,6 @@ export function initChrome(actions) {
     railBottom.textContent = "";
     appendRailItems(railTop, config.top);
     appendRailItems(railBottom, config.bottom);
-    rail.classList.toggle("empty-top", !config.top.length);
   }
 
   function appendRailItems(container, items) {
@@ -142,6 +141,7 @@ export function initChrome(actions) {
     const page = next.page;
     titleEl.textContent = page.home ? "主页" : page.title || "";
     if (page.library) titleEl.textContent = (next.rail.all.find((item) => item.id === page.library) || {}).label || page.title;
+    titleEl.title = titleEl.textContent;
 
     homeEl.hidden = !page.home;
     libraryEl.hidden = !page.library;

@@ -16,12 +16,16 @@ const bootBg = argValue("--lg-boot-bg=");
 let motionOn = argValue("--lg-motion=") === "1";
 let zoomOn = argValue("--lg-zoom=") === "1";
 const adBlockOn = argValue("--lg-adblock=") === "1";
+const bootMode = argValue("--lg-boot-mode=");
+const bootAccent = argValue("--lg-boot-accent=");
 let bootPainted = false;
 
 /* 广告拦截的页面级兜底：CSS 规则挂在 html[data-lg-adblock="1"] 上，
-   必须在 document-start 置位，避免推广卡先画出来再消失。 */
+   必须在 document-start 置位，避免推广卡先画出来再消失。
+   皮肤的主题条件规则（代码高亮）同理挂在 html[data-lg-mode] 上。 */
 try {
   document.documentElement.dataset.lgAdblock = adBlockOn ? "1" : "0";
+  if (bootMode === "dark" || bootMode === "light") document.documentElement.dataset.lgMode = bootMode;
 } catch {
   /* ignore */
 }
@@ -30,9 +34,14 @@ function paintBoot() {
   if (bootPainted || !bootBg) return;
   bootPainted = true;
   try {
+    let bootCss = `html,body{background:${bootBg} !important;}`;
+    if (bootAccent.includes(",")) {
+      const [accentText, accent] = bootAccent.split(",");
+      bootCss += `:root{--lg-accent-text:${accentText};--lg-accent:${accent};}`;
+    }
     const style = document.createElement("style");
     style.id = "lg-boot";
-    style.textContent = `html,body{background:${bootBg} !important;}`;
+    style.textContent = bootCss;
     (document.head || document.documentElement).appendChild(style);
   } catch {
     /* ignore */

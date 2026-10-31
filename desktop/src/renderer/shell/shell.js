@@ -6,6 +6,7 @@ import { initChrome } from "./chrome.js";
 import { renderHome, disposeHome } from "./home.js";
 import { initLibrary } from "./library.js";
 import { initOverlays } from "./overlays.js";
+import { fatal } from "../shared/fatal.js";
 import { initEditor } from "./editor.js";
 
 const stateBox = { data: null };
@@ -47,7 +48,13 @@ function toast(payload) {
   item.appendChild(wrap);
   host.appendChild(item);
 
-  while (host.children.length > 3) host.firstElementChild.remove();
+  // 超过 3 条时最旧的先淡出再移除，避免整摞 toast 突然跳一下
+  const extras = [...host.children].slice(0, Math.max(0, host.children.length - 3));
+  for (const old of extras) {
+    if (old.classList.contains("removing")) continue;
+    old.classList.add("removing");
+    setTimeout(() => old.remove(), 180);
+  }
 
   let timer = setTimeout(dismiss, kind === "error" ? 8000 : 5000);
   function dismiss() {
@@ -84,7 +91,7 @@ function homeKey(state) {
 
 async function boot() {
   if (!window.lg) {
-    document.body.textContent = "preload 加载失败，请重启应用。";
+    fatal("外壳初始化失败", "preload 加载失败，请重启应用。");
     return;
   }
 
@@ -349,5 +356,5 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
-  document.body.textContent = "界面初始化失败：" + err.message;
+  fatal("界面初始化失败", err.message);
 });

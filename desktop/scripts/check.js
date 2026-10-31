@@ -504,7 +504,7 @@ for (const [name, needle] of [
   ["208px 侧栏", /--sidebar-w/],
   ["文字导航", /\.rail-label/],
   ["统一卡片", /\.card \{/],
-  ["2px 焦点环", /outline: 2px solid var\(--accent\)/],
+  ["2px 焦点环", /outline: var\(--focus-w\) solid var\(--accent\)/],
   ["减弱动效", /prefers-reduced-motion/],
 ]) {
   if (needle.test(shellCss) || needle.test(baseCss)) ok("shell.css/base.css " + name);
@@ -705,7 +705,7 @@ for (const [name, needle] of [
   ["编辑器", /\.cm-editor/],
   ["用户页头", /\.user-header-top/],
   ["阅读行高", /line-height: 1\.8/],
-  ["2px 焦点环", /outline: 2px solid var\(--lg-accent\)/],
+  ["2px 焦点环", /outline: var\(--lg-focus-w, 2px\) solid var\(--lg-accent\)/],
 ]) {
   if (needle.test(skinSrc)) ok("luogu-skin.css " + name);
   else fail("luogu-skin.css 缺少" + name);
@@ -831,13 +831,94 @@ else fail("列表未接入 hasMore 分页");
 if (/hasMore:\s*!countKnown && full/.test(luoguSource)) ok("记录列表在 count 未知时按整页推断 hasMore");
 else fail("记录列表 total 仍写死 items.length");
 
+/* ---------- R69 丝滑与清瑕 ---------- */
+const skin69 = read("src/renderer/skin/luogu-skin.css");
+const skinNeedles = [
+  ["原生控件 accent-color", /accent-color: var\(--lg-accent\)/],
+  ["分页悬停态", /\.pagination > \*:hover:not\(\.active\)/],
+  ["页码条悬停态", /\.page-bar button:hover/],
+  ["筛选 chip 悬停态", /\.filter-section \.tag-button:hover/],
+  ["筛选 chip 选中态", /\.tag-select-area \.selected/],
+  ["表格行过渡", /#app tbody tr \{\s*transition: background-color/],
+  ["链接过渡", /#app a \{[\s\S]*?transition: color/],
+  ["按钮过渡含 color", /box-shadow var\(--lg-dur, 120ms\) var\(--lg-ease, ease\),\s*color var\(--lg-dur, 120ms\) var\(--lg-ease, ease\)/],
+  ["主按钮悬停用 token", /--lg-accent-hover/],
+  ["引用条用 accent-line", /border-left: 2px solid var\(--lg-accent-line/],
+  ["代码高亮跟应用主题", /html\[data-lg-mode="dark"\] #app \.token\.comment/],
+  ["不再跟随系统主题( Prism )", /^(?!.*@media \(prefers-color-scheme\))[\s\S]*$/],
+  ["讨论回复头清色", /\.comment \.author,\s*#app \.reply-item \.author/],
+  ["富文本编辑器主题化", /\.casket,\s*#app \.cs-main/],
+  ["编辑器行号槽主题化", /\.casket \.cm-gutters/],
+  ["悬浮回复按钮主题化", /\.btn-float-container \.btn-float-open/],
+  ["题库标签列暗色清带", /html\[data-lg-mode="dark"\] #app col/],
+  ["旧版错误页清底", /html\[data-lg-mode="dark"\] #app main\.wrapped\.lfe-body\.mobile-body/],
+  ["旧版提示卡文字色", /#app \.card\.message,/],
+];
+for (const [name, re] of skinNeedles) {
+  if (re.test(skin69)) ok("皮肤 R69 " + name);
+  else fail("皮肤缺少 R69 " + name);
+}
+const modePreload = read("src/preload/page.js");
+const modeViews = read("src/main/views.js");
+if (
+  /--lg-boot-mode=/.test(modeViews) &&
+  /--lg-boot-accent=/.test(modeViews) &&
+  /dataset\.lgMode/.test(modePreload) &&
+  /dataset\.lgMode/.test(modeViews) &&
+  /--lg-boot-accent=/.test(modePreload) &&
+  /--lg-accent-hover/.test(modeViews) &&
+  /--lg-accent-line/.test(modeViews) &&
+  /--lg-gutter-top:\d*\dpx/.test(modeViews)
+) {
+  ok("data-lg-mode 与 accent-hover/line 三处同步(views+preload)");
+} else {
+  fail("data-lg-mode/accent token 管线不齐");
+}
+
+const shell69 = read("src/renderer/shell/shell.css");
+const shellNeedles = [
+  ["遮罩过渡", /#scrim \{[\s\S]*?transition: opacity/],
+  ["浮层退场动画", /#overlay\.closing \.overlay-card/],
+  ["退场关键帧", /@keyframes lg-pop-out/],
+  ["壁纸淡入开关", /body\.wall-fade \.wall-layer/],
+  ["面板行选中过渡", /\.pal-row \{[\s\S]*?transition:/],
+  ["内容区滚动槽稳定", /scrollbar-gutter: stable/],
+  ["IDE 面板进场", /#ide-pane \{[\s\S]*?animation: lg-fade-in/],
+  ["侧栏链接滚动可见", /#rail-top::-webkit-scrollbar \{\s*width: 6px/],
+  ["按压反馈", /\.q-row:active/],
+  ["模糊档位 token", /blur\(var\(--blur-lg\)\)/],
+];
+for (const [name, re] of shellNeedles) {
+  if (re.test(shell69)) ok("外壳 R69 " + name);
+  else fail("外壳缺少 R69 " + name);
+}
+const fatalSrc = read("src/renderer/shared/fatal.js");
+const shellJs = read("src/renderer/shell/shell.js");
+const settingsJs = read("src/renderer/settings/settings.js");
+if (/export function fatal/.test(fatalSrc) && /fatal\("外壳初始化失败"/.test(shellJs) && /fatal\("设置初始化失败"/.test(settingsJs)) {
+  ok("错误屏主题化(壳+设置共用 fatal 卡)");
+} else {
+  fail("错误屏仍是裸文本");
+}
+if (/\.add\("removing"\);[\s\S]*?setTimeout\(\(\) => old\.remove/.test(shellJs)) {
+  ok("toast 溢出先淡出再移除");
+} else {
+  fail("toast 溢出仍直接删除");
+}
+const tokens69 = read("src/renderer/shared/tokens.css");
+if (/--blur-lg:/.test(tokens69) && /--blur-sm:/.test(tokens69) && /--focus-w:/.test(tokens69)) {
+  ok("tokens 增加 blur/focus 档位");
+} else {
+  fail("tokens 缺少 blur/focus 档位");
+}
+
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.0";
+const EXPECTED_VERSION = "0.7.1";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

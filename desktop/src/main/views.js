@@ -88,6 +88,7 @@ class ViewManager {
     this.skinMtime = 0;
     this.clock = 0;
     this.skinTimer = null;
+    this.skinSeq = 0;
   }
 
   setWindow(win) {
@@ -147,6 +148,7 @@ class ViewManager {
       if (this.railPinned || !this.win || this.win.isDestroyed()) return;
       clearTimeout(this.railHideTimer);
       this.railHideTimer = null;
+      this.railSeq = (this.railSeq || 0) + 1; // 作废还在等待淡出的 hide
       this.railHoverOpen = true;
       const view = this.ensureRailOverlay();
       const wc = view.webContents;
@@ -158,6 +160,8 @@ class ViewManager {
         this.win.contentView.addChildView(view);
         this.railOverlayAttached = true;
         view.setVisible(true);
+        // 悬停展开的浮层淡入 120ms（CSS 挂 html.rail-revealed）
+        wc.executeJavaScript("document.documentElement.classList.add('rail-revealed')", true).catch(() => {});
         this.layoutRailOverlay();
         if (this.ctx.broadcastState) this.ctx.broadcastState();
         if (focus) wc.send("rail:focus", focus);
@@ -197,8 +201,22 @@ class ViewManager {
     this.railHoverOpen = false;
     if (!this.railOverlay || this.railOverlay.webContents.isDestroyed()) return;
     const hadFocus = this.railOverlay.webContents.isFocused();
-    this.railOverlay.setVisible(false);
-    if (hadFocus && this.win && !this.win.isDestroyed() && this.win.isFocused()) this.win.webContents.focus();
+    const view = this.railOverlay;
+    const seq = (this.railSeq = (this.railSeq || 0) + 1);
+    const finish = () => {
+      if (seq !== this.railSeq || view.webContents.isDestroyed()) return;
+      view.setVisible(false);
+      if (hadFocus && this.win && !this.win.isDestroyed() && this.win.isFocused()) this.win.webContents.focus();
+    };
+    const wc = view.webContents;
+    try {
+      // 先淡出（CSS 120ms）再把视图藏起来；executeJavaScript 失败则立即藏
+      wc.executeJavaScript("document.documentElement.classList.remove('rail-revealed')", true)
+        .catch(() => {})
+        .then(() => setTimeout(finish, 130));
+    } catch {
+      finish();
+    }
   }
 
   setRailPinned(pinned) {
@@ -748,6 +766,9 @@ class ViewManager {
           "--lg-motion=" + (!perf && this.ctx.cfg.get().appearance.wallpaperMotion ? "1" : "0"),
           "--lg-zoom=" + (!perf && this.ctx.cfg.get().appearance.wallpaperZoom ? "1" : "0"),
           "--lg-adblock=" + (this.ctx.cfg.get().general.adBlock ? "1" : "0"),
+          "--lg-boot-mode=" + (t.isDark ? "dark" : "light"),
+          // 首帧就给链接正确的主题色,否则皮肤变量落地前链接是官方灰、再扫成主题色
+          "--lg-boot-accent=" + encodeURIComponent(t.colors.accentText + "," + t.colors.accent),
         ],
       },
     });
@@ -1220,6 +1241,8 @@ class ViewManager {
       `--lg-accent-text:${c.accentText}`,
       `--lg-accent-soft:${c.accentSoft}`,
       `--lg-accent-fill:${c.accentFill}`,
+      `--lg-accent-hover:${c.accentHover}`,
+      `--lg-accent-line:${c.accentLine}`,
       `--lg-on-accent:${c.onAccent}`,
       `--lg-hover:${c.hover}`,
       `--lg-pressed:${c.pressed}`,
@@ -1246,6 +1269,10 @@ class ViewManager {
       `--lg-fs-xl:20px`,
       `--lg-dur:120ms`,
       `--lg-ease:cubic-bezier(.2,0,0,1)`,
+      /* 曾被消费却从未定义、永远走 fallback 的变量补上定义 */
+      `--lg-gutter-top:20px`,
+      `--lg-focus-w:2px`,
+      `--lg-scrollbar-w:10px`,
       `--lg-wall-image:${backdrop}`,
       `--lg-wall-left:-${rect.x}px`,
       `--lg-wall-top:-${rect.y}px`,
@@ -1294,18 +1321,32 @@ class ViewManager {
             entry.skinPending = false;
           });
       }
-      if (entry.varsPending) return;
+      if (entry.varsPending) {
+        if (process.env.LG_SKIN_DEBUG) console.log("[skin] varsPending blocked, url=" + wc.getURL());
+        return;
+      }
       if (entry.varsKey && entry.varsSig === vars) return;
+      const seq = ++this.skinSeq;
       entry.varsPending = true;
       const oldVars = entry.varsKey;
       entry.varsKey = null;
       if (oldVars) wc.removeInsertedCSS(oldVars).catch(() => {});
+      // 皮肤里的主题条件规则(代码高亮等)挂在 html[data-lg-mode] 上,
+      // 变量换套时同步刷新;新文档由 page preload 按 --lg-boot-mode 在 document-start 置位。
+      wc.executeJavaScript(
+        `document.documentElement.dataset.lgMode=${JSON.stringify(this.ctx.theme.isDark ? "dark" : "light")};`,
+        true
+      ).catch(() => {});
+      if (process.env.LG_SKIN_DEBUG) console.log("[skin] vars start #" + seq + " url=" + wc.getURL());
       wc.insertCSS(vars)
         .then((key) => {
           entry.varsKey = key;
           entry.varsSig = vars;
+          if (process.env.LG_SKIN_DEBUG) console.log("[skin] vars ok #" + seq + " url=" + wc.getURL());
         })
-        .catch(() => {})
+        .catch((err) => {
+          if (process.env.LG_SKIN_DEBUG) console.log("[skin] vars REJECT #" + seq + " " + err.message);
+        })
         .finally(() => {
           entry.varsPending = false;
         });

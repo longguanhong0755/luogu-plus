@@ -18,6 +18,12 @@ body.rail-overlay #rail {
   height: 100%;
   border-right: 1px solid var(--border);
   box-shadow: none;
+  /* 悬停浮层淡入/淡出：主进程 show/hide 时切换 html.rail-revealed */
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+html.rail-revealed body.rail-overlay #rail {
+  opacity: 1;
 }
 
 /* 壁纸复刻层：按整个窗口的尺寸铺，再让 view 裁出左侧 208px，

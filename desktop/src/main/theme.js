@@ -128,6 +128,8 @@ function payload(cfg) {
   colors.accent = resolveAccent(cfg, isDark);
   colors.accentSoft = hexToRgba(colors.accent, isDark ? 0.14 : 0.1);
   colors.accentLine = hexToRgba(colors.accent, isDark ? 0.65 : 0.55);
+  /* 主按钮悬停色:替代 brightness(1.07) 滤镜(滤镜不在过渡列表里,悬停会突变) */
+  colors.accentHover = isDark ? mixHex(colors.accent, "#ffffff", 0.92) : mixHex(colors.accent, "#101218", 0.9);
   colors.accentFill = isDark ? mixHex(colors.accent, "#101218", 0.78) : colors.accent;
   colors.onAccent = contrast("#ffffff", colors.accentFill) >= 4.5 ? "#ffffff" : "#101218";
   colors.accentText = readableAccent(colors.accent, isDark, [colors.bg, colors.surface]);

@@ -28,6 +28,10 @@ body.resizing {
   background-size: cover;
   background-repeat: no-repeat;
   opacity: 0;
+}
+/* “切换时淡入”开关的真实开关：勾选才挂 600ms 过渡（body.wall-fade 由
+   shared/theme.js 按配置置位）。此前过渡无条件存在，开关等于失效。 */
+body.wall-fade .wall-layer {
   transition: opacity 600ms var(--ease);
 }
 .wall-layer video {
@@ -126,9 +130,6 @@ body.rail-pinned {
   outline: none;
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
-#tb-avatar.active {
-  box-shadow: 0 0 0 2px var(--accent);
-}
 #tb-avatar.guest {
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent-fill) 72%, #fff), var(--accent-fill));
   color: var(--on-accent);
@@ -166,11 +167,21 @@ body.rail-pinned {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: none;
 }
+/* 自定义链接多时能滚动可见，而不是被无声裁掉 */
 #rail-top::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  width: 6px;
+}
+#rail-top::-webkit-scrollbar-thumb,
+#rail-bottom::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 35%, transparent);
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+#rail-top:hover::-webkit-scrollbar-thumb,
+#rail-bottom:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 60%, transparent);
+  background-clip: padding-box;
 }
 #rail-bottom {
   padding-top: 8px;
@@ -249,16 +260,12 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump {
   display: none;
 }
 
-.rail-spacer {
-  display: none;
-}
-
 .rail-btn {
   width: 100%;
   height: 30px;
   margin: 4px 0;
   padding: 0 8px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -317,7 +324,7 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-bottom > .rail-group:first-child
   height: 40px;
   margin-top: 6px;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -465,6 +472,8 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* 滚动条一出现内容就整体跳 ~12px；预留槽位对齐设置页的做法 */
+  scrollbar-gutter: stable;
 }
 
 #home {
@@ -615,8 +624,8 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   margin: 0 calc(var(--page-pad) * -1);
   padding: var(--sp-6) var(--page-pad) var(--sp-3);
   background: color-mix(in srgb, var(--bg) 95%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.08);
-  backdrop-filter: blur(16px) saturate(1.08);
+  -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(1.08);
+  backdrop-filter: blur(var(--blur-lg)) saturate(1.08);
   border-bottom: 1px solid var(--border);
 }
 
@@ -912,6 +921,7 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   -webkit-backdrop-filter: blur(20px) saturate(1.2);
   backdrop-filter: blur(20px) saturate(1.2);
   box-shadow: 0 14px 38px color-mix(in srgb, var(--shadow-color) 60%, transparent);
+  animation: lg-pop-in var(--dur-3) var(--ease);
 }
 .lib-diff-menu[hidden] {
   display: none;
@@ -1158,8 +1168,8 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   position: absolute;
   inset: 0;
   background: color-mix(in srgb, var(--bg) 58%, transparent);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(var(--blur-sm));
+  backdrop-filter: blur(var(--blur-sm));
 }
 .lib-modal-card {
   position: relative;
@@ -1167,6 +1177,7 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   flex-direction: column;
   width: min(760px, 100%);
   max-height: min(680px, 88vh);
+  animation: lg-pop-in var(--dur-3) var(--ease);
   border: 1px solid var(--border-strong);
   border-radius: var(--r-lg);
   background: var(--surface);
@@ -1834,6 +1845,16 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
   flex-direction: column;
   background: var(--editor);
   border-left: 1px solid var(--border);
+  animation: lg-fade-in var(--dur-2) var(--ease);
+}
+
+@keyframes lg-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .ide-head {
@@ -2334,7 +2355,7 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 .hc {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   background: color-mix(in srgb, var(--text) 7%, transparent);
   transition: background-color var(--dur-1) var(--ease);
 }
@@ -2374,7 +2395,7 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 .heat-legend .hc {
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: var(--r-xs);
 }
 .heat-legend .lg-label {
   margin: 0 2px;
@@ -2663,12 +2684,26 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 #scrim {
   position: absolute;
   inset: 0;
-  background: rgba(8, 10, 14, 0.45);
+  background: var(--scrim, rgba(8, 10, 14, 0.45));
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
+  transition: opacity var(--dur-2) var(--ease);
 }
 html[data-theme="light"] #scrim {
-  background: rgba(20, 24, 32, 0.24);
+  background: var(--scrim, rgba(20, 24, 32, 0.24));
+}
+#overlay.closing #scrim {
+  opacity: 0;
+}
+#overlay.closing .overlay-card {
+  animation: lg-pop-out var(--dur-2) var(--ease) forwards;
+}
+
+@keyframes lg-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
 }
 
 .overlay-card {
@@ -2759,6 +2794,10 @@ html[data-theme="light"] #scrim {
   cursor: pointer;
   border-left: 2px solid transparent;
   scroll-margin: 4px;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
 }
 .pal-row svg {
   width: 16px;
@@ -2829,6 +2868,10 @@ html[data-theme="light"] #scrim {
   cursor: pointer;
   border-left: 2px solid transparent;
   scroll-margin: 4px;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
 }
 .sw-row .sw-ico {
   width: 24px;
@@ -2900,8 +2943,8 @@ html[data-theme="light"] #scrim {
   padding: 12px 14px;
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--surface) 99%, transparent);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(var(--blur-lg));
+  backdrop-filter: blur(var(--blur-lg));
   border: 1px solid var(--border);
   box-shadow:
     0 2px 6px color-mix(in srgb, var(--shadow-color) 45%, transparent),
@@ -3001,7 +3044,8 @@ body.perf .lib-top {
 body.perf .wall-layer,
 body.perf #wallpaper,
 body.perf .overlay-card,
-body.perf .toast {
+body.perf .toast,
+body.perf #ide-pane {
   transition: none !important;
   animation: none !important;
 }
@@ -3049,4 +3093,15 @@ body.perf .toast {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ---------- 按压反馈补齐（R69）：可点的行/按钮都给 :active ---------- */
+.q-row:active,
+.sub-row:active,
+.home-refresh:active,
+.btn-quiet:active,
+.lib-more:active,
+.lib-retry:active,
+.lib-modal-btn:active {
+  background: var(--pressed);
 }

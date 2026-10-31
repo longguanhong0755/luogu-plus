@@ -35,9 +35,20 @@ export function initOverlays(actions) {
   let swSelected = 0;
   let queryToken = 0;
   let lastFocus = null;
+  let closeTimer = null;
 
   function rowId(prefix, index) {
     return `${prefix}-opt-${index}`;
+  }
+
+  /* 退场动画期间再次打开：作废收起计时器，直接进场 */
+  function reveal() {
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
+    overlay.classList.remove("closing");
+    overlay.hidden = false;
   }
 
   function loadingRow(text, kind = "pal") {
@@ -50,7 +61,7 @@ export function initOverlays(actions) {
   function openPalette() {
     lastFocus = document.activeElement;
     mode = "palette";
-    overlay.hidden = false;
+    reveal();
     palette.hidden = false;
     switcher.hidden = true;
     input.value = "";
@@ -66,7 +77,7 @@ export function initOverlays(actions) {
   function openSwitcher() {
     lastFocus = document.activeElement;
     mode = "switcher";
-    overlay.hidden = false;
+    reveal();
     switcher.hidden = false;
     palette.hidden = true;
     actions.overlay(true);
@@ -91,13 +102,20 @@ export function initOverlays(actions) {
 
   function close() {
     if (overlay.hidden) return;
-    overlay.hidden = true;
-    palette.hidden = true;
-    switcher.hidden = true;
+    if (closeTimer) return;
     mode = "";
+    // 160ms 退场动画后再真正隐藏；期间页面视图已由主进程恢复
+    overlay.classList.add("closing");
     actions.overlay(false);
-    if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
-    lastFocus = null;
+    closeTimer = setTimeout(() => {
+      closeTimer = null;
+      overlay.classList.remove("closing");
+      overlay.hidden = true;
+      palette.hidden = true;
+      switcher.hidden = true;
+      if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
+      lastFocus = null;
+    }, 160);
   }
 
   function runQuery(query) {
@@ -130,6 +148,7 @@ export function initOverlays(actions) {
       const label = document.createElement("span");
       label.className = "pal-label";
       label.textContent = item.label;
+      label.title = item.label;
       row.appendChild(label);
       const kind = document.createElement("span");
       kind.className = "pal-kind";
@@ -189,6 +208,7 @@ export function initOverlays(actions) {
       const title = document.createElement("span");
       title.className = "sw-title";
       title.textContent = item.title || item.key;
+      title.title = item.title || item.key;
       row.appendChild(title);
       const kind = document.createElement("span");
       kind.className = "sw-kind";

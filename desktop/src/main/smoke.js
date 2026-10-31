@@ -1067,10 +1067,10 @@ async function runSmoke(ctx) {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const shot = async (name, target) => {
     const win = target || ctx.win;
-    let image = await win.capturePage();
+    let image = await win.capturePage(undefined, { stayHidden: true });
     for (let attempt = 0; attempt < 3 && image.isEmpty(); attempt++) {
       await wait(700);
-      image = await win.capturePage();
+      image = await win.capturePage(undefined, { stayHidden: true });
     }
     const file = path.join(outDir, `smoke-${name}.png`);
     fs.writeFileSync(file, image.toPNG());
@@ -1235,7 +1235,7 @@ async function runSmoke(ctx) {
           if (visible) {
             if (railView) railView.setBackgroundColor("#16181d");
             await wait(160);
-            const image = await railWc.capturePage();
+            const image = await railWc.capturePage(undefined, { stayHidden: true });
             if (image && !image.isEmpty()) {
               const file = path.join(outDir, "smoke-rail-overlay.png");
               fs.writeFileSync(file, image.toPNG());
@@ -1750,7 +1750,7 @@ async function runSmoke(ctx) {
           let viewImage = null;
           for (let attempt = 0; attempt < 4; attempt++) {
             try {
-              viewImage = await entry.view.webContents.capturePage();
+              viewImage = await entry.view.webContents.capturePage(undefined, { stayHidden: true });
               if (!viewImage.isEmpty()) break;
             } catch (err) {
               viewImage = null;
@@ -1972,7 +1972,7 @@ async function runSmoke(ctx) {
         await shot("offline-problem");
         if (offEntry) {
           try {
-            const offImage = await offEntry.view.webContents.capturePage();
+            const offImage = await offEntry.view.webContents.capturePage(undefined, { stayHidden: true });
             if (offImage && !offImage.isEmpty()) {
               fs.writeFileSync(path.join(outDir, "smoke-offline-problem-view.png"), offImage.toPNG());
               console.log("SMOKE_SHOT offline-problem-view");
@@ -2404,7 +2404,8 @@ async function runSmoke(ctx) {
 }
 
 async function loadAndWait(ctx, url, title) {
-  ctx.views.openDetail(url, title, "audit");
+  // 每页独立 entry:复用同一 entry 跨页导航时,旧文档上的样式状态会污染度量
+  ctx.views.openDetail(url, title, "audit:" + title);
   const wc = ctx.views.currentWebContents();
   if (!wc) return null;
   for (let i = 0; i < 80; i++) {
@@ -2539,7 +2540,7 @@ async function runAudit(ctx, outDir, wait) {
       report[name] = data;
       if (name === "login" || name === "user" || name === "article") {
         try {
-          const image = await wc.capturePage();
+          const image = await wc.capturePage(undefined, { stayHidden: true });
           fs.writeFileSync(path.join(outDir, `audit-${name}.png`), image.toPNG());
           console.log("SMOKE_SHOT audit-" + name);
         } catch {
@@ -2558,6 +2559,31 @@ async function runAudit(ctx, outDir, wait) {
   console.log("SMOKE_AUDIT " + path.join(outDir, "audit-dark.json"));
 }
 
+/* 隐藏窗口里的页面视图截图：capturePage 在从未 show 过的窗口上可能拿不到合成层
+   （Windows 上偶发，与 GPU/DWM 状态有关），重试三次后用 CDP 强制出一帧兜底。 */
+async function captureWC(wc, wait) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const image = await wc.capturePage(undefined, { stayHidden: true });
+      if (image && !image.isEmpty()) return image;
+    } catch {
+      /* 空/失败继续重试，最后走 CDP 兜底 */
+    }
+    await wait(600);
+    if (wc.isDestroyed()) return null;
+  }
+  try {
+    const dbg = wc.debugger;
+    if (!dbg.isAttached()) dbg.attach();
+    const res = await dbg.sendCommand("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    dbg.detach();
+    return require("electron").nativeImage.createFromBuffer(Buffer.from(res.data, "base64"));
+  } catch (err) {
+    console.log("SMOKE_CAPTURE_CDP_FAIL " + err.message);
+    return null;
+  }
+}
+
 /* 皮肤几何审计：真实页面上找“深底深字 / 横向溢出 / 容器空白”，并逐页截图。
    只读 DOM，不发任何提交请求。 */
 async function runSkinAudit(ctx, outDir, wait) {
@@ -2573,13 +2599,62 @@ async function runSkinAudit(ctx, outDir, wait) {
     ["article", "https://www.luogu.com.cn/article"],
     ["article-detail", "https://www.luogu.com.cn/article/q3usb3ep"],
     ["discuss", "https://www.luogu.com.cn/discuss"],
+    ["discuss-detail", "https://www.luogu.com.cn/discuss"], // 从列表页动态取帖 ID
     ["training", "https://www.luogu.com.cn/training/100"],
     ["user", "https://www.luogu.com.cn/user/1"],
+    ["record-list", "https://www.luogu.com.cn/record/list"],
+    ["record-detail", "https://www.luogu.com.cn/record/list"], // 从列表页动态取 rid(游客不可见则跳过)
+    ["contest-detail", "https://www.luogu.com.cn/contest/list"], // 从列表页动态取赛 ID
+    ["search", "https://www.luogu.com.cn/search?q=%E5%9B%BE%E8%AE%BA"],
+    ["notification", "https://www.luogu.com.cn/user/notification"],
+    ["user-setting", "https://www.luogu.com.cn/settings"],
+    ["error-404", "https://www.luogu.com.cn/problem/P99999"],
   ].filter(([name]) => !only.length || only.includes(name));
   const report = {};
   for (const [name, url] of pages) {
-    const wc = await loadAndWait(ctx, url, name);
+    let wc = await loadAndWait(ctx, url, name);
     if (!wc) continue;
+    const finalUrl = String(await wc.executeJavaScript("location.href").catch(() => ""));
+    if (/\/auth\/login/.test(finalUrl)) {
+      // 游客不可见的页面(消息/设置/记录列表)标记后跳过,亮暗样式规则无从谈起
+      report[name] = { url, finalUrl, authGated: true };
+      console.log("SMOKE_SKIN_AUDIT_" + name.toUpperCase() + " " + JSON.stringify({ authGated: true, finalUrl }));
+      continue;
+    }
+    if (["discuss-detail", "contest-detail", "record-detail"].includes(name)) {
+      const href = await wc.executeJavaScript(`(() => {
+        const pat = ${JSON.stringify(
+          name === "discuss-detail" ? "^\\/discuss\\/\\d+" : name === "contest-detail" ? "^\\/contest\\/\\d+" : "^\\/record\\/\\d+"
+        )};
+        const re = new RegExp(pat);
+        const a = [...document.querySelectorAll('a[href]')].map((x) => x.getAttribute("href"));
+        const hit = a.find((h) => re.test(h));
+        return hit ? new URL(hit, location.origin).href : "";
+      })()`);
+      if (!href) {
+        report[name] = { url, finalUrl, skipped: "no-detail-link" };
+        console.log("SMOKE_SKIN_AUDIT_" + name.toUpperCase() + " " + JSON.stringify({ skipped: "no-detail-link" }));
+        continue;
+      }
+      wc = await loadAndWait(ctx, href, name);
+      if (!wc) continue;
+    }
+    // 皮肤静态 CSS/变量表都是 dom-ready 时异步 insertCSS 的;重页水合时变量表
+    // 可能落得比度量晚,保险起见等 --lg-text 真正可解析,最多 3 秒。
+    for (let i = 0; i < 20; i++) {
+      const ready = await wc.executeJavaScript(
+        `getComputedStyle(document.documentElement).getPropertyValue("--lg-text").trim() !== ""`
+      ).catch(() => false);
+      if (ready) break;
+      await wait(150);
+    }
+    // 皮肤给链接/按钮加了 120ms 过渡:元素在水合中从官方色过渡到主题色,
+    // 度量会读到中间值。审计页冻结所有过渡/动画,保证量到的是终态。
+    try {
+      await wc.insertCSS("*, *::before, *::after { transition: none !important; animation: none !important; }");
+    } catch {
+      /* 度量页而已 */
+    }
     try {
       const data = await wc.executeJavaScript(`(() => {
         const isDark = matchMedia("(prefers-color-scheme: dark)").matches;
@@ -2777,9 +2852,14 @@ async function runSkinAudit(ctx, outDir, wait) {
           const r = el.getBoundingClientRect();
           return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
         };
+        const firstLink = document.querySelector("#app a");
         return {
           url: location.href,
           isDark,
+          probe: {
+            link: firstLink ? getComputedStyle(firstLink).color : "",
+            varText: getComputedStyle(document.documentElement).getPropertyValue("--lg-text").trim(),
+          },
           vw,
           scrollW: document.documentElement.scrollWidth,
           main: rect(main),
@@ -2811,17 +2891,40 @@ async function runSkinAudit(ctx, outDir, wait) {
         };
       })()`);
       report[name] = data;
-      let image = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          image = await wc.capturePage();
-          if (image && !image.isEmpty()) break;
-        } catch {
-          image = null;
-        }
-        await wait(600);
+      if (process.env.LG_SURVEY_DUMP === "1") {
+        const dump = await wc.executeJavaScript(`(() => {
+          const out = { ths: [], fixed: [], headers: [], mode: document.documentElement.dataset.lgMode || "", linkColor: (() => { const a = document.querySelector('#app a'); return a ? getComputedStyle(a).color : ''; })(), varText: getComputedStyle(document.documentElement).getPropertyValue('--lg-text').trim() };
+          const cls = (el) => String(el.className || "").slice(0, 60);
+          for (const th of document.querySelectorAll("#app th")) {
+            const c = getComputedStyle(th);
+            out.ths.push({ cls: cls(th), bg: c.backgroundColor, color: c.color, text: th.textContent.trim().slice(0, 16) });
+          }
+          for (const el of document.querySelectorAll("body *")) {
+            const c = getComputedStyle(el);
+            if (c.position !== "fixed" || c.display === "none") continue;
+            const r = el.getBoundingClientRect();
+            if (r.width < 8 || r.height < 8) continue;
+            out.fixed.push({
+              cls: cls(el),
+              id: el.id,
+              bg: c.backgroundColor,
+              image: c.backgroundImage.slice(0, 60),
+              rect: [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)],
+              html: el.outerHTML.slice(0, 140),
+            });
+          }
+          for (const el of document.querySelectorAll('#app [class*="header"], #app [class*="topbar"], #app [class*="top-bar"]')) {
+            const c = getComputedStyle(el);
+            if (c.display === "none") continue;
+            out.headers.push({ cls: cls(el), bg: c.backgroundColor, html: el.outerHTML.slice(0, 140) });
+          }
+          ["headers", "fixed", "ths"].forEach((k) => { out[k] = out[k].slice(0, 12); });
+          return out;
+        })()`);
+        console.log("SMOKE_SURVEY_" + name.toUpperCase() + " " + JSON.stringify(dump));
       }
-      if (image && !image.isEmpty()) {
+      const image = await captureWC(wc, wait);
+      if (image) {
         fs.writeFileSync(path.join(outDir, `skin-${name}.png`), image.toPNG());
         console.log("SMOKE_SHOT skin-" + name);
       }

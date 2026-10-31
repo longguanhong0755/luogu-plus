@@ -855,3 +855,51 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
   `SMOKE_ADBLOCK` 默认关闭、开启后请求被 cancel；`SMOKE_RAIL_COLLAPSED` 断言
   40×30/20px/32×32；`SMOKE_SKIN_AUDIT` 覆盖 9 页 × 亮/暗，逐页检查深底深字、
   低对比文字、横向溢出与浅色面板（R65 后 9 页全部为 0）。
+
+### 15.13 0.7.1 丝滑与清瑕（R69）
+
+方向（用户定版）：动效=轻量克制，页面/分区切换保持 0ms；页面覆盖=全部补齐。
+不做新功能，ROADMAP 交互工单继续顺延。
+
+- **皮肤状态反馈**：按钮过渡补 `color/opacity`，主按钮悬停从 `brightness(1.07)`
+  滤镜改为 `--lg-accent-hover` token（滤镜不在过渡列表里会突变）；链接、表格行、
+  下拉项补 `color/background` 过渡（`--lg-dur/--lg-ease`）。分页条/页码按钮/筛选
+  chips 补 `:hover`（此前深色下悬停露出原生白）与 `.selected` 选中态反馈。
+- **原生控件**：`checkbox/radio/range/progress` 补 `accent-color: var(--lg-accent)`。
+- **焦点去重**：文本输入的 `:focus-visible` 连鼠标聚焦也恒匹配，叠 outline 就是
+  双环——输入框焦点只留 border+ring；全局 `:focus-visible` 环保留。
+- **代码高亮跟应用主题**：Prism 条件从跟随 OS 的媒体查询改为
+  `html[data-lg-mode]`（`--lg-boot-mode` 由 page preload 在 document-start 置位、
+  主题切换时刷新）。修掉「应用强制亮色 + 系统深色时代码区仍是深色」的真 bug。
+- **首帧链接色**：`--lg-boot-accent` 在 document-start 预置
+  `--lg-accent/--lg-accent-text`，慢页水合时链接不再「官方灰扫成主题色」。
+- **补覆盖（只改色不改布局）**：讨论帖详情（回复头 `.author` 亮带、`.casket`
+  富文本编辑器、`.cs-footer`、CodeMirror 行号槽、右下「编辑回复」悬浮钮）、
+  旧版布局页（`main.mobile-body` 内联浅底、`.wrapper .background` 白卡、提示卡
+  文字）、题库标签列 `<col>` 灰带（矩形 0×0，审计盲区）、筛选下拉占位字
+  `#404040`。审计 URL 列表扩到 17 页，讨论帖/比赛详情/记录列表详情从列表页
+  动态取 ID，游客跳登录的页面标记 `authGated` 跳过。
+- **外壳动效**：命令面板/切换器补 160ms 退场（`.closing` + `lg-pop-out`，遮罩
+  同步淡出）；标签弹层/难度菜单补进场；`.pal-row/.sw-row/.snav/指示条` 选中态
+  过渡；toast 超限先淡出再移除；侧栏悬停浮层 120ms 淡入淡出
+  （`html.rail-revealed`，hide 与 reveal 用序号作废避免竞态）；IDE 面板进场淡入；
+  「切换时淡入」开关修好语义（`body.wall-fade` 挂过渡，此前两条路径都在动画）。
+- **清瑕**：渲染层四处裸 `textContent` 错误屏换成 `shared/fatal.js` 主题化错误卡
+  + 重试按钮；`.page` 加 `scrollbar-gutter: stable`（列表变长内容不再跳 ~12px）；
+  截断文本补原生 tooltip（`el()` 助手按类名统一补）；侧栏自定义链接区恢复
+  6px 细滚动条（此前直接裁掉）；一批 `:active` 按压反馈；URL 校验错误即输即清、
+  空名称也标红；设置页「✓」字符换 CSS 勾线；「动态降载」行改正常文案；关于页补
+  仓库/反馈链接（设置窗加 `setWindowOpenHandler` 走系统浏览器）；删除
+  `#rail.empty-top`/`#tb-avatar.active`/`.rail-spacer` 死代码。
+- **token 收敛**：rail 按钮圆角、热力图小格归 `--r-sm/--r-xs` 刻度；
+  `--blur-lg/--blur-sm` 从 `--blur` 派生（性能模式归零联动）；遮罩色 token 化
+  （`--scrim`）；焦点环 `--focus-w`；皮肤侧 `--lg-scrollbar-w/--lg-focus-w/
+  --lg-gutter-top` 补定义（此前永远走 fallback）；`accentLine` 从 theme.js 接进
+  blockquote；新增 `accentHover`。
+- **审计基建**：每页独立 entry（跨页导航的旧文档状态会污染度量）、等
+  `--lg-text` 可解析再度量、审计页冻结过渡/动画（链接过渡的水合中间态会读出
+  官方灰——`darkCount:54` 假阳性的根因）、隐藏窗口截图 `capturePage` 拿不到
+  合成层时用 CDP `Page.captureScreenshot` 兜底、`LG_SURVEY_DUMP=1` 转储
+  表头/固定元素/模式探针。
+- **验收**：`npm run check` 330 项；14 个冒烟探针 3 批全 PASS；
+  `SMOKE_SKIN_AUDIT` 17 页 × 亮/暗（游客可见 13 页全零，其余 authGated 标记）。

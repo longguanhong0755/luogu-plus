@@ -1,5 +1,6 @@
 /* 设置窗口：改动即时生效（无保存按钮），所有状态以主进程广播为准。 */
 import { applyTheme } from "../shared/theme.js";
+import { fatal } from "../shared/fatal.js";
 import { icon } from "../shell/icons.js";
 
 const api = window.lgSettings;
@@ -134,6 +135,7 @@ function applyWallpaper(state) {
         `linear-gradient(160deg, color-mix(in srgb, ${accent} 9%, ${state.theme.colors.bg}), ${state.theme.colors.bg} 72%)`;
     }
     $("wp-preview-label").textContent = wall.label || "—";
+    $("wp-preview-label").title = wall.label || "";
     const kinds = {
       desktop: "跟随桌面",
       builtin: "内置渐变",
@@ -263,7 +265,9 @@ function renderRail(state) {
   for (const item of rail.custom) {
     const row = el("div", "rail-row");
     row.appendChild(el("span", "rail-name", item.label));
-    row.appendChild(el("span", "rail-kind url", item.url));
+    const urlEl = el("span", "rail-kind url", item.url);
+    urlEl.title = item.url;
+    row.appendChild(urlEl);
     row.appendChild(el("span", "rail-spacer-mini"));
     const del = el("button", "rail-mini wide", "删除");
     del.type = "button";
@@ -459,17 +463,21 @@ function bind() {
     await api.logout();
   });
 
+  $("rail-add-url").addEventListener("input", () => $("rail-add-url").classList.remove("bad"));
+  $("rail-add-label").addEventListener("input", () => $("rail-add-label").classList.remove("bad"));
+
   $("rail-reset").addEventListener("click", () => api.resetRail());
 
   $("rail-add").addEventListener("submit", (event) => {
     event.preventDefault();
     const label = $("rail-add-label").value.trim().slice(0, 24);
     const url = $("rail-add-url").value.trim();
-    if (!label || !/^https?:\/\//i.test(url)) {
-      $("rail-add-url").classList.toggle("bad", !/^https?:\/\//i.test(url));
-      return;
-    }
+    const urlOk = /^https?:\/\//i.test(url);
+    $("rail-add-url").classList.toggle("bad", !urlOk);
+    $("rail-add-label").classList.toggle("bad", !label);
+    if (!label || !urlOk) return;
     $("rail-add-url").classList.remove("bad");
+    $("rail-add-label").classList.remove("bad");
     const custom = (current.rail.custom || []).slice();
     custom.push({ id: "custom:" + Date.now().toString(36), label, url });
     api.setRail({ custom });
@@ -480,7 +488,7 @@ function bind() {
 
 async function boot() {
   if (!api) {
-    document.body.textContent = "preload 加载失败，请重启应用。";
+    fatal("设置初始化失败", "preload 加载失败，请重启应用。");
     return;
   }
   bind();
@@ -496,5 +504,5 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
-  document.body.textContent = "设置初始化失败：" + err.message;
+  fatal("设置初始化失败", err.message);
 });
