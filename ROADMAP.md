@@ -199,7 +199,7 @@
 > 上限、崩溃用户提示、smoke 惰性加载、LICENSE(MIT)、CHANGELOG、tag 体系、
 > gen:icons 覆盖守卫、**便携包产物**（pack-portable.ps1 → 130.7MB zip，
 > 打包冒烟 SMOKE_OK）；NSIS/签名/自动更新与 AT 下划线题号明确缓期至 v0.8+。
-> check 369 项。审计口径：14 页实测全零 + 4 页 authGated（登录跳转页如实标记）。
+> check 369 项。审计口径：13 页实测全零 + user 页 1 处 overAllowed（月赛轮播，v0.8 收敛）+ 4 页 authGated。
 
 ### v0.8.0「像桌面端」——离线、IDE、系统集成（2–3 周）
 

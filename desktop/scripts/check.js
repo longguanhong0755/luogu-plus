@@ -1010,9 +1010,9 @@ else fail("R72 缺 scripts/pack-portable.ps1");
 /* ---------- R74 三轮评审整改（口径/白名单/文档一致性） ---------- */
 const readmeFront = fs.readFileSync(path.join(ROOT, "..", "README.md"), "utf8");
 const smoke74 = read("src/main/smoke.js");
-if (/为 Windows 打造的洛谷客户端，v0\.7\.6。/.test(readmeFront)) ok("R74 README 门面版本与 package.json 同步");
+if (readmeFront.indexOf("为 Windows 打造的洛谷客户端，v" + (JSON.parse(read("package.json")).version) + "。") !== -1) ok("R74 README 门面版本与 package.json 同步");
 else fail("R74 README 门面版本未同步");
-if (/overAllowed/.test(smoke74) && /name === "user"/.test(smoke74)) ok("R74 审计 over 显式白名单（user 轮播入册）");
+if (/overAllowedItems/.test(smoke74) && /div\.right/.test(smoke74)) ok("R74 审计 over 显式白名单（锚定 parent，明细落盘）");
 else fail("R74 缺 over 白名单");
 if ((read("src/main/views.js").match(/will-navigate/g) || []).length >= 2) ok("R74 rail 浮层导航防护（page+overlay）");
 else fail("R74 缺 rail 浮层导航防护");
@@ -1022,6 +1022,20 @@ if (/endsWith\("\.luogu\.com\.cn"\)/.test(read("src/main/luogu.js"))) ok("R74 �
 else fail("R74 隐藏窗白名单缺子域");
 if (/captureProblem\(entry, round \+ 1\)/.test(read("src/main/views.js")) && /2\.5秒|2500/.test(read("src/main/views.js"))) ok("R74 快照抓取瞬时错误重试");
 else fail("R74 缺快照重试");
+/* ---------- R75 四轮评审整改（裁决洞/零阈值门禁/白名单锚定/CHANGELOG 纪律） ---------- */
+const smokeLauncher = fs.readFileSync(path.join(__dirname, "smoke.js"), "utf8");
+const changelog75 = fs.readFileSync(path.join(ROOT, "..", "CHANGELOG.md"), "utf8");
+const luogu75 = read("src/main/luogu.js");
+const firstVer = (changelog75.match(/## v([0-9.]+)/) || [])[1];
+if (firstVer === JSON.parse(read("package.json")).version) ok("R75 CHANGELOG 首节版本 == package.json");
+else fail("R75 CHANGELOG 首节版本(" + firstVer + ")与 package.json 不一致");
+if (/stdout \+ stderr/.test(smokeLauncher) || (smokeLauncher.includes('String(result.stderr || "")') && smokeLauncher.includes('allOut'))) ok("R75 冒烟裁决合并 stdout+stderr");
+else fail("R75 冒烟裁决仍只扫 stdout");
+if (/SMOKE_SKIN_AUDIT_GATE/.test(smoke74) && /皮肤审计超零/.test(smoke74)) ok("R75 审计零阈值真门禁");
+else fail("R75 缺审计零阈值门禁");
+if (/luogu\.org/.test(luogu75)) ok("R75 隐藏窗白名单补 luogu.org 口径");
+else fail("R75 隐藏窗白名单缺 luogu.org");
+
 
 /* ---------- R73 二轮评审整改（隐藏窗/权限/下载/HUD/证据卫生） ---------- */
 const luogu73 = read("src/main/luogu.js");
@@ -1042,7 +1056,7 @@ if (/Escape/.test(page73) && /app:find.*close/.test(page73)) ok("R73 Esc 全局�
 else fail("R73 缺 Esc 全局兜底");
 if (/__lgReloadCount = 0/.test(views70) && /did-finish-load/.test(views70)) ok("R73 崩溃重载计数成功加载后清零");
 else fail("R73 缺重载计数清零");
-if (/Math.max\(-3\.5, Math.min\(3,/.test(views70)) ok("R73 缩放范围放宽至 42%-173%");
+if (/Math.max\(-3\.5, Math.min\(3,/.test(views70)) ok("R73 缩放范围放宽至 53%-173%");
 else fail("R73 缩放范围仍窄");
 if (/formaction/.test(views70) && /xlink:href/.test(views70) && /data:\(image\|font\)/.test(views70)) ok("R73 快照消毒覆盖 URL 属性全族");
 else fail("R73 快照消毒未覆盖 URL 属性全族");
@@ -1063,7 +1077,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.6";
+const EXPECTED_VERSION = "0.7.7";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

@@ -975,7 +975,7 @@ production-observability / evidence-collection）把桌面版打到生产级。
   出口」同步改为 safeOpenExternal 口径。
 - **证据**（evidence-collection 教义）：`.lg-dev/` 保留审计 JSON、截图与探针日志。
 
-## 15.16 R72（v0.7.4）评审团整改 — sandbox/导航防护/查找缩放/便携包
+## 15.16 评审团打磨链（R72–R75，v0.7.4–v0.7.7）— sandbox/导航防护/查找缩放/便携包/证据卫生
 
 2026-11-01。首轮评审团 73/79/77 分后的整改轮，P0/P1 全修。
 
@@ -1016,3 +1016,22 @@ production-observability / evidence-collection）把桌面版打到生产级。
   皮肤审计小节的 authGated 披露；2026-11-01 实测 r70 profile 会话已过期，
   留痕 `.lg-dev/r73/profile-expiry-check.log`）。
 - check 358 → 369。
+
+### 15.16.1 各轮索引（追溯用）
+
+- **R72（v0.7.4，commit 957fe8d）**：一轮评审 73/79/77 整改——sandbox:true×4、
+  主壳/设置窗导航防护、离线 CSP+on* 剥离、Ctrl+F 查找条+缩放 HUD、崩溃重载
+  上限、便携包、LICENSE/CHANGELOG/tags；顺带修 R70 潜伏 isDestroyed bug。
+- **R73（v0.7.5，commit e19f06d）**：二轮 82/78/81 整改——隐藏窗三重防护+全局
+  web-contents-created 兜底、HUD pointer-events:none、权限窄放行、下载名清洗、
+  打包内建冒烟门禁（SMOKE_OK 不过拒绝出包）。
+- **R74（v0.7.6，commit 5ff4576）**：三轮 89/83/83 整改——审计 over 显式白名单、
+  42%→53% 口径、LICENSE 官方换行、rail 浮层 will-navigate、正则尾边界、
+  子域白名单、快照重试、README 门面版本入门禁。
+- **R75（v0.7.7）**：四轮 90/84/84 整改——冒烟裁决合并 stdout+stderr、审计
+  零阈值真门禁（SMOKE_SKIN_AUDIT_GATE）、白名单锚定 parent=div.right 且明细
+  落 overAllowedItems、隐藏窗白名单补 luogu.org、CHANGELOG 严格倒序+历史原文
+  恢复+口径总注。
+- **评审分数轨迹**：73/79/77 → 82/78/81 → 89/83/83 → 90/84/84（R75 待评）。
+  剩余扣分项均为已披露结构性缓期：签名/NSIS/自动更新（v1.0）、parity 矩阵与
+  登录态审计（v0.8）、check grep 断言行为化（增量）。

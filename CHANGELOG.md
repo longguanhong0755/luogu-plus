@@ -2,6 +2,31 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
+## v0.7.7 (2026-11-01) — R75 四轮评审整改
+
+- 冒烟裁决洞修复：启动器合并扫描 stdout+stderr 的 SMOKE_FAIL（异常路径不再假 PASS）。
+- 皮肤审计零阈值真门禁：实测页 dark/dim/over/light 任一超零即 SMOKE_FAIL，
+  汇总行 SMOKE_SKIN_AUDIT_GATE 落日志（overAllowed 白名单不计入）。
+- over 白名单锚定 parent=div.right（防未来其它 <a> 溢出误豁免），豁免明细
+  保留在 overAllowedItems 字段随 skin-audit.json 落盘。
+- 隐藏窗导航白名单补 luogu.org / *.luogu.org（与 views isLuoguHost 同口径）。
+- CHANGELOG 重构：严格倒序 + v0.7.2/v0.7.4 历史条目恢复原文，更正统一见本条；
+  口径总注：历史条目中「N 页全零」按 2026-11-01 更正口径应为「实测全零页 +
+  user 页 1 处 overAllowed（月赛轮播）+ 4 页 authGated」。
+- design.md 交付记录拆 §15.17(R73)/§15.18(R74/R75)；--smoke 触发路径表述收紧。
+
+## v0.7.6 (2026-11-01) — R74 三轮评审整改
+
+- 审计器新增 over 显式白名单：user 页右栏月赛轮播（洛谷自带横向轮播）移入
+  overAllowed 计数并在日志留名，不再虚报「全零」；溢出收敛排期 v0.8。
+- LICENSE 按 GitHub Licenses API/SPDX 官方换行重排；README 门面版本与
+  package.json 同步并纳入 check 门禁；pack-portable.ps1 重存为纯 UTF-8 BOM。
+- rail 悬停浮层补 will-navigate 防护（特权桥最后一面）；请求 handler 洛谷源
+  正则加尾边界；隐藏窗导航白名单扩到 *.luogu.com.cn 子域；快照抓取瞬时错误
+  2.5s 重试（复用 round 上限）。
+- 口径更正注：v0.7.2 条目原文「18 页全零」按 2026-11-01 更正口径应为
+  「14 页实测 + 4 authGated，user 页 1 处轮播溢出」。
+
 ## v0.7.5 (2026-11-01) — R73 二轮评审整改
 
 - 隐藏数据窗补齐三重导航防护（will-navigate 站内白名单 / window-open 拒绝 /
@@ -39,7 +64,7 @@
   gen:icons 加覆盖守卫（-Force 才重生成）；README 修正 gen:icons 措辞。
 - **工程**：smoke 调试器改为惰性 require（不再无条件进生产主进程）；
   CHANGELOG 建立；版本 tag 体系建立（v0.5.0 → v0.7.4）。
-- check 369 项全绿；三批探针 + IDE 探针 PASS；皮肤审计 13 页实测全零 + user 页 1 处已入册白名单溢出（洛谷自带轮播）+ 4 页 authGated（登录跳转）。
+- check 369 项全绿；三批探针 + IDE 探针 PASS；18 页 × 亮暗审计全零。
 
 ## v0.7.3 (2026-11-01) — R71 生产加固
 
@@ -50,18 +75,6 @@
 - 新 `desktop/README.md`；check 353→358；TOAST 探针改真实路径重试
   （隐藏窗口导航期 send 丢弃窗口已实测二分定位）。
 
-## v0.7.6 (2026-11-01) — R74 三轮评审整改
-
-- 审计器新增 over 显式白名单：user 页右栏月赛轮播（洛谷自带横向轮播）移入
-  overAllowed 计数并在日志留名，不再虚报「全零」；溢出收敛排期 v0.8。
-- LICENSE 按 GitHub Licenses API/SPDX 官方换行重排；README 门面版本与
-  package.json 同步并纳入 check 门禁；pack-portable.ps1 重存为纯 UTF-8 BOM。
-- rail 悬停浮层补 will-navigate 防护（特权桥最后一面）；请求 handler 洛谷源
-  正则加尾边界；隐藏窗导航白名单扩到 *.luogu.com.cn 子域；快照抓取瞬时错误
-  2.5s 重试（复用 round 上限）。
-- 口径更正注：v0.7.2 条目原文「18 页全零」按 2026-11-01 更正口径应为
-  「14 页实测 + 4 authGated，user 页 1 处轮播溢出」。
-
 ## v0.7.2 (2026-10-31) — R70 同层透出 · 主页融合 · 侧栏抽屉
 
 - 同层透明档位重构：新 raiseAlpha/codeAlpha 档位收编全部承载面孤岛，
@@ -69,7 +82,7 @@
 - 主页原生融合：抓官方旧版首页倒计时/欢迎/运势 + 比赛日历列表，重排两栏。
 - 侧栏抽屉化：宽度补间、近实心面板消叠染、钉住 @property 轨道宽过渡；
   删侧栏 luogu 标志。
-- check 353；皮肤审计 14 页实测全零 + 4 页 authGated（含官方主页）。
+- check 353；18 页 × 亮/暗审计全零（含官方主页）。
 
 ## v0.7.1 (2026-10-31) — R69 丝滑与清瑕
 

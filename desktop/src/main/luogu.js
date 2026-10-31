@@ -450,7 +450,9 @@ class LuoguService {
         const okHost =
           host === "luogu.com.cn" ||
           host === "www.luogu.com.cn" ||
-          host.endsWith(".luogu.com.cn");
+          host.endsWith(".luogu.com.cn") ||
+          host === "luogu.org" ||
+          host.endsWith(".luogu.org");
         if (!okHost) event.preventDefault();
       } catch {
         event.preventDefault();

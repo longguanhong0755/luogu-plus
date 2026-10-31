@@ -40,10 +40,12 @@ const shots = [...String(result.stdout || "").matchAll(/SMOKE_SHOT \S+ (.+)/g)]
   .map((m) => m[1].trim())
   .filter((file) => !/SKIPPED/.test(file));
 const badShots = shots.filter((file) => !fs.existsSync(file) || fs.statSync(file).size <= 5000);
+// 裁决合并 stdout+stderr：探针异常的 SMOKE_FAIL 可能走 stderr，漏扫就假 PASS
+const allOut = String(result.stdout || "") + String(result.stderr || "");
 const ok =
   result.status === 0 &&
-  String(result.stdout || "").includes("SMOKE_OK") &&
-  !String(result.stdout || "").includes("SMOKE_FAIL") &&
+  allOut.includes("SMOKE_OK") &&
+  !allOut.includes("SMOKE_FAIL") &&
   fs.existsSync(out) &&
   fs.statSync(out).size > 5000 &&
   badShots.length === 0;

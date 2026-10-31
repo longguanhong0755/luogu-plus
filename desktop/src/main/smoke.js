@@ -2975,10 +2975,15 @@ async function runSkinAudit(ctx, outDir, wait) {
         console.log("SMOKE_SHOT skin-" + name);
       }
     // over 白名单（显式入册，不静默）：user 页右栏「近期赛程」轮播为洛谷自带
-    // 横向轮播，2026-10 前后站点调整标记后 .am-slider 排除失效；量级移入
-    // overAllowed 计数，溢出收敛排期 v0.8。
-    if (name === "user" && data.overCount > 0 && (data.over || []).every((o) => o.tag === "a")) {
+    // 横向轮播（锚定 parent=div.right，防止未来其它 <a> 溢出被误豁免）；
+    // 量级移入 overAllowed 计数并保留明细，溢出收敛排期 v0.8。
+    const overAllowHit =
+      name === "user" &&
+      data.overCount > 0 &&
+      (data.over || []).every((o) => o.tag === "a" && o.parent === "div.right");
+    if (overAllowHit) {
       data.overAllowed = data.overCount;
+      data.overAllowedItems = data.over;
       data.overCount = 0;
       data.over = [];
     }
@@ -3012,6 +3017,24 @@ async function runSkinAudit(ctx, outDir, wait) {
   }
   fs.writeFileSync(path.join(outDir, "skin-audit.json"), JSON.stringify(report, null, 2));
   console.log("SMOKE_SKIN_AUDIT " + path.join(outDir, "skin-audit.json"));
+  // 零阈值门禁（真实判定，不再只靠人眼/源码 grep）：实测页 dark/dim/over/light
+  // 任一超零即 SMOKE_FAIL（overAllowed 白名单计数不计入）。
+  let auditBad = 0;
+  for (const [name, data] of Object.entries(report)) {
+    if (!data || data.authGated) continue;
+    const bad =
+      (data.darkCount || 0) > 0 ||
+      (data.dimCount || 0) > 0 ||
+      (data.overCount || 0) > 0 ||
+      (data.lightCount || 0) > 0;
+    if (bad) {
+      auditBad++;
+      console.log(
+        "SMOKE_FAIL 皮肤审计超零 " + name + " dark=" + (data.darkCount || 0) + " dim=" + (data.dimCount || 0)
+      );
+    }
+  }
+  console.log("SMOKE_SKIN_AUDIT_GATE " + JSON.stringify({ checked: Object.keys(report).length, bad: auditBad }));
 }
 
 /* 演示数据：只给截图用，不代表真实账号。 */
