@@ -75,8 +75,15 @@ try {
   $signed = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -ErrorAction SilentlyContinue
   # 自签链不受信 → Status=UnknownError 但签名已嵌入（SignerCertificate 非空）；
   # 受信判定交给用户安装 .cer 后的 Get-AuthenticodeSignature 校验
-  if ($signed.SignerCertificate) { Write-Output ("SIGN-OK(self-signed) " + $cert.Thumbprint) }
-  else { Write-Output ("SIGN-WARN " + $signed.Status) }
+  if ($signed.SignerCertificate) {
+    $signLine = "SIGN-OK(self-signed) " + $cert.Thumbprint + " " + (Get-Date).ToUniversalTime().ToString("o")
+    Write-Output $signLine
+    Add-Content -Path $log -Value $signLine -Encoding UTF8   # 签名证据随包日志落盘（评审点名）
+  } else {
+    $warnLine = "SIGN-WARN " + $signed.Status
+    Write-Output $warnLine
+    Add-Content -Path $log -Value $warnLine -Encoding UTF8
+  }
 } catch {
   Write-Output ("SIGN-WARN " + $_.Exception.Message)
 }

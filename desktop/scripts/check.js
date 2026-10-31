@@ -1174,7 +1174,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.12";
+const EXPECTED_VERSION = "0.7.13";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
