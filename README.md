@@ -1,6 +1,6 @@
 # 洛谷桌面版（Luogu Desktop）
 
-为 Windows 打造的洛谷客户端，v0.7.11。**不是网页套壳**：
+为 Windows 打造的洛谷客户端，v0.7.12。**不是网页套壳**：
 
 - **题库 / 训练 / 比赛 / 记录 / 讨论 / 文章是原生列表**——搜索、筛选、翻页都不加载整页，
   **鼠标点行直接打开**（键盘 Enter/方向键同样可用）；点进详情「后退」即回来源列表。
@@ -60,7 +60,12 @@ npm run gen:icons  # 自绘应用/托盘/角标图标（蓝底白洛字；已入
 ```bash
 cd desktop
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1
-# 产物：.lg-dev/dist/luogu-desktop-<版本>-portable.zip（未签名；NSIS/签名/自动更新按 ROADMAP 在 v1.0 接入）
+# 产物：.lg-dev/dist/luogu-desktop-<版本>-portable.zip（开发自签名；NSIS/正式证书/自动更新按 ROADMAP 在 v1.0 接入）
+#
+# 自签信任说明：包内 electron.exe 带 CN=Luogu Desktop (self-signed dev) 代码
+# 签名，证书公钥同目录导出（luogu-desktop-selfsigned.cer）。SmartScreen 对
+# 自签名仍会提示「仍要运行」；如需校验，安装 .cer 到「受信任的发布者」后
+# 签名状态变为「有效」。（正式代码签名证书采购后替换，见 ROADMAP v1.0）
 ```
 
 调试用冒烟开关（都走隔离 userData、窗口 opacity=0）：

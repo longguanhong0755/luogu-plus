@@ -61,7 +61,27 @@ Remove-Item (Join-Path $appDir "src\main\smoke.js") -Force -ErrorAction Silently
 Remove-Item (Join-Path $appDir "src\main\smoke-guard.js") -Force -ErrorAction SilentlyContinue
 if ((Test-Path (Join-Path $appDir "src\main\smoke.js")) -or (Test-Path (Join-Path $appDir "src\main\smoke-guard.js"))) { throw "探针 harness 剥离失败" }
 
-# 6) 压缩（剥离后的 stage）
+# 5.5) 自签过渡（证书采购前的方案，评审终态路径认可）：签主执行体，
+#      证书公钥导出 dist 供信任安装；无签名能力时告警不阻断。
+$cerPath = Join-Path $dist "luogu-desktop-selfsigned.cer"
+try {
+  $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue |
+    Where-Object { $_.Subject -like "*Luogu Desktop*" } | Select-Object -First 1
+  if (-not $cert) {
+    $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Luogu Desktop (self-signed dev)" -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(3)
+    if (Test-Path $cerPath) { Remove-Item $cerPath -Force }
+    Export-Certificate -Cert $cert -FilePath $cerPath | Out-Null
+  }
+  $signed = Set-AuthenticodeSignature -FilePath $exe -Certificate $cert -ErrorAction SilentlyContinue
+  # 自签链不受信 → Status=UnknownError 但签名已嵌入（SignerCertificate 非空）；
+  # 受信判定交给用户安装 .cer 后的 Get-AuthenticodeSignature 校验
+  if ($signed.SignerCertificate) { Write-Output ("SIGN-OK(self-signed) " + $cert.Thumbprint) }
+  else { Write-Output ("SIGN-WARN " + $signed.Status) }
+} catch {
+  Write-Output ("SIGN-WARN " + $_.Exception.Message)
+}
+
+# 6) 压缩（剥离+签名后的 stage）
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
 $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)

@@ -1102,7 +1102,16 @@ if (/TIMEOUT after/.test(fs.readFileSync(path.join(__dirname, "smoke.js"), "utf8
 else fail("R79 超时归档缺上下文");
 if (/勿使用 v0\.7\.10 便携包/.test(fs.readFileSync(path.join(ROOT, "..", "CHANGELOG.md"), "utf8"))) ok("R79 v0.7.10 带红出厂已披露");
 else fail("R79 缺 v0.7.10 披露");
-if (parity76.trim().indexOf("# Parity") === 0 && /4 旅程/.test(parity76)) ok("R76 PARITY.md 首批（4 旅程×3 模式）在位");
+
+/* ---------- R80 九轮收官（自签过渡/回归补全/parity 增量） ---------- */
+const pack80 = fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8");
+if (/New-SelfSignedCertificate/.test(pack80) && /Set-AuthenticodeSignature/.test(pack80) && /luogu-desktop-selfsigned\.cer/.test(pack80)) ok("R80 自签过渡（签名+公钥导出）");
+else fail("R80 pack 缺自签步骤");
+if (/受信任的发布者/.test(fs.readFileSync(path.join(ROOT, "..", "README.md"), "utf8"))) ok("R80 README 自签信任说明");
+else fail("R80 缺信任说明");
+if ((fs.readFileSync(path.join(ROOT, "..", "docs", "PARITY.md"), "utf8").match(/^\| 6 \|/m) || []).length === 1) ok("R80 PARITY 扩至 6 旅程");
+else fail("R80 PARITY 未扩至 6 旅程");
+if (parity76.trim().indexOf("# Parity") === 0 && /6 旅程/.test(parity76)) ok("R76 PARITY.md 首批（6 旅程×3 模式）在位");
 else fail("R76 缺 PARITY.md");
 if (/smoke\.js/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8")) && /剥离/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8"))) ok("R76 打包后剥离探针 harness");
 else fail("R76 打包缺 harness 剥离");
@@ -1165,7 +1174,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.11";
+const EXPECTED_VERSION = "0.7.12";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

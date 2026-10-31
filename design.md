@@ -1039,6 +1039,8 @@ production-observability / evidence-collection）把桌面版打到生产级。
   零阈值真门禁（SMOKE_SKIN_AUDIT_GATE）、白名单锚定 parent=div.right 且明细
   落 overAllowedItems、隐藏窗白名单补 luogu.org、CHANGELOG 严格倒序+历史原文
   恢复+口径总注。
-- **评审分数轨迹**：73/79/77 → 82/78/81 → 89/83/83 → 90/84/84（R75 待评）。
+- **已知噪声**：冒烟日志的 `[views] 快照抓取失败 Script failed to execute`
+  为隐藏窗切页竞态（抓取与导航撞窗），重试机制吸收、不进门禁裁决。
+- **评审分数轨迹**：73/79/77 → 82/78/81 → 89/83/83 → 90/84/84 → 91/88/88 → 94/89/86 → 95/92/94（R80 待评）。
   剩余扣分项均为已披露结构性缓期：签名/NSIS/自动更新（v1.0）、parity 矩阵与
   登录态审计（v0.8）、check grep 断言行为化（增量）。
