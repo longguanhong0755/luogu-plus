@@ -2357,13 +2357,32 @@ async function runSmoke(ctx) {
           await wait(500);
           sec.railUrl = String(railView.webContents.getURL() || "").slice(0, 40);
         }
+        // 注：fullscreen 权限向量曾试图经 requestFullscreen 断言，实测 Electron 39
+        // 的 HTML5 全屏不经过权限处理器（requestFullscreen 直接 resolve），
+        // 该向量按事实撤下（权限 handler 保留为纵深防御，判源已改 requestingUrl）。
+        // settings 窗（第五宿主）：显式开-测-关（冒烟模式 opacity 0 隐藏）
+        try {
+          ctx.openSettings();
+          await wait(1400);
+          const settingsWin = ctx.settingsWin && !ctx.settingsWin.isDestroyed() ? ctx.settingsWin : null;
+          if (settingsWin) {
+            sec.settingsOpen = await settingsWin.webContents
+              .executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`)
+              .catch(() => null);
+            settingsWin.close();
+            await wait(300);
+          }
+        } catch {
+          sec.settingsOpen = null;
+        }
         const secOk =
           sec.shellOpen === true &&
           sec.pageOpen === true &&
           sec.hiddenOpen === true &&
           sec.shellUrl.indexOf("file:") === 0 &&
           String(sec.pageUrl || "").indexOf("luogu.com.cn") !== -1 &&
-          (sec.railUrl === undefined || sec.railUrl.indexOf("file:") === 0);
+          (sec.railUrl === undefined || sec.railUrl.indexOf("file:") === 0) &&
+          sec.settingsOpen === true;
         console.log("SMOKE_SEC " + JSON.stringify({ ...sec, ok: secOk }));
         if (!secOk) console.log("SMOKE_FAIL 安全注入未被全拒");
         ctx.views.showHome();

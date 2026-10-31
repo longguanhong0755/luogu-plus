@@ -40,9 +40,11 @@ if (Test-Path $ud) { Remove-Item $ud -Recurse -Force }
 $env:LG_USERDATA = $ud
 $env:LG_SMOKE = "1"
 $env:LG_DEMO = "1"
+$env:LG_SMOKE_SEC = "1"
+$env:LG_SMOKE_FIND = "1"
 $log = Join-Path $dist "pack-smoke.log"
 $smokeOut = & $exe --smoke 2>&1 | Tee-Object -FilePath $log
-Remove-Item Env:LG_USERDATA, Env:LG_SMOKE, Env:LG_DEMO
+Remove-Item Env:LG_USERDATA, Env:LG_SMOKE, Env:LG_DEMO, Env:LG_SMOKE_SEC, Env:LG_SMOKE_FIND
 Remove-Item $ud -Recurse -Force
 if (-not ($smokeOut -match "SMOKE_OK")) {
   throw "打包冒烟失败（SMOKE_OK 缺失）；日志见 $log"

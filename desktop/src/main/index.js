@@ -215,9 +215,9 @@ function bootstrap() {
 
     ctx.session = session.fromPartition("persist:luogu");
     ctx.session.setUserAgent(UA);
-    ctx.session.setPermissionRequestHandler((_wc, permission, _details, callback) => {
-      // 仅放行洛谷来源的 fullscreen（站内视频/答辩页全屏），其余权限一律拒绝
-      const origin = String((_wc && _wc.getURL && _wc.getURL()) || "");
+    ctx.session.setPermissionRequestHandler((_wc, permission, details, callback) => {
+      // 仅放行洛谷来源的 fullscreen；判源用 requestingUrl（frame 粒度，修顶层 URL 局限）
+      const origin = String((details && details.requestingUrl) || (_wc && _wc.getURL && _wc.getURL()) || "");
       const isLuogu = /^https?:\/\/([a-z0-9-]+\.)*luogu\.com\.cn(:\d+)?(\/|$)/i.test(origin);
       callback(permission === "fullscreen" && isLuogu);
     });

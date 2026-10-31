@@ -2,6 +2,22 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
+## v0.7.10 (2026-11-01) — R78 七轮评审整改（守卫单测/SEC 五宿主/出包行为门禁）
+
+- **守卫抽纯模块 + 真·单测**：冒烟裁决守卫迁入 `src/main/smoke-guard.js`
+  （guardIpcMain，纯函数），check.js 用假 ipcMain 做运行时单测——异常打
+  `SMOKE_FAIL ipc:<频道>` + 禁用态恒等直通，全部可复验；handle 与 on 型
+  通道统一入守卫。
+- **SEC 探针补 settings 宿主**（第五宿主，开-测-关，冒烟下 opacity 0）：
+  五宿主 window.open 注入断言全拒，实测 ok:true。
+- **出包门禁携带行为探针**：pack-portable.ps1 冒烟步进挂
+  LG_SMOKE_SEC=1/LG_SMOKE_FIND=1，出厂自检不再是基础冒烟。
+- **fullscreen 判源修 frame 粒度**（连续四轮在案）：request handler 改用
+  `details.requestingUrl`。SEC 曾试图断言 fullscreen 权限拒绝向量，实测
+  Electron 39 HTML5 全屏不经权限处理器，按事实撤下该向量并留档。
+- **fails/ 归档演练实证**：人为触发失败 → exit 1 + 两份时间戳归档落盘。
+- design.md §15.16.1 补 R77 索引；check 406→411。
+
 ## v0.7.9 (2026-11-01) — R77 六轮评审整改（裁决洞 #2/安全行为探针/证据纪律）
 
 - **裁决洞 #2 修复**：冒烟模式给 `ipcMain.handle` 包守卫——handler 抛错即打

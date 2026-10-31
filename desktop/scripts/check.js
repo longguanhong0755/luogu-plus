@@ -1037,7 +1037,7 @@ else fail("R76 PALETTE 探针缺 AT 断言");
 
 /* ---------- R77 六轮评审整改（裁决洞 #2/SEC 探针/GATE 三元/证据纪律） ---------- */
 const idx77 = read("src/main/index.js");
-if (/SMOKE_FAIL ipc:" \+ channel/.test(read("src/main/ipc.js")) && /origHandle/.test(read("src/main/ipc.js"))) ok("R77 ipc handler 冒烟守卫（裁决洞 #2）");
+if (/guardIpcMain/.test(read("src/main/ipc.js")) && /SMOKE_FAIL ipc:/.test(read("src/main/smoke-guard.js"))) ok("R77 ipc handler 冒烟守卫（裁决洞 #2，smoke-guard 纯模块）");
 else fail("R77 缺 ipc handler 冒烟守卫");
 if (/LG_SMOKE_SEC === "1"/.test(smoke74) && /SMOKE_SEC /.test(smoke74) && /lg-sec:\/\/probe/.test(smoke74)) ok("R77 SEC 安全行为探针");
 else fail("R77 缺 SEC 探针");
@@ -1049,6 +1049,46 @@ if (/LGR-\|月赛/.test(smoke74)) ok("R77 over 白名单双锚");
 else fail("R77 白名单仍单锚");
 if (/harness not available/.test(idx77)) ok("R77 剥离后 LG_DEMO/--smoke 路径守卫");
 else fail("R77 缺剥离后守卫");
+
+/* ---------- R78 七轮评审整改（守卫单测/SEC 五宿主/pack 行为门禁/判源修复） ---------- */
+const guard78 = require(path.join(ROOT, "src", "main", "smoke-guard.js"));
+if (typeof guard78.guardIpcMain === "function") ok("R78 smoke-guard 纯模块在位");
+else fail("R78 smoke-guard 缺导出");
+{
+  let guardHit = false;
+  const origErr = console.error;
+  console.error = (...args) => {
+    if (String(args[0] || "").indexOf("SMOKE_FAIL ipc:") === 0) guardHit = true;
+  };
+  const reg = [];
+  const fake = { handle: (c, f) => reg.push(f), on: (c, f) => reg.push(f) };
+  guard78.guardIpcMain(fake, true);
+  fake.handle("app:unit", () => {
+    throw new TypeError("unit-boom"); // 同步抛：守卫的 console.error 在调用方同步段执行
+  });
+  reg[0]({}).catch(() => {});
+  console.error = origErr;
+  const regOff = [];
+  const rawFn = () => {
+    throw new TypeError("raw-boom");
+  };
+  const fakeOff = { handle: (c, f) => regOff.push(f), on: (c, f) => regOff.push(f) };
+  const before = fakeOff.handle;
+  guard78.guardIpcMain(fakeOff, false);
+  fakeOff.handle("app:raw", rawFn);
+  const passthrough = fakeOff.handle === before && regOff[0] === rawFn;
+  if (guardHit && passthrough) ok("R78 守卫单测：异常打 SMOKE_FAIL 且禁用态直通");
+  else fail("R78 守卫单测未过（guardHit=" + guardHit + " passthrough=" + passthrough + "）");
+}
+if (smoke74.indexOf(String.raw`sec.settingsOpen === true;`) !== -1 && smoke74.indexOf(String.raw`ctx.openSettings();`) !== -1 && smoke74.indexOf(String.raw`settingsWin.close();`) !== -1) ok("R78 SEC 五宿主覆盖（settings 开-测-关）");
+else fail("R78 SEC 缺 settings 腿");
+const pack78 = fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8");
+if (/LG_SMOKE_SEC = "1"/.test(pack78) && /LG_SMOKE_FIND = "1"/.test(pack78)) ok("R78 出包门禁携带行为探针（SEC/FIND）");
+else fail("R78 出包门禁缺行为探针 env");
+if (/requestingUrl/.test(idx77)) ok("R78 fullscreen 判源 frame 粒度（requestingUrl）");
+else fail("R78 fullscreen 判源未修");
+if (/ipcMain.on = \(channel, fn\)/.test(fs.readFileSync(path.join(ROOT, "src", "main", "smoke-guard.js"), "utf8"))) ok("R78 on 型通道入守卫");
+else fail("R78 on 型通道未入守卫");
 if (parity76.trim().indexOf("# Parity") === 0 && /4 旅程/.test(parity76)) ok("R76 PARITY.md 首批（4 旅程×3 模式）在位");
 else fail("R76 缺 PARITY.md");
 if (/smoke\.js/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8")) && /剥离/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8"))) ok("R76 打包后剥离探针 harness");
@@ -1112,7 +1152,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.9";
+const EXPECTED_VERSION = "0.7.10";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
