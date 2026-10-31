@@ -1100,6 +1100,40 @@ if (/hiddenOpen === "skipped"/.test(smoke74) && /ensureWindow/.test(smoke74)) ok
 else fail("R79 SEC hidden 腿缺 skip 语义");
 if (/TIMEOUT after/.test(fs.readFileSync(path.join(__dirname, "smoke.js"), "utf8"))) ok("R79 超时归档带上下文");
 else fail("R79 超时归档缺上下文");
+
+/* ---------- R83 行为化证据断言（读最新探针日志；CI 无日志时如实跳过） ---------- */
+const lgdev83 = path.join(ROOT, "..", ".lg-dev");
+const batchLogs83 = [];
+try {
+  for (const dir of fs.readdirSync(lgdev83).filter((d) => /^r\d+$/.test(d)).sort()) {
+    const b1 = path.join(lgdev83, dir, "batch1-run.log");
+    if (fs.existsSync(b1)) batchLogs83.push(b1);
+  }
+} catch {
+  /* .lg-dev 不存在（全新 clone）→ 跳过 */
+}
+if (batchLogs83.length) {
+  const text83 = fs.readFileSync(batchLogs83[batchLogs83.length - 1], "utf8");
+  const secOk83 = text83.indexOf("SMOKE_SEC ") !== -1 && text83.indexOf(String.raw`"ok":true`) !== -1;
+  const findOk83 = text83.indexOf("SMOKE_FIND ") !== -1;
+  if (secOk83 && findOk83) ok("R83 行为证据（最新批次 " + path.basename(path.dirname(batchLogs83[batchLogs83.length - 1])) + "）：SEC/FIND ok:true");
+  else fail("R83 最新批次行为证据不足（SEC=" + secOk83 + " FIND=" + findOk83 + "）");
+  const audits83 = [];
+  for (const dir of fs.readdirSync(lgdev83).filter((d) => /^r\d+$/.test(d)).sort()) {
+    for (const f of ["dark-auditA.log", "dark-auditB.log", "light-auditA.log", "light-auditB.log"]) {
+      const p83 = path.join(lgdev83, dir, f);
+      if (fs.existsSync(p83)) audits83.push(p83);
+    }
+  }
+  if (audits83.length) {
+    const badLines = fs.readFileSync(audits83[audits83.length - 1], "utf8").match(/SMOKE_FAIL 皮肤审计超零/g);
+    const gateOk = /"bad":0/.test(fs.readFileSync(audits83[audits83.length - 1], "utf8"));
+    if (!badLines && gateOk) ok("R83 最新审计 GATE bad:0（" + path.basename(path.dirname(audits83[audits83.length - 1])) + "）");
+    else fail("R83 最新审计存在超零项");
+  }
+} else {
+  ok("R83 行为化证据断言：本地无探针日志，跳过（CI/全新 clone 场景）");
+}
 if (/勿使用 v0\.7\.10 便携包/.test(fs.readFileSync(path.join(ROOT, "..", "CHANGELOG.md"), "utf8"))) ok("R79 v0.7.10 带红出厂已披露");
 else fail("R79 缺 v0.7.10 披露");
 
@@ -1123,8 +1157,8 @@ if (/console-message/.test(read("src/main/index.js"))) ok("R82 冒烟模式渲�
 else fail("R82 缺渲染端 console 中继");
 if (/firstRunCard/.test(smoke74)) ok("R82 VISUAL 探针含首启卡指标");
 else fail("R82 VISUAL 缺首启卡指标");
-if (parity76.trim().indexOf("# Parity") === 0 && /6 旅程/.test(parity76)) ok("R76 PARITY.md 首批（6 旅程×3 模式）在位");
-else fail("R76 缺 PARITY.md");
+if (parity76.trim().indexOf("# Parity") === 0 && /9 旅程/.test(parity76)) ok("R76 PARITY.md 首批（9 旅程×3 模式）在位");
+else fail("R76 PARITY.md 未扩至 9 旅程");
 if (/smoke\.js/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8")) && /剥离/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8"))) ok("R76 打包后剥离探针 harness");
 else fail("R76 打包缺 harness 剥离");
 if (/endsWith\("\.luogu\.com\.cn"\)/.test(read("src/main/luogu.js"))) ok("R74 隐藏窗导航白名单含子域");
@@ -1186,7 +1220,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.14";
+const EXPECTED_VERSION = "0.7.15";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 
