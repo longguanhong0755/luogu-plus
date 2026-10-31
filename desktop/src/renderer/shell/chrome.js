@@ -239,7 +239,7 @@ export function initChrome(actions) {
   jumpForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const raw = jumpInput.value.trim();
-    const match = raw.match(/^([A-Za-z]{1,4}\d+[A-Za-z0-9]*)$/);
+    const match = raw.match(/^([A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*)$/);
     if (!match) {
       jumpForm.classList.add("bad");
       setTimeout(() => jumpForm.classList.remove("bad"), 900);
@@ -248,7 +248,7 @@ export function initChrome(actions) {
     }
     jumpInput.value = "";
     jumpInput.blur();
-    actions.openProblem(match[1].toUpperCase());
+    actions.openProblem(match[1]); // 规范化（AT_ 小写形等）在主进程单源完成
   });
 
   jumpForm.addEventListener("click", (event) => {

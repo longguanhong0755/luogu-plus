@@ -33,12 +33,8 @@ if (-not (Test-Path $exe)) { throw "electron.exe 缺失" }
 if (-not (Test-Path (Join-Path $appDir "package.json"))) { throw "resources/app/package.json 缺失" }
 if (-not (Test-Path (Join-Path $appDir "src\main\index.js"))) { throw "src/main/index.js 缺失" }
 
-# 4) 压缩
-if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
-$mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
-
-# 5) 打包冒烟（证据落盘）：从暂存目录启动，隔离 userData，验证产物可启动
+# 4) 打包冒烟（证据落盘）：从暂存目录启动，隔离 userData，验证产物可启动。
+#    冒烟需要探针 harness 在场，因此先冒烟、后剥离、再压缩。
 $ud = Join-Path $env:TEMP ("lg-pack-ud-" + $ver)
 if (Test-Path $ud) { Remove-Item $ud -Recurse -Force }
 $env:LG_USERDATA = $ud
@@ -51,5 +47,15 @@ Remove-Item $ud -Recurse -Force
 if (-not ($smokeOut -match "SMOKE_OK")) {
   throw "打包冒烟失败（SMOKE_OK 缺失）；日志见 $log"
 }
+
+# 5) 剥离探针 harness（--smoke 为唯一触发路径，正常使用零触发；产物不再携带
+#    141KB 探针/演示代码）
+Remove-Item (Join-Path $appDir "src\main\smoke.js") -Force
+if (Test-Path (Join-Path $appDir "src\main\smoke.js")) { throw "探针 harness 剥离失败" }
+
+# 6) 压缩（剥离后的 stage）
+if (Test-Path $zip) { Remove-Item $zip -Force }
+Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
+$mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 
 Write-Output ("PACK-OK " + $zip + " (" + $mb + " MB)")

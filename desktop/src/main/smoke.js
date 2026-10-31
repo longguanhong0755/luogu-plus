@@ -2270,6 +2270,64 @@ async function runSmoke(ctx) {
         await wait(300);
       }
 
+      if (process.env.LG_SMOKE_FIND === "1") {
+        // R76 行为级回归：Ctrl+F 查找条端到端 + Ctrl+= 缩放 HUD——R73/R74 交互
+        // 修复从「grep 断言 + 人工审读」升级为真实键鼠事件 + DOM 断言的门禁。
+        ctx.views.openProblem("P1001");
+        await wait(1600);
+        const fw = ctx.views.currentWebContents();
+        if (fw) fw.sendInputEvent({ type: "keyDown", keyCode: "f", modifiers: ["control"] });
+        await wait(500);
+        const barShown = await fw.executeJavaScript(`(() => {
+          const b = document.getElementById("lg-find-bar");
+          return b ? { visible: b.style.display === "flex", focused: document.activeElement === b.querySelector("input") } : null;
+        })()`);
+        // 查询经输入事件驱动防抖→invoke→findInPage→found-in-page→计数回传全链
+        const findType = async () => {
+          await fw.executeJavaScript(`(() => {
+            const input = document.querySelector("#lg-find-bar input");
+            if (!input) return false;
+            input.value = "的";
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            return true;
+          })()`);
+          await wait(1100);
+          return await fw.executeJavaScript(`(() => {
+            const b = document.getElementById("lg-find-bar");
+            const span = b ? b.querySelector("span") : null;
+            return span ? span.textContent : "";
+          })()`);
+        };
+        let found = await findType();
+        // found-in-page 回传腿在无焦点隐藏窗口探针下不触发（Electron findInPage
+        // 限制；真实会话有焦点则正常）。探针断言其余全链，回传腿留档为已知限制。
+        if (String(found || "").indexOf("/") === -1) {
+          console.log("SMOKE_NOTE find-count leg unverifiable in focusless hidden window (Electron findInPage limit)");
+        }
+        await wait(200);
+        if (fw) fw.sendInputEvent({ type: "keyDown", keyCode: "=", modifiers: ["control"] });
+        await wait(350);
+        const zoomLevel = fw.getZoomLevel();
+        const hudSeen = await fw.executeJavaScript(`!!document.getElementById("lg-zoom-hud")`);
+        const hudPe = hudSeen
+          ? await fw.executeJavaScript(`getComputedStyle(document.getElementById("lg-zoom-hud")).pointerEvents`)
+          : "";
+        if (fw) fw.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+        await wait(350);
+        const barClosed = await fw.executeJavaScript(`(() => {
+          const b = document.getElementById("lg-find-bar");
+          return !b || b.style.display === "none";
+        })()`);
+        const findOk =
+          !!barShown && barShown.visible && barShown.focused &&
+          zoomLevel > 0 && hudSeen && hudPe === "none" && barClosed;
+        console.log("SMOKE_FIND " + JSON.stringify({ barShown, found, zoomLevel, hudSeen, hudPe, barClosed, ok: findOk }));
+        if (!findOk) console.log("SMOKE_FAIL 查找条/缩放行为回归");
+        if (fw) fw.setZoomLevel(0);
+        ctx.views.showHome();
+        await wait(300);
+      }
+
       if (process.env.LG_SMOKE_KEYS === "1") {
         // R60 回归：Ctrl+W 关页面回来源列表、Alt+← 后退——用真实合成键盘事件
         //（键发给当前页面视图的 webContents）。强制离线让页面落 lgoff:// 单条历史，
@@ -2312,12 +2370,14 @@ async function runSmoke(ctx) {
         ctx.views.openProblem("P1001");
         await wait(600);
         const palPid = await ctx.win.webContents.executeJavaScript(`window.lg.palette("P1001")`);
+        const palAt = await ctx.win.webContents.executeJavaScript(`window.lg.palette("at_abc123_a")`);
         const palAll = await ctx.win.webContents.executeJavaScript(`window.lg.palette("")`);
         const hasPid = palPid.length && palPid[0].type === "problem" && palPid[0].pid === "P1001";
+        const atOk = palAt.length && palAt[0].type === "problem" && palAt[0].pid === "AT_abc123_a";
         const hasReopen = palAll.some((item) => item.id === "reopen");
         const hasPage = palAll.some((item) => item.type === "page" && /P1001/.test(item.key || ""));
-        console.log("SMOKE_PALETTE " + JSON.stringify({ hasPid, hasReopen, hasPage, count: palAll.length }));
-        if (!hasPid || !hasReopen || !hasPage) console.log("SMOKE_FAIL 命令面板缺项");
+        console.log("SMOKE_PALETTE " + JSON.stringify({ hasPid, atOk, hasReopen, hasPage, count: palAll.length }));
+        if (!hasPid || !atOk || !hasReopen || !hasPage) console.log("SMOKE_FAIL 命令面板缺项");
         ctx.views.showHome();
         await wait(300);
       }

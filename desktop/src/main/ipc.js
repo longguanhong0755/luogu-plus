@@ -1,6 +1,6 @@
 /* 所有 IPC 的登记处（主进程 handler + preload 暴露 + 本文件三处同步维护）。 */
 const { app, ipcMain, dialog, clipboard } = require("electron");
-const { LIBRARY_IDS, resolveRail } = require("./sections");
+const { LIBRARY_IDS, resolveRail, canonicalPid } = require("./sections");
 
 function publicWallpaper(wallpaper) {
   const out = Object.assign({}, wallpaper);
@@ -62,9 +62,9 @@ const ACTIONS = [
 function palette(query, ctx) {
   const q = String(query || "").trim();
   const out = [];
-  const pid = q.match(/^([A-Za-z]{1,4}\d+[A-Za-z0-9]*)/);
+  const pid = canonicalPid(q);
   if (pid) {
-    out.push({ type: "problem", pid: pid[1].toUpperCase(), label: "打开题目 " + pid[1].toUpperCase() });
+    out.push({ type: "problem", pid, label: "打开题目 " + pid });
   }
   // 已经打开的页面可以直接切过去（Ctrl+K 也是页面间跳转的入口）
   if (ctx && ctx.views && ctx.views.listOpen) {
@@ -277,9 +277,9 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:problemAction", (_event, payload) => {
-    const pid = String((payload && payload.pid) || "").toUpperCase();
+    const pid = canonicalPid((payload && payload.pid) || "");
     const action = payload && payload.action;
-    if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) return;
+    if (!pid) return;
     if (action === "records") ctx.views.openDetail(`/record/list?pid=${encodeURIComponent(pid)}`, "提交记录");
     else if (action === "solutions") ctx.views.openDetail(`/problem/solution/${encodeURIComponent(pid)}`, "题解");
     else if (action === "submit") ctx.views.navigate(`/problem/${encodeURIComponent(pid)}#submit`);
@@ -298,11 +298,11 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:submit", async (_event, payload) => {
-    const pid = String((payload && payload.pid) || "").toUpperCase();
+    const pid = canonicalPid((payload && payload.pid) || "");
     const code = String((payload && payload.code) || "");
     const lang = String((payload && payload.lang) || "C++14 (GCC 9)");
     const o2 = !!(payload && payload.o2);
-    if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid) || !code.trim()) {
+    if (!pid || !code.trim()) {
       return { ok: false, message: "题目编号或代码为空。" };
     }
     // 断网提交：不碰网络，进本地队列，联网后自动重放
@@ -344,14 +344,14 @@ function registerIpc(ctx) {
 
   ipcMain.handle("app:saveDraft", (_event, payload) => {
     if (!ctx.store) return { ok: false };
-    const pid = String((payload && payload.pid) || "").toUpperCase();
+    const pid = canonicalPid((payload && payload.pid) || "");
     const code = String((payload && payload.code) || "");
     const lang = String((payload && payload.lang) || "C++14 (GCC 9)");
     const o2 = !!(payload && payload.o2);
     // 语言/O2 是全局偏好：下一道题沿用上一次的选择
     ctx.store.set("editorPrefs", { lang, o2, savedAt: Date.now() }, 0);
     // 草稿按题目隔离：A 题的代码永远不会出现在 B 题的编辑器里
-    if (pid && /^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) {
+    if (pid) {
       const key = "draft:" + pid;
       ctx.store.set(key, { key, pid, code: code.slice(0, 200000), lang, o2, savedAt: Date.now() }, 800);
     }
@@ -360,8 +360,8 @@ function registerIpc(ctx) {
 
   ipcMain.handle("app:getDraft", (_event, payload) => {
     if (!ctx.store) return null;
-    const pid = String((payload && payload.pid) || "").toUpperCase();
-    if (pid && /^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) {
+    const pid = canonicalPid((payload && payload.pid) || "");
+    if (pid) {
       const draft = ctx.store.get("draft:" + pid);
       if (draft && typeof draft === "object") {
         return {

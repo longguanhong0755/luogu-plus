@@ -11,6 +11,7 @@ const { PRELOAD, SKIN_DIR, RENDERER } = require("./paths");
 const { TITLE_H, RAIL_W, RAIL_COLLAPSED_W, TOOLBAR_H } = require("./window");
 const { safeOpenExternal } = require("./external");
 const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
+const { canonicalPid } = require("./sections");
 const { SOURCE: PASSKEY_GUARD } = require("./passkey-guard");
 
 const MAX_PROBLEMS = 8;
@@ -43,11 +44,11 @@ function pidFromUrl(raw) {
   try {
     const url = new URL(raw);
     if (url.protocol === "lgoff:") {
-      const m = url.pathname.match(/^\/(?:problem\/)?([A-Za-z]{1,4}\d+[A-Za-z0-9]*)\/?$/);
-      return m ? m[1].toUpperCase() : "";
+      const m = url.pathname.match(/^\/(?:problem\/)?([A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*)\/?$/);
+      return m ? canonicalPid(m[1]) : "";
     }
-    const m = url.pathname.match(/^\/problem\/([A-Za-z]{1,4}\d+[A-Za-z0-9]*)/);
-    return m ? m[1].toUpperCase() : "";
+    const m = url.pathname.match(/^\/problem\/([A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*)/);
+    return m ? canonicalPid(m[1]) : "";
   } catch {
     return "";
   }
@@ -369,8 +370,8 @@ class ViewManager {
   }
 
   openProblem(rawPid) {
-    const pid = String(rawPid || "").toUpperCase();
-    if (!/^[A-Z]{1,4}\d+[A-Za-z0-9]*$/.test(pid)) return;
+    const pid = canonicalPid(rawPid);
+    if (!pid) return;
     if (this.library) this.returnLib = this.library;
     this.library = null;
     const luogu = this.ctx.luogu;

@@ -365,11 +365,11 @@ document.addEventListener(
       return;
     }
     if (url.hostname !== "www.luogu.com.cn" && url.hostname !== "luogu.com.cn") return;
-    const match = url.pathname.match(/^\/problem\/([A-Za-z]{1,4}\d+[A-Za-z0-9]*)\/?$/);
+    const match = url.pathname.match(/^\/problem\/([A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*)\/?$/);
     if (!match) return;
     event.preventDefault();
     event.stopPropagation();
-    ipcRenderer.send("page:open-problem", match[1].toUpperCase());
+    ipcRenderer.send("page:open-problem", match[1]); // 主进程 canonicalPid 规范化
   },
   true
 );

@@ -97,4 +97,17 @@ function resolveRail(cfg) {
   };
 }
 
-module.exports = { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS, resolveRail };
+/* 题号规范化（唯一源）：P/CF/UVA 等大写；AT_ 系保留「AT_ + 小写」的洛谷
+   规范形（大小写敏感，误大写会 404）。空串 = 校验失败。
+   渲染层（chrome.js/page.js）不做规范化，只做同款正则的准入判断后把原文
+   交给主进程，规范化永远发生在主进程这一处。 */
+function canonicalPid(raw) {
+  const s = String(raw || "").trim();
+  if (!/^[A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*$/.test(s)) return "";
+  if (/^AT_/i.test(s)) {
+    return "AT_" + s.slice(3).toLowerCase();
+  }
+  return s.toUpperCase();
+}
+
+module.exports = { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS, resolveRail, canonicalPid };

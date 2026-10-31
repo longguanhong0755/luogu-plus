@@ -1018,6 +1018,26 @@ if ((read("src/main/views.js").match(/will-navigate/g) || []).length >= 2) ok("R
 else fail("R74 缺 rail 浮层导航防护");
 if (idx72.indexOf(String.raw`luogu\.com\.cn(:\d+)?(\/|$)`) !== -1) ok("R74 请求 handler 洛谷源正则尾边界");
 else fail("R74 缺正则尾边界");
+
+/* ---------- R76 量化路径兑现（AT 题号/行为探针/parity 首批/harness 剥离） ---------- */
+const sections76 = read("src/main/sections.js");
+const chrome76 = read("src/renderer/shell/chrome.js");
+const page76x = read("src/preload/page.js");
+const parity76 = fs.readFileSync(path.join(ROOT, "..", "docs", "PARITY.md"), "utf8");
+if (/function canonicalPid/.test(sections76) && /AT_/.test(sections76) && /toLowerCase/.test(sections76)) ok("R76 canonicalPid 单源（AT_ 小写规范形）");
+else fail("R76 缺 canonicalPid 单源");
+if (/canonicalPid/.test(views70) && /canonicalPid/.test(ipcSource) && (views70.match(/canonicalPid/g) || []).length >= 3) ok("R76 views/ipc 接入 canonicalPid（openProblem/palette/submit/草稿）");
+else fail("R76 views/ipc 未接入 canonicalPid");
+if (chrome76.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1 && page76x.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1) ok("R76 渲染层正则接受下划线题号（原文交主进程规范化）");
+else fail("R76 渲染层正则未更新");
+if (/LG_SMOKE_FIND === "1"/.test(smoke74) && /SMOKE_FIND /.test(smoke74)) ok("R76 FIND 行为探针（Ctrl+F/缩放 HUD/Esc 真实键鼠链）");
+else fail("R76 缺 FIND 行为探针");
+if (/atOk/.test(smoke74)) ok("R76 PALETTE 探针含 AT_ 规范化断言");
+else fail("R76 PALETTE 探针缺 AT 断言");
+if (parity76.trim().indexOf("# Parity") === 0 && /4 旅程/.test(parity76)) ok("R76 PARITY.md 首批（4 旅程×3 模式）在位");
+else fail("R76 缺 PARITY.md");
+if (/smoke\.js/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8")) && /剥离/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8"))) ok("R76 打包后剥离探针 harness");
+else fail("R76 打包缺 harness 剥离");
 if (/endsWith\("\.luogu\.com\.cn"\)/.test(read("src/main/luogu.js"))) ok("R74 隐藏窗导航白名单含子域");
 else fail("R74 隐藏窗白名单缺子域");
 if (/captureProblem\(entry, round \+ 1\)/.test(read("src/main/views.js")) && /2\.5秒|2500/.test(read("src/main/views.js"))) ok("R74 快照抓取瞬时错误重试");
@@ -1077,7 +1097,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.7";
+const EXPECTED_VERSION = "0.7.8";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

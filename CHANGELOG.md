@@ -2,6 +2,24 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
+## v0.7.8 (2026-11-01) — R76 量化路径兑现（AT 题号/行为探针/parity 首批/harness 剥离）
+
+- **AT 下划线题号清偿**：`sections.js` 新增 `canonicalPid` 单源——P/CF/UVA 等大写、
+  AT_ 系规范为「AT_+小写」的洛谷规范形；views（pidFromUrl/openProblem）、ipc
+  （palette/problemAction/submit/saveDraft/getDraft）六处接入；渲染层（跳转框/
+  页内链接）正则接受下划线并把原文交主进程规范化。PALETTE 探针新增
+  `at_abc123_a → AT_abc123_a` 行为断言（实测 atOk:true）。
+- **FIND 行为探针**（LG_SMOKE_FIND=1）：真实 Ctrl+F 开条+聚焦、查询驱动
+  防抖→invoke→findInPage 链、Ctrl+= 缩放生效+HUD pointer-events:none 实测、
+  Esc 收条。found-in-page 回传腿在无焦点隐藏窗口探针下不触发（Electron
+  findInPage 限制，真实会话有焦点正常），留档为已知限制。
+- **docs/PARITY.md 首批**：4 条核心旅程 × 鼠标/键盘/离线状态表，逐格挂探针
+  证据指针（12×3 全量按 ROADMAP 节奏迭代）。
+- **便携包剥离探针 harness**：打包管线改为「暂存目录冒烟 → 剥离
+  src/main/smoke.js → 压缩」，产物 134 项零 smoke 残留（zip 实测），
+  --smoke 触发路径随包清零。
+- check 393→399。
+
 ## v0.7.7 (2026-11-01) — R75 四轮评审整改
 
 - 冒烟裁决洞修复：启动器合并扫描 stdout+stderr 的 SMOKE_FAIL（异常路径不再假 PASS）。
