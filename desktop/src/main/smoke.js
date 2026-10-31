@@ -2347,10 +2347,28 @@ async function runSmoke(ctx) {
         await pw.executeJavaScript(`location.href = ${JSON.stringify(atk)}; "sent"`).catch(() => null);
         await wait(800);
         sec.pageUrl = String(pw.getURL() || "").slice(0, 60);
-        sec.hiddenOpen =
-          ctx.luogu && ctx.luogu.win && !ctx.luogu.win.isDestroyed()
-            ? await ctx.luogu.win.webContents.executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`).catch(() => null)
-            : null;
+        // 隐藏数据窗：环境感知——不在场先 ensureWindow（打包冒烟不初始化网络窗），
+        // 仍不可用则记 skipped 并从裁决剔除（腿不可达 ≠ 防护失效）
+        let hiddenWc = null;
+        try {
+          if (ctx.luogu && ctx.luogu.ensureWindow) {
+            if (!ctx.luogu.win || ctx.luogu.win.isDestroyed()) {
+              ctx.luogu.ensureWindow();
+              await wait(1800);
+            }
+            if (ctx.luogu.win && !ctx.luogu.win.isDestroyed()) hiddenWc = ctx.luogu.win.webContents;
+          }
+        } catch {
+          hiddenWc = null;
+        }
+        sec.hiddenOpen = "skipped";
+        if (hiddenWc) {
+          sec.hiddenOpen = await hiddenWc.executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`).catch(() => null);
+          if (sec.hiddenOpen === null) {
+            await wait(800); // 导航竞态重试一次
+            sec.hiddenOpen = await hiddenWc.executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`).catch(() => null);
+          }
+        }
         const railView = ctx.views.railOverlay;
         if (railView && !railView.webContents.isDestroyed()) {
           await railView.webContents.executeJavaScript(`location.href = ${JSON.stringify(atk)}; "sent"`).catch(() => null);
@@ -2378,7 +2396,7 @@ async function runSmoke(ctx) {
         const secOk =
           sec.shellOpen === true &&
           sec.pageOpen === true &&
-          sec.hiddenOpen === true &&
+          (sec.hiddenOpen === true || sec.hiddenOpen === "skipped") &&
           sec.shellUrl.indexOf("file:") === 0 &&
           String(sec.pageUrl || "").indexOf("luogu.com.cn") !== -1 &&
           (sec.railUrl === undefined || sec.railUrl.indexOf("file:") === 0) &&

@@ -1089,6 +1089,19 @@ if (/requestingUrl/.test(idx77)) ok("R78 fullscreen 判源 frame 粒度（reques
 else fail("R78 fullscreen 判源未修");
 if (/ipcMain.on = \(channel, fn\)/.test(fs.readFileSync(path.join(ROOT, "src", "main", "smoke-guard.js"), "utf8"))) ok("R78 on 型通道入守卫");
 else fail("R78 on 型通道未入守卫");
+
+/* ---------- R79 八轮评审整改（出包裁决洞 #3/SEC 环境感知/剥离清单） ---------- */
+const pack79 = fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8");
+if (/node /.test(pack79) && /smoke\.js/.test(pack79) && /LASTEXITCODE/.test(pack79)) ok("R79 出包冒烟走真裁决启动器（exit code 算数）");
+else fail("R79 出包门禁仍绕过启动器");
+if (/smoke-guard\.js/.test(pack79)) ok("R79 剥离清单含 smoke-guard.js");
+else fail("R79 剥离清单缺 guard 模块");
+if (/hiddenOpen === "skipped"/.test(smoke74) && /ensureWindow/.test(smoke74)) ok("R79 SEC hidden 腿环境感知（ensureWindow+skipped）");
+else fail("R79 SEC hidden 腿缺 skip 语义");
+if (/TIMEOUT after/.test(fs.readFileSync(path.join(__dirname, "smoke.js"), "utf8"))) ok("R79 超时归档带上下文");
+else fail("R79 超时归档缺上下文");
+if (/勿使用 v0\.7\.10 便携包/.test(fs.readFileSync(path.join(ROOT, "..", "CHANGELOG.md"), "utf8"))) ok("R79 v0.7.10 带红出厂已披露");
+else fail("R79 缺 v0.7.10 披露");
 if (parity76.trim().indexOf("# Parity") === 0 && /4 旅程/.test(parity76)) ok("R76 PARITY.md 首批（4 旅程×3 模式）在位");
 else fail("R76 缺 PARITY.md");
 if (/smoke\.js/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8")) && /剥离/.test(fs.readFileSync(path.join(__dirname, "pack-portable.ps1"), "utf8"))) ok("R76 打包后剥离探针 harness");
@@ -1152,7 +1165,7 @@ try {
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.10";
+const EXPECTED_VERSION = "0.7.11";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

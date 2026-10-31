@@ -1032,7 +1032,7 @@ production-observability / evidence-collection）把桌面版打到生产级。
 - **R77（v0.7.9，commit 6458c50）**：六轮 94/89/94 整改——裁决洞 #2（ipc
   handler 异常假 PASS，冒烟守卫）、SEC 安全行为探针（lg-sec:// 四宿主注入）、
   GATE 三元、失败归档、白名单双锚、README 旗标、CHANGELOG 计数自纠。
-- **R78（v0.7.10，本地）**：七轮 95/92/94 收尾——守卫抽 smoke-guard.js 纯模块
+- **R78（v0.7.10，commit 08a6d3e）**：七轮 95/92/94 收尾——守卫抽 smoke-guard.js 纯模块
   +check 真·单测、SEC 补 settings（五宿主）、出包门禁挂 SEC/FIND、fullscreen
   判源 requestingUrl、fails 演练实证。
 - **R75（v0.7.7）**：四轮 90/84/84 整改——冒烟裁决合并 stdout+stderr、审计

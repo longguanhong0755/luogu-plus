@@ -33,8 +33,9 @@ if (-not (Test-Path $exe)) { throw "electron.exe 缺失" }
 if (-not (Test-Path (Join-Path $appDir "package.json"))) { throw "resources/app/package.json 缺失" }
 if (-not (Test-Path (Join-Path $appDir "src\main\index.js"))) { throw "src/main/index.js 缺失" }
 
-# 4) 打包冒烟（证据落盘）：从暂存目录启动，隔离 userData，验证产物可启动。
-#    冒烟需要探针 harness 在场，因此先冒烟、后剥离、再压缩。
+# 4) 打包冒烟（证据落盘 + 完整裁决）：走带真裁决的 node 启动器——
+#    SMOKE_FAIL/审计超零/exit code 全算数（裁决洞 #3 修复：v0.7.10 曾因只查
+#    启动期 SMOKE_OK 标记而带红出厂）。
 $ud = Join-Path $env:TEMP ("lg-pack-ud-" + $ver)
 if (Test-Path $ud) { Remove-Item $ud -Recurse -Force }
 $env:LG_USERDATA = $ud
@@ -42,18 +43,23 @@ $env:LG_SMOKE = "1"
 $env:LG_DEMO = "1"
 $env:LG_SMOKE_SEC = "1"
 $env:LG_SMOKE_FIND = "1"
+$env:LG_SMOKE_TIMEOUT = "540000"
 $log = Join-Path $dist "pack-smoke.log"
-$smokeOut = & $exe --smoke 2>&1 | Tee-Object -FilePath $log
-Remove-Item Env:LG_USERDATA, Env:LG_SMOKE, Env:LG_DEMO, Env:LG_SMOKE_SEC, Env:LG_SMOKE_FIND
-Remove-Item $ud -Recurse -Force
-if (-not ($smokeOut -match "SMOKE_OK")) {
-  throw "打包冒烟失败（SMOKE_OK 缺失）；日志见 $log"
+$smokeJs = Join-Path $desktop "scripts\smoke.js"
+cmd /c ("node `"" + $smokeJs + "`" > `"" + $log + "`" 2>&1")
+$code = $LASTEXITCODE
+Get-Content $log -Encoding UTF8 | Select-Object -Last 10 | Write-Output
+Remove-Item Env:LG_USERDATA, Env:LG_SMOKE, Env:LG_DEMO, Env:LG_SMOKE_SEC, Env:LG_SMOKE_FIND, Env:LG_SMOKE_TIMEOUT
+Remove-Item $ud -Recurse -Force -ErrorAction SilentlyContinue
+if ($code -ne 0) {
+  throw "打包冒烟失败（启动器 exit=" + $code + "，含 SMOKE_FAIL 或裁决失败）；日志见 " + $log
 }
 
 # 5) 剥离探针 harness（--smoke 为唯一触发路径，正常使用零触发；产物不再携带
 #    141KB 探针/演示代码）
-Remove-Item (Join-Path $appDir "src\main\smoke.js") -Force
-if (Test-Path (Join-Path $appDir "src\main\smoke.js")) { throw "探针 harness 剥离失败" }
+Remove-Item (Join-Path $appDir "src\main\smoke.js") -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $appDir "src\main\smoke-guard.js") -Force -ErrorAction SilentlyContinue
+if ((Test-Path (Join-Path $appDir "src\main\smoke.js")) -or (Test-Path (Join-Path $appDir "src\main\smoke-guard.js"))) { throw "探针 harness 剥离失败" }
 
 # 6) 压缩（剥离后的 stage）
 if (Test-Path $zip) { Remove-Item $zip -Force }

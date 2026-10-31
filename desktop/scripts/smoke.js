@@ -63,7 +63,8 @@ try {
   const failDir = path.join(repo, ".lg-dev", "fails");
   fs.mkdirSync(failDir, { recursive: true });
   const failLog = path.join(failDir, "fail-" + new Date().toISOString().replace(/[:.]/g, "-") + ".log");
-  fs.writeFileSync(failLog, "exit=" + result.status + "\n" + String(result.stdout || "") + String(result.stderr || ""));
+  const ctxLine = result.status === null ? "TIMEOUT after " + (Number(process.env.LG_SMOKE_TIMEOUT) || 60000) + "ms\n" : "";
+  fs.writeFileSync(failLog, ctxLine + "exit=" + result.status + "\n" + String(result.stdout || "") + String(result.stderr || ""));
   console.error("fail log: " + failLog);
 } catch {
   /* ignore */

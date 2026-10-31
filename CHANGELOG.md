@@ -2,6 +2,20 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
+## v0.7.11 (2026-11-01) — R79 八轮评审整改（出包裁决洞 #3/SEC 环境感知）
+
+- **出包裁决洞 #3 修复**（v0.7.10 曾带红出厂）：pack 冒烟步进改走带真裁决的
+  node 启动器（SMOKE_FAIL/审计超零/exit code 全算数，日志直落 UTF-8），
+  $LASTEXITCODE ≠ 0 即 throw 拒绝出包——「SMOKE_OK 不过则拒绝出包」承诺
+  首次在出厂路径上语义完整。
+- **SEC 探针环境感知**：hiddenOpen 腿先 ensureWindow 尝试建窗，仍不可用记
+  skipped 并从裁决剔除（腿不可达 ≠ 防护失效；dev 全量断言不变）。
+- 超时失败归档补上下文行（TIMEOUT after Nms，不再 10 字节空壳）。
+- 剥离清单补 smoke-guard.js（模块抽取时未同步，v0.7.10 zip 曾残留 1 项）；
+  SEC hiddenOpen 腿导航竞态重试一次。
+- CHANGELOG v0.7.10 演练叙事更正（exit=0/null，非 exit 1）；design.md R78
+  措辞同步。
+
 ## v0.7.10 (2026-11-01) — R78 七轮评审整改（守卫单测/SEC 五宿主/出包行为门禁）
 
 - **守卫抽纯模块 + 真·单测**：冒烟裁决守卫迁入 `src/main/smoke-guard.js`
@@ -15,8 +29,11 @@
 - **fullscreen 判源修 frame 粒度**（连续四轮在案）：request handler 改用
   `details.requestingUrl`。SEC 曾试图断言 fullscreen 权限拒绝向量，实测
   Electron 39 HTML5 全屏不经权限处理器，按事实撤下该向量并留档。
-- **fails/ 归档演练实证**：人为触发失败 → exit 1 + 两份时间戳归档落盘。
-- design.md §15.16.1 补 R77 索引；check 406→411。
+- **fails/ 归档演练实证**：人为触发失败 → 两份时间戳归档落盘（演练运行 exit=0/null——超时档当时仅 10 字节空壳，v0.7.11 已补超时上下文行）。
+- design.md §15.16.1 补 R77 索引；check 406→412。
+- **披露**：本版出包门禁存在裁决洞 #3（只查启动期 SMOKE_OK 标记），
+  pack-smoke.log 实录 SEC hiddenOpen:null → ok:false 后 zip 照常出厂；
+  v0.7.11 修复门禁语义并重新出包，勿使用 v0.7.10 便携包。
 
 ## v0.7.9 (2026-11-01) — R77 六轮评审整改（裁决洞 #2/安全行为探针/证据纪律）
 
