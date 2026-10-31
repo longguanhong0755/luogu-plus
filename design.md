@@ -944,7 +944,7 @@ chips/输入框各自写死 92%/84%/95%/70%，同屏多深度）；侧栏开合�
 - **验收**：check 353 项；探针 PERF/RAIL/VISUAL/GLASS/PALETTE/TOAST/
   LIST_CLICK/LANG/DRAFT/KEYS/HISTORY/IDE/OFFLINE/ADBLOCK 全 PASS；
   `SMOKE_SKIN_AUDIT` 18 页 × 亮/暗审计（其中 4 页 authGated 仅登录跳转页、
-  user 页右栏月赛轮播 1 处站点自带横向溢出——更正口径见 §15.16 R74 条目）；
+  user 页右栏月赛轮播 1 处站点自带横向溢出——更正口径见 §15.16/§15.16.1）；
   审计 tiers 同层指标
   （承载面 alpha min=max=0.11、spread 0）。
 - **坑**：executeJavaScript 注入脚本的模板字符串里 `\n`/`\s` 会被 JS
@@ -1007,7 +1007,8 @@ production-observability / evidence-collection）把桌面版打到生产级。
   42%–173%」系笔误，实际下限 1.2^-3.5≈53%（上限 173% 不变）。
 - **便携包内含探针 harness 的取舍**：smoke.js（141KB）随包分发——打包门禁的
   第 5 步冒烟需要它在产物里跑 --smoke；--smoke 门外无任何触发路径，属自验
-  能力而非攻击面（已文档化，v1.0 打包重构时再裁剪）。
+  自验面而非攻击面：--smoke 是产物内唯一触发路径，无网络外联（已文档化，v1.0
+  打包重构时再裁剪）。
 - **明确缓期**（二次评审需知）：NSIS/签名/自动更新（v1.0，ROADMAP 排期）、
   AT 下划线题号（pid 大小写规范化涉及 store/快照键位，v0.8）、check.js
   grep 型断言升级为行为断言（已有 ~25 条行为断言，升级按增量做）、
