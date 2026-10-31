@@ -1054,3 +1054,14 @@ production-observability / evidence-collection）把桌面版打到生产级。
   VISUAL firstRunCard 指标。
 - 渲染端可观测性：冒烟模式 console-message 中继（本轮抓到 for 缺大括号
   引发的模块解析炸裂——大括号错位会把模块级 export 推进函数体）。
+
+### 15.16.3 终局（R81/R82 后）
+
+- 十二轮评审终局：安全与工程 96(pass=true) / 功能与验证 95 / 产品就绪 95，
+  均值 95.33（>95 过线）。S4 验证与证据双满分 20。
+- 评审员一致确认的最后差距全部为非代码项：①正式 CA 证书采购+electron-builder/
+  NSIS/自动更新（v1.0，采购决策）；②登录态实测一次（需真实账号授权+账号文件，
+  AskUserQuestion 已问未答；S1 18→19 即 R2 96）；③parity 余 6 旅程与 check
+  grep 断言增量（v0.8 增量，非阻塞）。
+- 交付物：dist/luogu-desktop-0.7.14-portable.zip（自签可校验+零探针残留+
+  绿色门禁+包内版本三方对齐）；v0.7.10 为唯一召回版（勿使用）。
