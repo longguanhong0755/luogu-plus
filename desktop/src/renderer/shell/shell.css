@@ -16,9 +16,6 @@ body.resizing {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  transform: translate3d(var(--lg-pan-x, 0px), var(--lg-pan-y, 0px), 0) scale(var(--lg-zoom, 1));
-  transform-origin: 50% 50%;
-  will-change: transform;
   background: var(--bg);
 }
 .wall-layer {
@@ -28,7 +25,14 @@ body.resizing {
   background-size: cover;
   background-repeat: no-repeat;
   opacity: 0;
+  transform-origin: center;
 }
+body.wall-motion .wall-layer { animation: lg-wall-pan 26s ease-in-out infinite alternate; }
+body.wall-zoom .wall-layer { animation: lg-wall-zoom 19s ease-in-out infinite alternate; }
+body.wall-motion.wall-zoom .wall-layer { animation: lg-wall-pan 26s ease-in-out infinite alternate, lg-wall-zoom 19s ease-in-out infinite alternate; }
+body.wall-paused .wall-layer { animation-play-state: paused; }
+@keyframes lg-wall-pan { from { transform: translate3d(-0.45%, -0.3%, 0) scale(1.035); } to { transform: translate3d(0.45%, 0.3%, 0) scale(1.035); } }
+@keyframes lg-wall-zoom { from { scale: 1.015; } to { scale: 1.055; } }
 /* “切换时淡入”开关的真实开关：勾选才挂 600ms 过渡（body.wall-fade 由
    shared/theme.js 按配置置位）。此前过渡无条件存在，开关等于失效。 */
 body.wall-fade .wall-layer {
@@ -40,14 +44,6 @@ body.wall-fade .wall-layer {
   object-fit: cover;
   display: block;
 }
-#wallpaper::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--bg);
-  opacity: calc(0.82 - var(--mat, 55) * 0.003);
-}
-
 /* ---------- 窗口骨架 ---------- */
 #app {
   position: relative;
@@ -3281,3 +3277,27 @@ body.perf #ide-pane {
   font-size: 12px; cursor: pointer; transition: background 120ms var(--ease);
 }
 .firstrun-btn:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* 官方化性能档：大表面使用高不透明主题色，不做实时背景模糊。
+   壁纸仍保留在工作区背景，但不再让 GPU 为整个窗口持续重采样。 */
+#titlebar,
+#rail,
+#toolbar,
+.lib-top,
+.overlay-card,
+.toast {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+#titlebar,
+#rail,
+#toolbar {
+  background: color-mix(in srgb, var(--title) 96%, transparent);
+  contain: layout paint style;
+}
+#rail {
+  background: color-mix(in srgb, var(--rail) 96%, transparent);
+}
+#content {
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+}

@@ -1215,7 +1215,18 @@ class LuoguService {
         const node = findSection(wanted);
         return node ? text(node).slice(0, 320) : "";
       };
-      const discussionNode = findSection("最近讨论");
+      const linksFor = (wanted, pattern) => {
+        const node = findSection(wanted);
+        if (!node) return [];
+        const re = new RegExp(pattern);
+        return Array.from(node.querySelectorAll("a[href]"))
+          .map((a) => ({
+            title: text(a).slice(0, 80),
+            url: new URL(a.getAttribute("href"), location.origin).href,
+          }))
+          .filter((item, index, list) => item.title && re.test(item.url) && list.findIndex((x) => x.url === item.url) === index)
+          .slice(0, 6);
+      };      const discussionNode = findSection("最近讨论");
       const discussionLinks = discussionNode
         ? Array.from(discussionNode.querySelectorAll('a[href*="/discuss/"]'))
             .map((a) => ({ title: text(a).slice(0, 100), url: new URL(a.getAttribute("href"), location.origin).href }))
@@ -1228,7 +1239,7 @@ class LuoguService {
         welcome: wm ? String(wm[1] || "").trim().slice(0, 40) : "",
         fortune: punch ? text(punch).slice(0, 60) : "",
         sections: {
-          announcement: { text: sectionText("本站公告") },
+          announcement: { text: sectionText("本站公告"), links: linksFor("本站公告", "^https://www\\.luogu\\.com\\.cn/") },
           tasks: { text: sectionText("任务计划") || sectionText("智能推荐") },
           links: { text: sectionText("友情链接") },
           discussions: { items: discussionLinks },

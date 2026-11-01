@@ -364,15 +364,31 @@ function sectionData(home, name) {
   return (sections && sections[name]) || {};
 }
 
-function buildAnnouncement(home) {
+function buildAnnouncement(home, actions) {
   const section = sectionData(home, "announcement");
   const card = el("div", "announcement-card card");
   card.appendChild(cardHead("本站公告", "bell"));
-  const text = String(section.text || "欢迎使用洛谷桌面版。公告、通知与站内动态会继续在这里同步。").trim();
-  card.appendChild(el("div", "welcome-line", text.slice(0, 220)));
+  const items = Array.isArray(section.links) ? section.links.slice(0, 6) : [];
+  if (items.length) {
+    const list = el("div", "task-links announcement-links");
+    for (const item of items) {
+      const row = el("button", "task-row");
+      row.type = "button";
+      row.appendChild(el("span", "task-title", item.title));
+      row.appendChild(el("span", "task-action", "查看"));
+      row.addEventListener("click", () => actions.openDetail({ url: item.url, title: item.title }));
+      list.appendChild(row);
+    }
+    card.appendChild(list);
+    return card;
+  }
+  const text = String(section.text || "欢迎使用洛谷桌面版。公告、通知与站内动态会继续在这里同步。")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+  card.appendChild(el("div", "welcome-line", text));
   return card;
 }
-
 function buildTasks(actions) {
   const card = el("div", "tasks-card card");
   card.appendChild(cardHead("任务计划", "calendarCheck"));
@@ -568,7 +584,7 @@ export function renderHome(state, actions) {
   } else {
     grid.classList.add("single");
   }
-  if (sections.homeAnnouncement !== false) main.appendChild(buildAnnouncement(home));
+  if (sections.homeAnnouncement !== false) main.appendChild(buildAnnouncement(home, actions));
 
   const welcomeCard = sections.homeOfficial !== false ? buildWelcome(home, features) : null;
   if (welcomeCard) side.appendChild(welcomeCard);

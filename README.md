@@ -30,7 +30,7 @@
 - 窗口/托盘使用**洛谷官方图标**。
 
 像素级设计规范见 [design.md](design.md)：全部尺寸、颜色、透明度公式、对比度与动效曲线。
-逐页面/逐功能四维质量门禁见 [docs/QUALITY-MATRIX.md](docs/QUALITY-MATRIX.md)。
+逐页面/逐功能四维质量门禁见 [docs/QUALITY-MATRIX.md](docs/QUALITY-MATRIX.md)；内存与交付体积见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
 迭代路线、每轮范围与验收标准见 [ROADMAP.md](ROADMAP.md)（0.6.0 R54–R63、0.7.0 R64 皮肤收敛、0.7.1 R69 丝滑打磨、0.7.2 R70 同层透出·主页融合·侧栏抽屉、0.7.3 R71 生产加固（openExternal 协议白名单/崩溃落盘/自述文档）、0.7.4–0.7.15 R72–R83 评审加固与 parity 增量，以及 0.7.15 R84 登录态补证均已交付）。
 
 ## 目录结构
@@ -64,7 +64,7 @@ npm run gen:icons  # 自绘应用/托盘/角标图标（蓝底白洛字；已入
 ```bash
 cd desktop
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1
-# 产物：.lg-dev/dist/luogu-desktop-<版本>-portable.zip（自签为终态；正式证书/NSIS/自动更新经 owner 决策不做）
+# 产物：.lg-dev/dist/luogu-desktop-<版本>-portable.7z / -portable.exe（低于 100MB；自签为终态）
 #
 # 自签信任说明：包内 electron.exe 带 CN=Luogu Desktop (self-signed dev) 代码
 # 签名，证书公钥同目录导出（luogu-desktop-selfsigned.cer）。SmartScreen 对

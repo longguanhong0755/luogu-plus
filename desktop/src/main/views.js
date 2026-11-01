@@ -14,8 +14,9 @@ const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
 const { canonicalPid } = require("./sections");
 const { SOURCE: PASSKEY_GUARD } = require("./passkey-guard");
 
-const MAX_PROBLEMS = 8;
-const MAX_DETAILS = 10;
+const MAX_PROBLEMS = 3;
+const MAX_DETAILS = 5;
+const MAX_TOTAL_ENTRIES = 8;
 
 function acceleratorMatches(input, accelerator) {
   const parts = String(accelerator || "").split("+");
@@ -239,6 +240,7 @@ class ViewManager {
     const entry = this.ensureEntry({ key, kind: "web", title: def.label, url, section: kind });
     this.library = null;
     this.returnLib = null;
+    this.evictTotal(MAX_TOTAL_ENTRIES, entry.key);
     this.showEntry(entry);
   }
 
@@ -256,6 +258,7 @@ class ViewManager {
     });
     this.library = null;
     this.returnLib = null;
+    this.evictTotal(MAX_TOTAL_ENTRIES, entry.key);
     this.showEntry(entry);
   }
 
@@ -286,6 +289,7 @@ class ViewManager {
       entry.view.webContents.loadURL(onlineUrl).catch(() => {});
     }
     this.evictKind("problem", MAX_PROBLEMS, entry.key);
+    this.evictTotal(MAX_TOTAL_ENTRIES, entry.key);
     this.ideOn = false;
     this.showEntry(entry);
   }
@@ -322,6 +326,7 @@ class ViewManager {
       entry.view.webContents.loadURL(url);
     }
     this.evictKind("detail", MAX_DETAILS, entry.key);
+    this.evictTotal(MAX_TOTAL_ENTRIES, entry.key);
     this.library = null;
     this.showEntry(entry);
   }
@@ -353,6 +358,7 @@ class ViewManager {
     } catch {
       /* ignore */
     }
+    this.evictTotal(MAX_TOTAL_ENTRIES, entry.key);
     this.showEntry(entry);
   }
 
@@ -761,8 +767,8 @@ class ViewManager {
           "--lg-boot-bg=" + encodeURIComponent(t.colors.bg),
           "--lg-view-x=" + this.railWidth(),
           "--lg-view-y=" + (TITLE_H + TOOLBAR_H),
-          "--lg-motion=" + (!perf && this.ctx.cfg.get().appearance.wallpaperMotion ? "1" : "0"),
-          "--lg-zoom=" + (!perf && this.ctx.cfg.get().appearance.wallpaperZoom ? "1" : "0"),
+          "--lg-motion=0",
+          "--lg-zoom=0",
           "--lg-adblock=" + (this.ctx.cfg.get().general.adBlock ? "1" : "0"),
           "--lg-features=" + encodeURIComponent(JSON.stringify(features)),
           "--lg-boot-mode=" + (t.isDark ? "dark" : "light"),
@@ -1074,6 +1080,10 @@ class ViewManager {
     for (const other of this.entries.values()) {
       if (other !== entry) {
         other.view.setVisible(false);
+        if (!other.view.webContents.isDestroyed()) {
+          other.view.webContents.setAudioMuted(true);
+          other.view.webContents.setBackgroundThrottling(true);
+        }
         this.sendMotion(other, false);
       }
     }
@@ -1083,6 +1093,11 @@ class ViewManager {
     }
     entry.view.setVisible(true);
     entry.lastUsed = ++this.clock;
+    entry.lastUsedAt = Date.now();
+    if (!entry.view.webContents.isDestroyed()) {
+      entry.view.webContents.setAudioMuted(false);
+      entry.view.webContents.setBackgroundThrottling(true);
+    }
     this.layout();
     this.injectSkin(entry);
     this.sendMotion(entry, true);
@@ -1093,6 +1108,10 @@ class ViewManager {
   hideAll() {
     for (const entry of this.entries.values()) {
       entry.view.setVisible(false);
+      if (!entry.view.webContents.isDestroyed()) {
+        entry.view.webContents.setAudioMuted(true);
+        entry.view.webContents.setBackgroundThrottling(true);
+      }
       this.sendMotion(entry, false);
     }
   }
@@ -1156,6 +1175,15 @@ class ViewManager {
     }
   }
 
+  evictTotal(max, keepKey) {
+    if (this.entries.size <= max) return;
+    const list = [...this.entries.values()].sort((a, b) => a.lastUsed - b.lastUsed);
+    while (this.entries.size > max && list.length) {
+      const entry = list.shift();
+      if (!entry || entry.key === keepKey) continue;
+      this.destroyEntry(entry);
+    }
+  }
   destroyEntry(entry) {
     if (entry.captureTimer) {
       clearTimeout(entry.captureTimer);
@@ -1255,11 +1283,7 @@ class ViewManager {
   skinVars(entry) {
     const t = this.ctx.theme;
     const c = t.colors;
-    const wall = this.ctx.wallpaper || {};
     const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
-    const winBounds = this.win.getContentBounds();
-    const rect = entry.view.getBounds();
-    const backdrop = wall.backdrop || "none";
     const vars = [
       `--lg-bg:${c.bg}`,
       `--lg-rail:${c.rail}`,
@@ -1292,7 +1316,7 @@ class ViewManager {
       `--lg-code-alpha:${t.codeAlpha}%`,
       `--lg-overlay-alpha:${t.overlayAlpha}%`,
       `--lg-scrim:${t.pageScrim}%`,
-      `--lg-text-shadow:${t.pageScrim <= 40 ? "0 1px 2px rgba(0,0,0,.35)" : "none"}`,
+      `--lg-text-shadow:none`,
       `--lg-blur:${perf ? 0 : t.blurPx}px`,
       `--lg-font-mono:"Cascadia Mono","Cascadia Code",Consolas,monospace`,
       `--lg-radius-sm:6px`,
@@ -1309,14 +1333,10 @@ class ViewManager {
       `--lg-gutter-top:20px`,
       `--lg-focus-w:2px`,
       `--lg-scrollbar-w:10px`,
-      `--lg-wall-image:${backdrop}`,
-      `--lg-wall-left:-${rect.x}px`,
-      `--lg-wall-top:-${rect.y}px`,
-      `--lg-wall-w:${winBounds.width}px`,
-      `--lg-wall-h:${winBounds.height}px`,
+      `--lg-wall-image:none`,
       `--lg-color-scheme:${t.isDark ? "dark" : "light"}`,
-      `--lg-motion:${!perf && wall.motion ? 1 : 0}`,
-      `--lg-zoom-on:${!perf && wall.zoom ? 1 : 0}`,
+      `--lg-motion:0`,
+      `--lg-zoom-on:0`,
       `--lg-perf:${perf ? 1 : 0}`,
     ].join(";");
     return `:root{${vars}}`;

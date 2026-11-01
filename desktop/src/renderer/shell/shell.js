@@ -231,53 +231,10 @@ async function boot() {
     syncWallpaper();
   }
 
-  /* 壁纸运动：与页面 preload 的公式一致；性能模式、窗口失焦、最小化、
-     滚动与切换页面时停止或冻结 rAF，静止后再恢复。 */
-  let wallRaf = 0;
-  let wallLast = 0;
+  /* 壁纸运动交给合成器动画，不在每帧写 CSS 变量，避免持续样式重算。 */
   let windowFocused = true;
   let scrolling = false;
   let scrollTimer = null;
-
-  function stopWallpaper(reset = true) {
-    if (wallRaf) cancelAnimationFrame(wallRaf);
-    wallRaf = 0;
-    if (!reset) return;
-    const style = document.documentElement.style;
-    style.setProperty("--lg-pan-x", "0px");
-    style.setProperty("--lg-pan-y", "0px");
-    style.setProperty("--lg-zoom", "1");
-  }
-
-  function tickWallpaper(now) {
-    wallRaf = 0;
-    const state = stateBox.data;
-    if (!state) return;
-    const wall = (state.theme && state.theme.wallpaper) || {};
-    const perf = !!(state.general && state.general.performanceMode);
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (perf || reduced || !windowFocused || document.hidden || scrolling || (!wall.motion && !wall.zoom)) {
-      stopWallpaper(perf || reduced || (!wall.motion && !wall.zoom));
-      return;
-    }
-    // 环境动效 30fps 足够，减少整棵文档的样式重算
-    if (now && wallLast && now - wallLast < 33) {
-      wallRaf = requestAnimationFrame(tickWallpaper);
-      return;
-    }
-    wallLast = now || 0;
-    const style = document.documentElement.style;
-    const t = Date.now();
-    if (wall.motion) {
-      style.setProperty("--lg-pan-x", (Math.sin(t / 11000) * 6).toFixed(2) + "px");
-      style.setProperty("--lg-pan-y", (Math.cos(t / 15000) * 4).toFixed(2) + "px");
-    } else {
-      style.setProperty("--lg-pan-x", "0px");
-      style.setProperty("--lg-pan-y", "0px");
-    }
-    style.setProperty("--lg-zoom", wall.zoom ? (1.055 + Math.sin(t / 19000) * 0.012).toFixed(4) : "1");
-    wallRaf = requestAnimationFrame(tickWallpaper);
-  }
 
   function syncWallpaper() {
     const state = stateBox.data;
@@ -285,13 +242,14 @@ async function boot() {
     const wall = (state.theme && state.theme.wallpaper) || {};
     const perf = !!(state.general && state.general.performanceMode);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (perf || reduced || !windowFocused || document.hidden || scrolling || (!wall.motion && !wall.zoom)) {
-      stopWallpaper(perf || reduced || (!wall.motion && !wall.zoom));
-      return;
-    }
-    if (!wallRaf) {
-      wallLast = 0;
-      wallRaf = requestAnimationFrame(tickWallpaper);
+    const paused = perf || reduced || !windowFocused || document.hidden || scrolling;
+    document.body.classList.toggle("wall-motion", !!wall.motion);
+    document.body.classList.toggle("wall-zoom", !!wall.zoom);
+    document.body.classList.toggle("wall-paused", paused);
+    const video = document.querySelector("#wallpaper video");
+    if (video) {
+      if (paused) video.pause();
+      else video.play().catch(() => {});
     }
   }
 
@@ -319,7 +277,6 @@ async function boot() {
   window
     .matchMedia("(prefers-reduced-motion: reduce)")
     .addEventListener("change", () => syncWallpaper());
-
   window.lg.onState(apply);
   window.lg.onRailLayout((payload) => {
     const width = Number(payload && payload.width);
@@ -333,6 +290,7 @@ async function boot() {
     else if (name === "focusRail") chrome.focusRail();
   });
   window.lg.onToast(toast);
+
 
   window.addEventListener("keydown", (event) => {
     const ctrl = event.ctrlKey || event.metaKey;

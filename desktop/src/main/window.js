@@ -10,27 +10,36 @@ const RAIL_W = 208;
 const RAIL_COLLAPSED_W = 64;
 const TOOLBAR_H = 44;
 
-function sanitizeBounds(saved) {
-  const width = Math.max(1000, Math.round(saved.width || 1280));
-  const height = Math.max(640, Math.round(saved.height || 820));
-  let x = Number.isFinite(saved.x) ? saved.x : null;
-  let y = Number.isFinite(saved.y) ? saved.y : null;
-  if (x !== null && y !== null) {
-    const display = screen.getDisplayNearestPoint({ x, y });
-    const area = display.workArea;
-    const visible =
-      x + width > area.x + 80 &&
-      x < area.x + area.width - 80 &&
-      y + 80 > area.y &&
-      y < area.y + area.height - 80;
-    if (!visible) {
-      x = null;
-      y = null;
-    }
-  }
-  return { width, height, x, y };
+function clamp(value, lo, hi) {
+  return Math.min(hi, Math.max(lo, value));
 }
 
+function fitBoundsToArea(saved, area) {
+  const width = Math.min(Math.max(1000, Math.round(saved.width || 1280)), area.width);
+  const height = Math.min(Math.max(640, Math.round(saved.height || 820)), area.height);
+  const hasPosition = Number.isFinite(saved.x) && Number.isFinite(saved.y);
+  const x = hasPosition
+    ? clamp(Math.round(saved.x), area.x, Math.max(area.x, area.x + area.width - width))
+    : area.x + Math.max(0, Math.floor((area.width - width) / 2));
+  const y = hasPosition
+    ? clamp(Math.round(saved.y), area.y, Math.max(area.y, area.y + area.height - height))
+    : area.y + Math.max(0, Math.floor((area.height - height) / 2));
+  return { width, height, x, y, maximized: !!saved.maximized };
+}
+
+function sanitizeBounds(saved) {
+  const primary = screen.getPrimaryDisplay();
+  const hasPosition = Number.isFinite(saved.x) && Number.isFinite(saved.y);
+  const display = hasPosition
+    ? screen.getDisplayMatching({
+        x: Math.round(saved.x),
+        y: Math.round(saved.y),
+        width: Math.max(1, Math.round(saved.width || 1280)),
+        height: Math.max(1, Math.round(saved.height || 820)),
+      })
+    : primary;
+  return fitBoundsToArea(saved, display.workArea);
+}
 function overlayFor(colors) {
   return { color: colors.title, symbolColor: colors.text2, height: TITLE_H };
 }
@@ -185,4 +194,5 @@ module.exports = {
   createSettingsWindow,
   applyTheme,
   sanitizeBounds,
+  fitBoundsToArea,
 };

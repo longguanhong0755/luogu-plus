@@ -430,36 +430,47 @@ if (/accentText/.test(themeSource) && /borderStrong/.test(themeSource) && /color
 const materialSource = read("src/main/material.js");
 const material = require(path.join(ROOT, "src", "main", "material.js"));
 const baseLevel = material.levels({ material: 55, glass: 45 }, false);
-if (baseLevel.panelAlpha === 72 && baseLevel.pageScrim === 75 && baseLevel.cardAlpha === 80 && baseLevel.raiseAlpha === 11 && baseLevel.codeAlpha === 66) {
-  ok("透明基线保持默认观感（panel 72 / scrim 75 / card 80 / raise 11 / code 66）");
+if (baseLevel.panelAlpha === 86 && baseLevel.pageScrim === 90 && baseLevel.cardAlpha === 88 && baseLevel.raiseAlpha === 11 && baseLevel.codeAlpha === 68) {
+  ok("官方化可读基线（panel 86 / scrim 90 / card 88 / raise 11 / code 68）");
 } else {
-  fail("默认透明度偏离旧版", JSON.stringify(baseLevel));
+  fail("默认可读基线偏离设计", JSON.stringify(baseLevel));
 }
 const fullLevel = material.levels({ material: 55, glass: 100 }, false);
-if (fullLevel.panelAlpha === 0 && fullLevel.pageScrim === 0 && fullLevel.cardAlpha === 0 && fullLevel.raiseAlpha === 0) {
-  ok("壁纸透出 100% 时外壳/纱层/内容面/浮起档全部为 0");
+if (fullLevel.panelAlpha >= 86 && fullLevel.pageScrim >= 90 && fullLevel.cardAlpha >= 88 && fullLevel.raiseAlpha >= 8) {
+  ok("壁纸透出 100% 仍保留官方化可读下限");
 } else {
-  fail("glass=100 没有真正全透", JSON.stringify(fullLevel));
+  fail("glass=100 失去可读下限", JSON.stringify(fullLevel));
 }
-if (fullLevel.codeAlpha >= 55) ok("代码块例外层保留 55% 保读下限");
-else fail("代码块跟着浮起档归零，密集正文不可读");
-if (fullLevel.overlayAlpha >= 60) ok("浮层保留 60% 可读下限");
-else fail("浮层跟着内容面一起归零，菜单不可读");
+if (fullLevel.codeAlpha >= 68) ok("代码块例外层保留 68% 保读下限");
+else fail("代码块保读下限不足");
+if (fullLevel.overlayAlpha >= 94) ok("浮层保留 94% 可读下限");
+else fail("浮层可读下限不足");
 const perfFull = material.levels({ material: 55, glass: 100 }, true);
-if (perfFull.panelAlpha === 0 && perfFull.blurPx === 0) ok("性能模式不会把 glass=100 顶回不透明");
-else fail("性能模式破坏了 100% 透明", JSON.stringify(perfFull));
+if (perfFull.panelAlpha >= 86 && perfFull.blurPx === 0) ok("性能模式关闭模糊且保留可读下限");
+else fail("性能模式破坏可读下限", JSON.stringify(perfFull));
 if (/materialLevels/.test(themeSource) && /require\("\.\/material"\)/.test(themeSource)) ok("theme.js 委托 material.js 计算透明度");
 else fail("theme.js 没有接入 material.js");
 if (/glass: 45,/.test(configSource) && /a\.glass = Math\.round/.test(configSource)) ok("「壁纸透出」默认 45 且落盘前收敛");
 else fail("config.js 缺少 glass 默认值/收敛");
 if (/id="glass"/.test(settingsHtml) && /setAppearance\(\{ glass:/.test(read("src/renderer/settings/settings.js"))) ok("设置页提供「壁纸透出」滑杆并即时生效");
 else fail("设置页缺少壁纸透出滑杆");
-if (/--lg-text-shadow/.test(read("src/main/views.js")) && /pageScrim <= 40/.test(read("src/main/views.js"))) {
-  ok("低纱层时正文自动加投影保护可读性");
+const skinVarsFn = viewsSource.slice(viewsSource.indexOf("  skinVars(entry) {"), viewsSource.indexOf("  injectSkin(entry) {"));
+if (/--lg-wall-image:none/.test(skinVarsFn) && /--lg-motion:0/.test(skinVarsFn) && !/winBounds\.width/.test(skinVarsFn)) {
+  ok("页面视图不复制壁纸，避免每页重复解码高分辨率背景");
 } else {
-  fail("低纱层正文缺少投影保护");
+  fail("页面视图仍复制壁纸或逐页计算整窗尺寸");
 }
-
+let fitBoundsToArea = null;
+try {
+  fitBoundsToArea = require(path.join(ROOT, "src", "main", "window.js")).fitBoundsToArea;
+} catch {}
+const offscreen = fitBoundsToArea ? fitBoundsToArea({ x: 9999, y: 9999, width: 1280, height: 820, maximized: true }, { x: 0, y: 0, width: 1920, height: 1040 }) : null;
+const centered = fitBoundsToArea ? fitBoundsToArea({ width: 1000, height: 640 }, { x: 0, y: 0, width: 1920, height: 1040 }) : null;
+if (offscreen && offscreen.x >= 0 && offscreen.y >= 0 && offscreen.x + offscreen.width <= 1920 && offscreen.y + offscreen.height <= 1040 && offscreen.maximized === true && centered.x > 0 && centered.y > 0) {
+  ok("窗口位置恢复会完整夹回工作区，并保留最大化状态");
+} else {
+  fail("窗口位置恢复仍可能跑出屏幕");
+}
 /* 广告拦截：对齐 Luogu Plus 默认开启，配置/设置页/IPC/页面兜底四处齐 */
 const preloadPageSource = read("src/preload/page.js");
 if (/adBlock: true/.test(configSource) && /g\.adBlock = !!g\.adBlock/.test(configSource)) ok("广告拦截默认开启且落盘收敛");
@@ -1416,6 +1427,38 @@ try {
 if (hotCalls.join(",") === "win,settings,win,settings,skin") ok("热加载命令执行链正确");
 else fail("热加载命令执行链错误");
 
+/* ---------- R90 稳定性、可读性与资源占用 ---------- */
+if (/MAX_PROBLEMS = 3/.test(viewsSource) && /MAX_DETAILS = 5/.test(viewsSource) && /MAX_TOTAL_ENTRIES = 8/.test(viewsSource) && /evictTotal\(MAX_TOTAL_ENTRIES/.test(viewsSource) && /setAudioMuted\(true\)/.test(viewsSource)) {
+  ok("R90 隐藏页面有总数上限、后台节流与静音回收");
+} else {
+  fail("R90 页面 View 内存回收契约缺失");
+}
+if (/wall-motion/.test(shellCss) && /wall-paused/.test(shellCss) && /lg-wall-pan/.test(shellCss) && !/requestAnimationFrame\(tickWallpaper\)/.test(shellJsSource)) {
+  ok("R90 壁纸改为合成器动画，不再逐帧写 DOM 样式");
+} else {
+  fail("R90 壁纸仍在 JS rAF 中逐帧重算");
+}
+if (/function displayImage/.test(read("src/main/wallpaper.js")) && /nativeImage/.test(read("src/main/wallpaper.js")) && /display-cache/.test(read("src/main/wallpaper.js"))) {
+  ok("R90 高分辨率静态壁纸按窗口尺寸缓存缩放");
+} else {
+  fail("R90 壁纸缺少显示尺寸缓存");
+}
+if (/BackForwardCache/.test(read("src/main/index.js")) && !/--lg-wall-image:\$\{backdrop\}/.test(viewsSource)) {
+  ok("R90 页面不复制壁纸且关闭整页 BFCache");
+} else {
+  fail("R90 页面壁纸/BFCache 仍有重复内存");
+}
+const pack90 = read("scripts/pack-portable.ps1");
+if (/-t7z -mx=9/.test(pack90) && /超过 100MB/.test(pack90) && /7z\.sfx/.test(pack90)) {
+  ok("R90 便携包使用 7z/SFX 并带 100MB 硬门禁");
+} else {
+  fail("R90 便携包没有 100MB 体积门禁");
+}
+if (!/transition:\s*grid-template-columns/.test(shellCss) && /#titlebar,[\s\S]*?backdrop-filter: none !important/.test(shellCss)) {
+  ok("R90 大表面取消实时背景模糊，保留单一侧栏宽度源");
+} else {
+  fail("R90 大表面模糊或宽度源仍有回退");
+}
 /* ---------- R87 Luogu Plus 功能对齐 ---------- */
 const config87 = read("src/main/config.js");
 const featureKeys = [

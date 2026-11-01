@@ -1783,9 +1783,9 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       }
     }
 
-    const detectWc = pageEntry && pageEntry.view && !pageEntry.view.webContents.isDestroyed()
-      ? pageEntry.view.webContents
-      : ctx.views.currentWebContents();
+    ctx.views.openProblem("P1001");
+    await wait(600);
+    const detectWc = ctx.views.currentWebContents();
     if (detectWc && !detectWc.isDestroyed()) {
       await detectWc.executeJavaScript(`(() => {
         document.querySelectorAll("#lg-smoke-detect").forEach((n) => n.remove());
@@ -1799,13 +1799,17 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         selection.removeAllRanges();
         selection.addRange(range);
         document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-        return true;
+        return { selected: selection.toString(), body: !!document.body };
       })()`);
-      await wait(700);
-      const detectDom = await detectWc.executeJavaScript(`(() => ({
-        exists: !!document.getElementById("lg-problem-detect"),
-        buttons: [...document.querySelectorAll("#lg-problem-detect button")].map((b) => b.textContent)
-      }))()`);
+      let detectDom = { exists: false, buttons: [] };
+      for (let attempt = 0; attempt < 15; attempt++) {
+        await wait(200);
+        detectDom = await detectWc.executeJavaScript(`(() => ({
+          exists: !!document.getElementById("lg-problem-detect"),
+          buttons: [...document.querySelectorAll("#lg-problem-detect button")].map((b) => b.textContent)
+        }))()`);
+        if (detectDom.exists) break;
+      }
       addCase(
         "selected-problem-detect",
         { detectDom },

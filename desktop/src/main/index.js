@@ -19,6 +19,9 @@ const smoke = () => require("./smoke");
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
+// 桌面端以显式页面 View 管理历史；关闭 Chromium 整页 BFCache，
+// 避免隐藏页面长期保留完整渲染树和 JS 堆。
+app.commandLine.appendSwitch("disable-features", "BackForwardCache");
 app.setAppUserModelId("com.luogulab.desktop");
 app.userAgentFallback = UA;
 app.quitting = false;

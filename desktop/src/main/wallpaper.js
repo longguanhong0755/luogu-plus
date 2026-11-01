@@ -50,6 +50,37 @@ function toUrl(file) {
   return "";
 }
 
+function displayImage(url, maxWidth, maxHeight) {
+  if (!url || !/^file:/i.test(url)) return url;
+  let file = "";
+  try {
+    file = fileURLToPath(url);
+  } catch {
+    return url;
+  }
+  const ext = extOf(file);
+  if (!new Set([".jpg", ".jpeg", ".png", ".webp"]).has(ext)) return url;
+  try {
+    const stat = fs.statSync(file);
+    const image = nativeImage.createFromPath(file);
+    const size = image.getSize();
+    if (!size.width || !size.height) return url;
+    const scale = Math.min(1, maxWidth / size.width, maxHeight / size.height);
+    if (scale >= 0.98) return url;
+    const width = Math.max(1, Math.round(size.width * scale));
+    const height = Math.max(1, Math.round(size.height * scale));
+    const key = crypto.createHash("sha1").update(`${file}|${stat.size}|${stat.mtimeMs}|${width}x${height}`).digest("hex").slice(0, 16);
+    const dir = path.join(app.getPath("userData"), "wallpapers", "display-cache");
+    const cache = path.join(dir, key + ".jpg");
+    if (!fs.existsSync(cache)) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(cache, image.resize({ width, height, quality: "good" }).toJPEG(84));
+    }
+    return toUrl(cache);
+  } catch {
+    return url;
+  }
+}
 function cssUrl(url) {
   return url ? `url("${String(url).replace(/"/g, '\\"')}")` : "";
 }
@@ -250,7 +281,7 @@ async function resolve(cfg, theme) {
   }
 
   if (a.wallpaper === "daily") {
-    const url = await dailyImage();
+    const url = displayImage(await dailyImage(), maxWidth, maxHeight);
     return Object.assign(base, {
       url,
       backdrop: url ? cssUrl(url) : builtinBackdrop(theme),

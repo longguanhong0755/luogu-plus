@@ -22,30 +22,16 @@ body {
   font-synthesis: none;
 }
 
-/* 壁纸 + 主题色纱层。层尺寸=整个窗口，负偏移=视图在窗口中的位置。 */
+/* 页面视图使用单一主题底色。壁纸只在应用外壳解码一次，避免每个页面对
+   同一张高分辨率图片重复解码、缩放和合成。 */
 body::before {
   content: "";
   position: fixed;
+  inset: 0;
   z-index: -1;
-  left: var(--lg-wall-left, 0);
-  top: var(--lg-wall-top, 0);
-  width: var(--lg-wall-w, 100vw);
-  height: var(--lg-wall-h, 100vh);
-  background-color: var(--lg-bg);
-  background-image:
-    linear-gradient(
-      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 94%), transparent),
-      color-mix(in srgb, var(--lg-bg) var(--lg-scrim, 94%), transparent)
-    ),
-    var(--lg-wall-image, none);
-  background-size: 100% 100%, cover;
-  background-position: center, center;
-  background-repeat: no-repeat;
-  transform: translate3d(var(--lg-pan-x, 0px), var(--lg-pan-y, 0px), 0) scale(var(--lg-zoom, 1));
-  transform-origin: calc(var(--lg-wall-w, 100vw) / 2) calc(var(--lg-wall-h, 100vh) / 2);
+  background: var(--lg-bg);
   pointer-events: none;
 }
-
 html,
 body,
 #app,

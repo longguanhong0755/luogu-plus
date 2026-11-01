@@ -11,10 +11,11 @@ if (-not $ver) { throw "无法从 package.json 解析版本号" }
 # 唯一 stage 名：防上一次运行的残留句柄锁住同路径（Copy-Item IOException）
 $stage = Join-Path $env:TEMP ("lg-pack-" + $ver + "-" + (Get-Date -Format "HHmmss"))
 $dist = Join-Path $repo ".lg-dev\dist"
-$zip = Join-Path $dist ("luogu-desktop-" + $ver + "-portable.zip")
+$archive = Join-Path $dist ("luogu-desktop-" + $ver + "-portable.7z")
+$portableExe = Join-Path $dist ("luogu-desktop-" + $ver + "-portable.exe")
 
 # 0) 清理同前缀旧产物（防坏包误分发，如版本号解析失败的残包）
-if (Test-Path $dist) { Remove-Item (Join-Path $dist "luogu-desktop-*portable.zip") -Force -ErrorAction SilentlyContinue }
+if (Test-Path $dist) { Remove-Item (Join-Path $dist "luogu-desktop-*portable.zip") -Force -ErrorAction SilentlyContinue; Remove-Item (Join-Path $dist "luogu-desktop-*portable.7z") -Force -ErrorAction SilentlyContinue; Remove-Item (Join-Path $dist "luogu-desktop-*portable.exe") -Force -ErrorAction SilentlyContinue }
 
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Path $stage | Out-Null
@@ -33,6 +34,14 @@ New-Item -ItemType Directory -Path $appDir | Out-Null
 Copy-Item (Join-Path $desktop "package.json") $appDir
 Copy-Item (Join-Path $desktop "src") (Join-Path $appDir "src") -Recurse
 
+# 2.5) 体积收敛：只保留中文/英文 Chromium 语言包，移除默认应用占位资源。
+$localeDir = Join-Path $stage "locales"
+if (Test-Path $localeDir) {
+  $keepLocales = @("zh-CN.pak", "zh-TW.pak", "en-US.pak")
+  Get-ChildItem $localeDir -File | Where-Object { $_.Name -notin $keepLocales } | Remove-Item -Force
+}
+Remove-Item (Join-Path $stage "resources\default_app.asar") -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $stage "debug.log") -Force -ErrorAction SilentlyContinue
 # 3) 布局自检：主程序与入口齐全
 $exe = Join-Path $stage "electron.exe"
 if (-not (Test-Path $exe)) { throw "electron.exe 缺失" }
@@ -94,9 +103,41 @@ try {
   Write-Output ("SIGN-WARN " + $_.Exception.Message)
 }
 
-# 6) 压缩（剥离+签名后的 stage）
-if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
-$mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
-
-Write-Output ("PACK-OK " + $zip + " (" + $mb + " MB)")
+# 6) 压缩：7z LZMA2 单文件交付，避免 Electron 原生 zip 超过 100MB。
+$seven = @("C:\Program Files\7-Zip\7z.exe", "C:\Program Files (x86)\7-Zip\7z.exe") |
+  Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $seven) { throw "需要 7-Zip 以生成低于 100MB 的便携包" }
+Push-Location $stage
+try {
+  & $seven a -t7z -mx=9 -mmt=on -y $archive * | Out-Null
+  if ($LASTEXITCODE -gt 1) { throw "7-Zip 压缩失败（exit=$LASTEXITCODE）" }
+} finally {
+  Pop-Location
+}
+$sfxModule = Join-Path (Split-Path -Parent $seven) "7z.sfx"
+if (Test-Path $sfxModule) {
+  $out = [IO.File]::Create($portableExe)
+  try {
+    $sfxBytes = [IO.File]::ReadAllBytes($sfxModule)
+    $out.Write($sfxBytes, 0, $sfxBytes.Length)
+    $archiveBytes = [IO.File]::ReadAllBytes($archive)
+    $out.Write($archiveBytes, 0, $archiveBytes.Length)
+  } finally {
+    $out.Dispose()
+  }
+  try {
+    $signedSfx = Set-AuthenticodeSignature -FilePath $portableExe -Certificate $cert -ErrorAction SilentlyContinue
+    if ($signedSfx.SignerCertificate) {
+      Write-Output ("SIGN-OK(portable-sfx) " + $cert.Thumbprint)
+    } else {
+      Write-Output ("SIGN-WARN(portable-sfx) " + $signedSfx.Status)
+    }
+  } catch {
+    Write-Output ("SIGN-WARN(portable-sfx) " + $_.Exception.Message)
+  }
+}
+$sizeMb = [math]::Round((Get-Item $archive).Length / 1MB, 1)
+$sfxMb = if (Test-Path $portableExe) { [math]::Round((Get-Item $portableExe).Length / 1MB, 1) } else { 0 }
+if ($sizeMb -ge 100 -or ($sfxMb -and $sfxMb -ge 100)) {
+  throw "便携包超过 100MB：7z=$sizeMb MB sfx=$sfxMb MB"
+}Write-Output ("PACK-OK " + $archive + " (" + $sizeMb + " MB); SFX=" + $portableExe + " (" + $sfxMb + " MB)")
