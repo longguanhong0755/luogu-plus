@@ -1063,5 +1063,29 @@ production-observability / evidence-collection）把桌面版打到生产级。
   NSIS/自动更新（v1.0，采购决策）；②登录态实测一次（需真实账号授权+账号文件，
   AskUserQuestion 已问未答；S1 18→19 即 R2 96）；③parity 余 6 旅程与 check
   grep 断言增量（v0.8 增量，非阻塞）。
-- 交付物：dist/luogu-desktop-0.7.14-portable.zip（自签可校验+零探针残留+
+- 交付物：.lg-dev/dist/luogu-desktop-0.7.15-portable.zip（自签可校验+零探针残留+
   绿色门禁+包内版本三方对齐）；v0.7.10 为唯一召回版（勿使用）。
+
+### 15.16.4 owner 决策落档 + 登录态实测（R84，v0.7.15 交付后补证）
+
+2026-11-01 owner 拍板两项挂账：
+- **发布形态**：不做正式 CA 证书采购 / electron-builder / NSIS / 自动更新；
+  自签过渡（包内证书 + SIGN-OK 记录 + README「受信任的发布者」步骤）为终态。
+- **登录态**：授权用桌面账号文件（luogu账号.txt）第一个账号做一次隔离实测。
+
+实测（隔离临时 profile、不可见窗口、凭据掩码；日志 `.lg-dev/r84`、`r86`、`r87`）：
+- 登录成功 uid=2286010；主页 refresh 正常（streak/contest 有值）。
+- 记录页：`LGTEST_RECORD_PAGE` → title「评测记录 - 洛谷」、URL 带 user=2286010、
+  登录态导航（个人中心/退出）可见，共 0 条（该账号无提交记录）；
+  截图 `.lg-dev/login-record.png`。
+- 通知页：`LGTEST_NOTIFY_PAGE` → title「通知中心 - 洛谷」、四类通知页签在场，
+  「没有更多通知了」空态；截图 `.lg-dev/login-notify.png`。
+- 提交页：`LGTEST_SUBMIT_PAGE` → `/problem/P1001#submit`、编辑器可见、
+  已填代码 90 字符、提交按钮在场；截图 `.lg-dev/login-submit.png`。
+- 提交请求仍 403 InvalidCaptchaException（易盾交互式滑块，按设计不绕过），
+  产品自动转页面内提交辅助并填好代码——与 v0.4 起的既定策略一致。
+- 说明：checkin 探针有抖动（r84 ok:true；r85–r87 两次重载后仍未找到打卡卡，
+  转手动入口提示），属首页打卡组件渲染时序，非登录链路问题，已如实留档。
+
+`check.js` 新增 R84 断言：探针静态三证 + 最新登录日志四证（登录/记录/通知/提交）
++ 三张截图非空 + 无 SMOKE_FAIL 且启动器 PASS；CI 无 `.lg-dev` 时如实跳过。

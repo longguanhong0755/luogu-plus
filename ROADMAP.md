@@ -63,7 +63,7 @@
 | [zen-browser/desktop](https://github.com/zen-browser/desktop) | 折叠侧栏、固定/必要页面、分屏思路 | v0.6 固定页面；v0.7 题目/题解分屏对比 |
 | [cpeditor/cpeditor](https://github.com/cpeditor/cpeditor) | 样例测试、编译运行、提交与判题、Hot Exit、LSP 错误定位 | v0.8 本地 IDE 与样例测试 |
 | [yltx/vscode-luogu](https://github.com/yltx/vscode-luogu) | 洛谷客户端功能清单：题目、登录、提交、评测、打卡、离线题面、最近评测、犇犇、题解、比赛、随机跳题 | 作为“网页版能力对照表”的底稿 |
-| [electron/electron](https://github.com/electron/electron) + [electron-userland/electron-builder](https://github.com/electron-userland/electron-builder) | 自动更新、签名、安装包、崩溃恢复 | v1.0 发布工程 |
+| [electron/electron](https://github.com/electron/electron) + [electron-userland/electron-builder](https://github.com/electron-userland/electron-builder) | 自动更新、签名、安装包、崩溃恢复 | 崩溃恢复保留；发布工程（签名/安装包/自动更新）经 owner 决策不做 |
 | [microsoft/playwright](https://github.com/microsoft/playwright) | Electron E2E、截图断言、网络/离线模拟 | 每个迭代的回归门禁 |
 
 借鉴原则：**只借机制，不抄界面**。视觉仍按现有 `design.md` 的令牌与层级走。
@@ -208,9 +208,9 @@
 - [ ] 本地 IDE：样例测试、编译运行（检测本机 g++/python）、语言模板、错误行定位、查找替换、Ctrl+S、Ctrl+/、多行缩进、`wrap=off` 行号对齐。
 - [ ] 题目/题解分屏对比；分栏比例按可用宽度动态限制，窄窗不重叠。
 - [ ] 桌面集成：动态托盘菜单、未读角标、`luogu://problem/P1001` 深链、`second-instance` 解析参数、便携模式。
-- [x] 审计欠账清偿（2026-11-01 R82 首批）：user 页轮播溢出已按 DOM 侦察收敛（overCount:0，白名单转正为安全网）；登录态审计接入待两项 owner 决策（正式证书采购、真实账号授权）——十二轮评审终局 96/95/95（均值 95.33 过线，R1 pass=true），详见 design.md §15.16.2 与 CHANGELOG。
+- [x] 审计欠账清偿（2026-11-01 R82 首批）：user 页轮播溢出已按 DOM 侦察收敛（overCount:0，白名单转正为安全网）；两项 owner 决策已拍板（自签为终态、不做正式证书采购；授权真实账号登录态实测），R84 实测登录 uid=2286010 并取得记录/通知/提交三页页面级证据（.lg-dev/r87，截图 login-record/login-notify/login-submit.png；提交受易盾滑块约束按设计转页面内辅助）——十二轮评审终局 96/95/95（均值 95.33 过线，R1 pass=true），详见 design.md §15.16.4 与 CHANGELOG。
 - [ ] 下载管理、代码另存为、题目/文章打印或导出 PDF。
-- [ ] 自动更新：electron-builder + electron-updater，设置页显示版本/通道/检查更新。
+- [x] ~~自动更新~~：owner 决策 2026-11-01 发布工程不做（自签为终态），不接入 electron-builder/electron-updater。
 - [ ] 首次启动引导：登录、侧栏、快捷键、离线说明。
 
 ### v0.9.0「快」——性能预算与降载（2 周）
@@ -223,9 +223,9 @@
 - [ ] 后台页面休眠：隐藏 N 分钟后冻结/降频；音频视频自动暂停；固定页除外。
 - [ ] 开发模式性能面板：启动耗时、首屏、切换、内存、长任务。
 
-### v1.0.0「稳」——发布工程（2 周）
+### v1.0.0「稳」——稳定性收尾（发布工程已由 owner 决策移出范围）
 
-- [ ] 安装包、签名、自动更新稳定通道、回滚策略。
+- [x] ~~安装包、签名、自动更新稳定通道、回滚策略~~（2026-11-01 owner 决策：发布工程不做，自签便携包为终态）。
 - [ ] 崩溃恢复：未提交草稿、打开页面、离线队列、评测中的 rid 全部可恢复。
 - [ ] 配置迁移与备份；版本升级不丢设置。
 - [ ] 完整 Playwright E2E + 真实账号发布清单 + 离线/慢网/最小窗口矩阵。

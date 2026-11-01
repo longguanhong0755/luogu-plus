@@ -871,6 +871,65 @@ async function loginFlow(ctx, wait, outDir) {
 
   const punch = await ctx.luogu.checkin();
   console.log("LGTEST checkin=" + JSON.stringify({ ok: punch.ok, already: punch.already, message: punch.message || "" }));
+
+  // 记录页页面级证据（登录态真实渲染）：打开记录页 → DOM 指标 + 截图
+  try {
+    ctx.views.openDetail("https://www.luogu.com.cn/record/list?user=" + state.uid, "记录");
+    const recordWc = ctx.views.currentWebContents();
+    if (recordWc) {
+      for (let i = 0; i < 40 && recordWc.isLoading(); i++) await wait(300);
+      await wait(1200);
+      const recordDom = await recordWc.executeJavaScript(`(() => {
+        const txt = String(document.body.innerText || "").slice(0, 400);
+        return {
+          href: location.href.slice(0, 120),
+          title: document.title,
+          recordLinks: document.querySelectorAll('a[href*="/record/"]').length,
+          textLen: txt.length,
+          head: txt.slice(0, 160)
+        };
+      })()`);
+      console.log("LGTEST_RECORD_PAGE " + JSON.stringify(recordDom));
+      const recordImage = await captureWC(recordWc, wait);
+      const recordPng = recordImage ? recordImage.toPNG() : Buffer.alloc(0);
+      if (recordPng.length > 5000) {
+        const recordFile = path.join(outDir, "login-record.png");
+        fs.writeFileSync(recordFile, recordPng);
+        console.log("SMOKE_SHOT login-record " + recordFile);
+      } else {
+        console.log("LGTEST_SHOT_SMALL login-record " + recordPng.length);
+      }
+    }
+  } catch (err) {
+    console.log("LGTEST_RECORD_PAGE_FAIL " + String((err && err.message) || err).slice(0, 120));
+  }
+
+  // 通知页页面级证据（登录态）：打开通知页 → DOM 指标 + 截图
+  try {
+    ctx.views.openDetail("https://www.luogu.com.cn/user/notification", "通知");
+    const notifyWc = ctx.views.currentWebContents();
+    if (notifyWc) {
+      for (let i = 0; i < 40 && notifyWc.isLoading(); i++) await wait(300);
+      await wait(1000);
+      const notifyDom = await notifyWc.executeJavaScript(`(() => {
+        const txt = String(document.body.innerText || "").slice(0, 400);
+        return { href: location.href.slice(0, 120), title: document.title, textLen: txt.length, head: txt.slice(0, 160) };
+      })()`);
+      console.log("LGTEST_NOTIFY_PAGE " + JSON.stringify(notifyDom));
+      const notifyImage = await captureWC(notifyWc, wait);
+      const notifyPng = notifyImage ? notifyImage.toPNG() : Buffer.alloc(0);
+      if (notifyPng.length > 5000) {
+        const notifyFile = path.join(outDir, "login-notify.png");
+        fs.writeFileSync(notifyFile, notifyPng);
+        console.log("SMOKE_SHOT login-notify " + notifyFile);
+      } else {
+        console.log("LGTEST_SHOT_SMALL login-notify " + notifyPng.length);
+      }
+    }
+  } catch (err) {
+    console.log("LGTEST_NOTIFY_PAGE_FAIL " + String((err && err.message) || err).slice(0, 120));
+  }
+
   if (!punch.ok) {
     const pageDbg = await ctx.luogu.exec(`(() => ({
       title: document.title,
@@ -934,6 +993,36 @@ async function loginFlow(ctx, wait, outDir) {
       console.log("LGTEST submit-captcha=interactive(" + result.interactive + ") 转页面内提交辅助");
       const assisted = await ctx.views.openSubmitAssist("P1001", code);
       console.log("LGTEST submit-assist=" + assisted + "（编辑器已填代码）");
+      // 提交页页面级证据：编辑器可见 + 代码已填 + 截图
+      try {
+        const submitWc = ctx.views.currentWebContents();
+        if (submitWc) {
+          const submitDom = await submitWc.executeJavaScript(`(() => {
+            const eds = [...document.querySelectorAll("[contenteditable=true]")].filter((e) => e.offsetParent);
+            const ed = eds[0];
+            const buttons = [...document.querySelectorAll("button, a")].map((b) => (b.textContent || "").trim()).filter((t) => /提交/.test(t));
+            return {
+              href: location.href.slice(0, 120),
+              editors: eds.length,
+              codeLen: ed ? String(ed.innerText || "").length : 0,
+              submitButtons: buttons.slice(0, 5),
+              hasCaptcha: /验证码|滑动|滑块/.test(String(document.body.innerText || "").slice(0, 4000))
+            };
+          })()`);
+          console.log("LGTEST_SUBMIT_PAGE " + JSON.stringify(submitDom));
+          const submitImage = await captureWC(submitWc, wait);
+          const submitPng = submitImage ? submitImage.toPNG() : Buffer.alloc(0);
+          if (submitPng.length > 5000) {
+            const submitFile = path.join(outDir, "login-submit.png");
+            fs.writeFileSync(submitFile, submitPng);
+            console.log("SMOKE_SHOT login-submit " + submitFile);
+          } else {
+            console.log("LGTEST_SHOT_SMALL login-submit " + submitPng.length);
+          }
+        }
+      } catch (err) {
+        console.log("LGTEST_SUBMIT_PAGE_FAIL " + String((err && err.message) || err).slice(0, 120));
+      }
     } else if (result.captchaRequired) {
       // 走到这里说明产品内自动识别没过（本机没装 ddddocr，或连错 3 次），转人工答题兜底
       const data = await ctx.luogu.exec(

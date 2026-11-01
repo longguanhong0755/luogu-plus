@@ -1134,6 +1134,39 @@ if (batchLogs83.length) {
 } else {
   ok("R83 行为化证据断言：本地无探针日志，跳过（CI/全新 clone 场景）");
 }
+
+/* ---------- R84 登录态实测证据（owner 授权；CI 无日志时如实跳过） ---------- */
+const smoke84 = read("src/main/smoke.js");
+if (/LGTEST_RECORD_PAGE/.test(smoke84) && /LGTEST_NOTIFY_PAGE/.test(smoke84) && /LGTEST_SUBMIT_PAGE/.test(smoke84) && /captureWC\(recordWc, wait\)/.test(smoke84)) ok("R84 登录态页面级证据探针（记录/通知/提交 三页 DOM+截图）");
+else fail("R84 缺登录态页面级探针");
+const loginLogs84 = [];
+try {
+  for (const dir of fs.readdirSync(lgdev83).filter((d) => /^r\d+$/.test(d)).sort()) {
+    const loginLog84 = path.join(lgdev83, dir, "login-run.log");
+    if (fs.existsSync(loginLog84)) loginLogs84.push(loginLog84);
+  }
+} catch {
+  /* .lg-dev 不存在（全新 clone）→ 跳过 */
+}
+if (loginLogs84.length) {
+  const lastLogin84 = loginLogs84[loginLogs84.length - 1];
+  const loginText84 = fs.readFileSync(lastLogin84, "utf8");
+  const loginDir84 = path.basename(path.dirname(lastLogin84));
+  const loggedIn84 = /LGTEST logged-in uid=\d+/.test(loginText84);
+  const record84 = /LGTEST_RECORD_PAGE .*"title":"评测记录 - 洛谷"/.test(loginText84) && /"recordLinks":\d+/.test(loginText84);
+  const notify84 = /LGTEST_NOTIFY_PAGE .*"title":"通知中心 - 洛谷"/.test(loginText84);
+  const submit84 = /LGTEST_SUBMIT_PAGE .*"href":"https:\/\/www\.luogu\.com\.cn\/problem\/P1001#submit"/.test(loginText84) && /"editors":1/.test(loginText84) && /"codeLen":[1-9][0-9]*/.test(loginText84);
+  if (loggedIn84 && record84 && notify84 && submit84) ok("R84 登录态实测证据（" + loginDir84 + "）：登录/记录/通知/提交 四证齐全");
+  else fail("R84 登录态证据不足（login=" + loggedIn84 + " record=" + record84 + " notify=" + notify84 + " submit=" + submit84 + "）");
+  const shots84 = ["login-record.png", "login-notify.png", "login-submit.png"].map((f) => path.join(lgdev83, f));
+  const shotsOk84 = shots84.every((p) => fs.existsSync(p) && fs.statSync(p).size > 5000);
+  if (shotsOk84) ok("R84 登录态三页截图在场且非空（>5KB）");
+  else fail("R84 登录态截图缺失/过小");
+  if (loginText84.indexOf("SMOKE_FAIL") === -1 && loginText84.indexOf("smoke: PASS") !== -1) ok("R84 登录实测无 SMOKE_FAIL 且启动器判 PASS");
+  else fail("R84 登录实测裁决不干净");
+} else {
+  ok("R84 登录态实测断言：本地无登录日志，跳过（CI/全新 clone 场景）");
+}
 if (/勿使用 v0\.7\.10 便携包/.test(fs.readFileSync(path.join(ROOT, "..", "CHANGELOG.md"), "utf8"))) ok("R79 v0.7.10 带红出厂已披露");
 else fail("R79 缺 v0.7.10 披露");
 

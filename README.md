@@ -60,12 +60,12 @@ npm run gen:icons  # 自绘应用/托盘/角标图标（蓝底白洛字；已入
 ```bash
 cd desktop
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1
-# 产物：.lg-dev/dist/luogu-desktop-<版本>-portable.zip（开发自签名；NSIS/正式证书/自动更新按 ROADMAP 在 v1.0 接入）
+# 产物：.lg-dev/dist/luogu-desktop-<版本>-portable.zip（自签为终态；正式证书/NSIS/自动更新经 owner 决策不做）
 #
 # 自签信任说明：包内 electron.exe 带 CN=Luogu Desktop (self-signed dev) 代码
 # 签名，证书公钥同目录导出（luogu-desktop-selfsigned.cer）。SmartScreen 对
 # 自签名仍会提示「仍要运行」；如需校验，安装 .cer 到「受信任的发布者」后
-# 签名状态变为「有效」。（正式代码签名证书采购后替换，见 ROADMAP v1.0）
+# 签名状态变为「有效」。（自签为 owner 拍板的终态发布形态；不再采购正式证书）
 ```
 
 调试用冒烟开关（都走隔离 userData、窗口 opacity=0）：
