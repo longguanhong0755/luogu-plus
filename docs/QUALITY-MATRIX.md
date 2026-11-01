@@ -8,8 +8,8 @@
 
 | 代号 | 证据 |
 |---|---|
-| C | `npm run check`：449 项通过，0 失败 |
-| S | 默认 `npm run smoke` 连续 3 次通过；侧栏行为、设置、截图清单哈希全部参与裁决 |
+| C | `npm run check`：463 项通过，0 失败 |
+| S | 深色默认与浅色 1000×640 `npm run smoke` 均通过；32 项侧栏/问候/DOM 行为、设置、截图清单哈希全部参与裁决 |
 | V4 | `.lg-dev/dark-1280`、`light-1280`、`dark-1000`、`light-1000` 四组窗口/浮层/设置截图 |
 | L2 | `.lg-dev/dark-lib`、`light-lib`：六个原生列表、筛选、难度、标签与真实网络请求 |
 | EN | `.lg-dev/dark-enhance`：真实用户介绍页面截图、Markdown/图片渲染、练习难度色 |

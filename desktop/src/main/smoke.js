@@ -1218,6 +1218,33 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       }
     );
 
+    const homeDaily = await shell(`(() => {
+      const daily = document.querySelector(".home-daily");
+      const name = (window.lg.getState().user || {}).name || "";
+      const text = daily ? daily.innerText : "";
+      const fortune = document.querySelector(".home-fortune");
+      return {
+        greetingCount: document.querySelectorAll(".home-greeting").length,
+        dateCount: document.querySelectorAll(".home-date").length,
+        countdownCount: document.querySelectorAll(".home-countdown").length,
+        fortuneCount: document.querySelectorAll(".home-fortune").length,
+        nameCount: name ? text.split(name).length - 1 : 0,
+        legacyCard: !!document.querySelector(".welcome-card"),
+        fortuneContaminated: !!fortune && /(距|还剩|星期)/.test(fortune.innerText || "")
+      };
+    })()`);
+    addCase(
+      "home-daily-hierarchy",
+      { homeDaily },
+      {
+        singleGreeting: homeDaily.greetingCount === 1,
+        singleDate: homeDaily.dateCount === 1,
+        noLegacyCard: homeDaily.legacyCard === false,
+        countdownsInHeader: homeDaily.countdownCount > 0,
+        structuredFortune: homeDaily.fortuneContaminated === false,
+      }
+    );
+
     ctx.views.openProblem("P1001");
     await waitFor(() => !!ctx.views.currentEntry(), 2200);
     await wait(350);
@@ -1227,13 +1254,21 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       const pin = document.getElementById("rail-pin");
       const btn = document.querySelector("#rail-top .rail-btn");
       const br = btn ? btn.getBoundingClientRect() : null;
+      const glyphs = [...document.querySelectorAll("#rail .rail-glyph")].map((el) => {
+        const r = el.getBoundingClientRect();
+        const svg = el.querySelector("svg");
+        const sr = svg ? svg.getBoundingClientRect() : null;
+        return { w: Math.round(r.width), h: Math.round(r.height), sw: sr ? Math.round(sr.width) : -1, sh: sr ? Math.round(sr.height) : -1 };
+      });
       return {
         railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
         pinPressed: pin ? pin.getAttribute("aria-pressed") : null,
         pinVisible: !!pin && getComputedStyle(pin).display !== "none",
         labelsVisible: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
         btnW: br ? Math.round(br.width) : -1,
-        btnH: br ? Math.round(br.height) : -1
+        btnH: br ? Math.round(br.height) : -1,
+        glyphs,
+        directSvg: document.querySelectorAll("#rail .rail-btn > svg").length
       };
     })()`);
     const collapsedState = await shell(`window.lg.getState()`);
@@ -1251,6 +1286,8 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         navHitWidth: approx(collapsedDom.btnW, 40),
         navHitHeight: collapsedDom.btnH >= 30,
         pageViewX: !!collapsedBounds && approx(collapsedBounds.x, collapsedDom.railW),
+        iconSlots: collapsedDom.glyphs.length >= 10 && collapsedDom.glyphs.every((g) => g.w === 24 && g.h === 20 && g.sw === 20 && g.sh === 20),
+        noDirectSvg: collapsedDom.directSvg === 0,
       }
     );
 
@@ -2590,9 +2627,12 @@ async function runSmoke(ctx) {
             statsCard: !!q(".stats-card"),
             sidebarLabel: q("#rail-top .rail-label") ? q("#rail-top .rail-label").textContent : "",
             homeCards: document.querySelectorAll(".home-wrap .card").length,
-            homeHello: !!q(".home-hello"),
+            homeGreeting: !!q(".home-greeting"),
+            homeDaily: !!q(".home-daily"),
             firstRunCard: !!q(".firstrun-card"),
             welcomeCard: !!q(".welcome-card"),
+            fortuneChips: document.querySelectorAll(".home-fortune").length,
+            countdownChips: document.querySelectorAll(".home-countdown").length,
             calRows: document.querySelectorAll(".cal-row").length,
             cdRows: document.querySelectorAll(".cd-row").length
           };
@@ -4122,8 +4162,7 @@ function seedDemo(ctx) {
         { name: "CSP-J/S 2026 第二轮", days: 3 },
         { name: "NOIP 2026", days: 27 },
       ],
-      welcome: "示例用户",
-      fortune: "宜刷题，忌摆烂。",
+      fortune: { result: "大吉", good: "刷题", bad: "摆烂" },
     },
     recent: [
       { pid: "P1001", title: "A+B Problem", status: 12, statusText: "AC", score: 100, time: Date.now() - 2 * 60 * 1000 },

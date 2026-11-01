@@ -1187,8 +1187,8 @@ class LuoguService {
     store.set("user", this.user, 800);
   }
 
-  /* 0.7.2 官方主页融合：抓旧版首页 #app-old 的比赛倒计时与欢迎/运势文本。
-     游客可见倒计时；欢迎/运势登录态才有，字段缺席就不出现在返回值里。 */
+  /* 0.7.2 官方主页融合：只抓结构化倒计时与可识别的运势片段。
+     昵称统一使用登录资料；无法识别的打卡容器文本必须丢弃，禁止整块文本回填。 */
   async fetchOfficialHome() {
     const data = await this.exec(`(() => {
       const root = document.querySelector("#app-old .lg-index-content");
@@ -1201,9 +1201,14 @@ class LuoguService {
         const m = s.match(/^距(.+)还剩\\s*(\\d+)\\s*天$/);
         if (m) countdowns.push({ name: m[1].trim(), days: Number(m[2]) });
       }
-      const welcomeEl = Array.from(root.querySelectorAll(".lg-article")).find((n) => /欢迎回来/.test(n.textContent || ""));
-      const wm = welcomeEl ? (welcomeEl.textContent || "").match(/欢迎回来[，,]\\s*([^\\n]+)/) : null;
       const punch = root.querySelector(".lg-punch");
+      const punchText = punch ? text(punch) : "";
+      const fortuneResult = (punchText.match(/(大吉|中吉|小吉|末吉|大凶|凶|吉)/) || [])[1] || "";
+      const fortuneGood = (punchText.match(/宜\s*[:：]?\s*([^忌·,，。;；]{1,18})/) || [])[1] || "";
+      const fortuneBad = (punchText.match(/忌\s*[:：]?\s*([^宜·,，。;；]{1,18})/) || [])[1] || "";
+      const fortune = fortuneResult || fortuneGood || fortuneBad
+        ? { result: fortuneResult.trim(), good: fortuneGood.trim(), bad: fortuneBad.trim() }
+        : null;
       const findSection = (wanted) => {
         const candidates = Array.from(root.querySelectorAll(".lg-article, .am-panel, .card, .section"));
         return candidates.find((node) => {
@@ -1236,8 +1241,7 @@ class LuoguService {
       return {
         ok: true,
         countdowns: countdowns.slice(0, 3),
-        welcome: wm ? String(wm[1] || "").trim().slice(0, 40) : "",
-        fortune: punch ? text(punch).slice(0, 60) : "",
+        fortune,
         sections: {
           announcement: { text: sectionText("本站公告"), links: linksFor("本站公告", "^https://www\\.luogu\\.com\\.cn/") },
           tasks: { text: sectionText("任务计划") || sectionText("智能推荐") },

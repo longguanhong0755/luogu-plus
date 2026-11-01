@@ -112,7 +112,7 @@ class ViewManager {
 
   /* ---------- 侧栏宽度（单一状态源） ----------
      外壳 DOM 与所有页面 WebContentsView 都消费同一个 railCurrentW。
-     悬停不展开；只有显式固定/收起会触发一次 160ms 宽度补间。 */
+     悬停不展开；只有显式固定/收起会触发一次 140ms 宽度补间。 */
 
   railWidth() {
     return this.railCurrentW;
@@ -122,10 +122,10 @@ class ViewManager {
     return this.railPinned ? RAIL_W : RAIL_COLLAPSED_W;
   }
 
-  layoutRailEntry(entry, railW) {
+  layoutRailEntry(entry, railW, boundsOverride) {
     if (!entry || !this.win || this.win.isDestroyed()) return;
     if (entry.view.webContents.isDestroyed()) return;
-    const bounds = this.win.getContentBounds();
+    const bounds = boundsOverride || this.win.getContentBounds();
     const y = TITLE_H + TOOLBAR_H;
     const height = Math.max(240, bounds.height - TITLE_H - TOOLBAR_H);
     let width = Math.max(320, bounds.width - railW);
@@ -140,32 +140,33 @@ class ViewManager {
     this.scheduleSkin(entry);
   }
 
-  applyRailWidth(width) {
+  applyRailWidth(width, boundsOverride) {
     this.railCurrentW = Math.max(RAIL_COLLAPSED_W, Math.min(RAIL_W, Math.round(Number(width) || 0)));
     if (this.win && !this.win.isDestroyed()) {
       this.win.webContents.send("rail:layout", { width: this.railCurrentW });
     }
     if (this.overlayOpen || this.library) return;
     const entry = this.currentEntry();
-    if (entry) this.layoutRailEntry(entry, this.railCurrentW);
+    if (entry) this.layoutRailEntry(entry, this.railCurrentW, boundsOverride);
   }
 
   animateRailLayout(fromW, toW) {
     if (!this.win || this.win.isDestroyed()) return;
     clearTimeout(this.railAnimTimer);
     const token = (this.railAnimToken = (this.railAnimToken || 0) + 1);
-    const start = Date.now();
-    const dur = 160;
+    const start = performance.now();
+    const dur = 140;
+    const bounds = this.win.getContentBounds();
     const easeOut = (t) => 1 - Math.pow(1 - t, 3);
     const step = () => {
       if (token !== this.railAnimToken || !this.win || this.win.isDestroyed()) return;
-      const t = Math.min(1, (Date.now() - start) / dur);
-      this.applyRailWidth(fromW + (toW - fromW) * easeOut(t));
+      const t = Math.min(1, (performance.now() - start) / dur);
+      this.applyRailWidth(fromW + (toW - fromW) * easeOut(t), bounds);
       if (t < 1) {
         this.railAnimTimer = setTimeout(step, 16);
       } else {
         this.railAnimTimer = null;
-        this.applyRailWidth(toW);
+        this.applyRailWidth(toW, bounds);
         this.emit();
       }
     };

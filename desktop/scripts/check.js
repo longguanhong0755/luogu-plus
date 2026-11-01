@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
+const zlib = require("node:zlib");
 
 const ROOT = path.join(__dirname, "..");
 let failures = 0;
@@ -30,6 +31,113 @@ function walk(dir, out) {
 
 function read(file) {
   return fs.readFileSync(path.join(ROOT, file), "utf8");
+}
+
+/* 只解析本项目生成的 8-bit RGBA 非隔行 PNG，用于阻止白边/白底回潮。 */
+function decodeRgbaPng(buffer) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (!buffer.subarray(0, 8).equals(signature)) throw new Error("PNG signature");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let colorType = -1;
+  let bitDepth = 0;
+  let interlace = 0;
+  const chunks = [];
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString("ascii", offset + 4, offset + 8);
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      interlace = data[12];
+    } else if (type === "IDAT") {
+      chunks.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+  }
+  if (!width || !height || bitDepth !== 8 || colorType !== 6 || interlace !== 0) {
+    throw new Error(`unsupported PNG ${width}x${height}, depth=${bitDepth}, color=${colorType}, interlace=${interlace}`);
+  }
+  const raw = zlib.inflateSync(Buffer.concat(chunks));
+  const bpp = 4;
+  const stride = width * bpp;
+  const pixels = Buffer.alloc(stride * height);
+  let source = 0;
+  for (let y = 0; y < height; y++) {
+    const filter = raw[source++];
+    const row = y * stride;
+    for (let x = 0; x < stride; x++) {
+      const value = raw[source++];
+      const left = x >= bpp ? pixels[row + x - bpp] : 0;
+      const up = y > 0 ? pixels[row - stride + x] : 0;
+      const upLeft = y > 0 && x >= bpp ? pixels[row - stride + x - bpp] : 0;
+      let predictor = 0;
+      if (filter === 1) predictor = left;
+      else if (filter === 2) predictor = up;
+      else if (filter === 3) predictor = Math.floor((left + up) / 2);
+      else if (filter === 4) {
+        const p = left + up - upLeft;
+        const pa = Math.abs(p - left);
+        const pb = Math.abs(p - up);
+        const pc = Math.abs(p - upLeft);
+        predictor = pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+      } else if (filter !== 0) {
+        throw new Error("unknown PNG filter " + filter);
+      }
+      pixels[row + x] = (value + predictor) & 255;
+    }
+  }
+  return { width, height, pixels };
+}
+
+function iconAssetProblems() {
+  const problems = [];
+  const sizes = [16, 20, 24, 32, 40, 48, 64, 80, 128, 256];
+  for (const size of sizes) {
+    const rel = `src/assets/icon-${size}.png`;
+    try {
+      const png = decodeRgbaPng(fs.readFileSync(path.join(ROOT, rel)));
+      if (png.width !== size || png.height !== size) problems.push(`${size}:尺寸`);
+      let visible = 0;
+      let wrongColor = 0;
+      let edgeVisible = 0;
+      for (let y = 0; y < png.height; y++) {
+        for (let x = 0; x < png.width; x++) {
+          const i = (y * png.width + x) * 4;
+          const a = png.pixels[i + 3];
+          if (!a) continue;
+          visible++;
+          if (png.pixels[i] !== 91 || png.pixels[i + 1] !== 155 || png.pixels[i + 2] !== 213) wrongColor++;
+          if (x === 0 || y === 0 || x === png.width - 1 || y === png.height - 1) edgeVisible++;
+        }
+      }
+      if (!visible) problems.push(`${size}:空白`);
+      if (wrongColor) problems.push(`${size}:${wrongColor}个非官方色素`);
+      if (edgeVisible) problems.push(`${size}:${edgeVisible}个触边素`);
+    } catch (err) {
+      problems.push(`${size}:${err.message}`);
+    }
+  }
+  for (const copy of ["icon.png", "tray.png"]) {
+    const a = fs.readFileSync(path.join(ROOT, "src/assets", copy));
+    const expected = fs.readFileSync(path.join(ROOT, copy === "icon.png" ? "src/assets/icon-256.png" : "src/assets/icon-32.png"));
+    if (!a.equals(expected)) problems.push(copy + ":副本不一致");
+  }
+  const ico = fs.readFileSync(path.join(ROOT, "src/assets/icon.ico"));
+  const count = ico.readUInt16LE(4);
+  const icoSizes = [];
+  for (let i = 0; i < count; i++) {
+    const base = 6 + i * 16;
+    icoSizes.push(ico[base] || 256);
+  }
+  if (count !== sizes.length || icoSizes.join(",") !== sizes.join(",")) problems.push("ICO:" + icoSizes.join(","));
+  return problems;
 }
 
 /* 1. 所有 JS 通过 node --check */
@@ -69,13 +177,20 @@ const required = [
   "src/renderer/settings/settings.js",
   "src/renderer/settings/settings.css",
   "src/renderer/skin/luogu-skin.css",
+  "src/assets/luogu-mark.svg",
   "src/assets/icon.ico",
   "src/assets/tray.png",
+  "scripts/patch-exe.js",
+  "scripts/build-icon-assets.py",
 ];
 for (const file of required) {
   if (fs.existsSync(path.join(ROOT, file))) ok("存在 " + file);
   else fail("缺少 " + file);
 }
+
+const iconProblems = iconAssetProblems();
+if (!iconProblems.length) ok("图标资产：10 尺寸透明蓝色标志，无白边/白底/触边");
+else fail("图标资产契约失败", iconProblems.join("；"));
 
 /* 3. package.json 可解析且入口存在 */
 try {
@@ -564,7 +679,7 @@ if (
 if (
   /setRailPinned\(pinned\)/.test(viewsSource) &&
   /railWidth\(\)/.test(viewsSource) &&
-  /applyRailWidth\(width\)/.test(viewsSource) &&
+  /applyRailWidth\(width(?:,\s*boundsOverride)?\)/.test(viewsSource) &&
   /preload:\s*path\.join\(PRELOAD,\s*"page\.js"\)/.test(viewsSource)
 ) {
   ok("主进程侧栏固定与唯一页面 preload 契约");
@@ -591,8 +706,8 @@ if (
 }
 
 if (
-  /function applyActive\(id\)/.test(chromeSource) &&
-  /button\.dataset\.kind !== "action"/.test(chromeSource) &&
+  /function applyActive\(id(?:,\s*force\s*=\s*false)?\)/.test(chromeSource) &&
+  /\.dataset\.kind !== "action"/.test(chromeSource) &&
   /setAttribute\("aria-current", "page"\)/.test(chromeSource) &&
   /\.rail-btn\.active/.test(shellCss) &&
   /applyActive\(next\.page\.railId\)/.test(chromeSource) &&
@@ -611,7 +726,7 @@ if (
   /let btn = railButtons\.get\(item\.id\)/.test(chromeSource) &&
   /railTop\.scrollTop = scrollTop/.test(chromeSource) &&
   /focus\(\{ preventScroll: true \}\)/.test(chromeSource) &&
-  /applyActive\(activeId\)/.test(chromeSource)
+  /applyActive\(activeId(?:,\s*true)?\)/.test(chromeSource)
 ) {
   ok("侧栏按 id keyed 复用，刷新保持滚动位置与焦点");
 } else {
@@ -1075,14 +1190,26 @@ for (const [name, re, src] of [
   ["官方主页抓取管线", /async fetchOfficialHome\(\)/, luogu70],
   ["比赛日历数据", /buildContests\(contests\)/, luogu70],
   ["refresh 容错挂载", /next\.official = await this\.fetchOfficialHome\(\)/, luogu70],
-  ["欢迎卡渲染", /function buildWelcome\(home/, homeJs70],
+  ["官方问候/运势紧凑头", /function buildDailyHeader\(home/, homeJs70],
   ["比赛日历行", /"cal-row"/, homeJs70],
-  ["官方倒计时行", /"cd-row"/, homeJs70],
-  ["主页问候", /home-hello/, homeJs70],
+  ["顶部官方倒计时", /"home-countdown"/, homeJs70],
+  ["主页问候", /"home-greeting"/, homeJs70],
+  ["旧问候卡已移除", /^(?!.*function buildWelcome\(home)/s, homeJs70],
   ["homeKey 含官方块", /home\.official\s*\?/, shellJs70],
 ]) {
   if (re.test(src)) ok("R70 " + name);
   else fail("R70 缺少 " + name);
+}
+if (
+  /fortuneResult/.test(luogu70) &&
+  /fortuneGood/.test(luogu70) &&
+  /fortuneBad/.test(luogu70) &&
+  !/fortune:\s*punch\s*\?\s*text\(punch\)/.test(luogu70) &&
+  /normalizeFortune/.test(homeJs70)
+) {
+  ok("官方问候只接受结构化昵称/运势，不再回填整块打卡文本");
+} else {
+  fail("官方问候仍可能把日期/倒计时误当运势");
 }
 if (!/rail-mark/.test(shellHtml70)) ok("R70 侧栏 luogu 标志已删");
 else fail("R70 rail-mark 仍有残留");
@@ -1454,6 +1581,11 @@ if (/-t7z -mx=9/.test(pack90) && /超过 100MB/.test(pack90) && /7z\.sfx/.test(p
 } else {
   fail("R90 便携包没有 100MB 体积门禁");
 }
+if (/patch-exe\.js/.test(pack90) && /Luogu Desktop\.exe/.test(pack90) && /patchedSfx/.test(pack90)) {
+  ok("便携包写入洛谷图标/产品名/版本，并同步修补 SFX 外层");
+} else {
+  fail("便携包仍保留 Electron/7-Zip 默认图标与元数据");
+}
 if (!/transition:\s*grid-template-columns/.test(shellCss) && /#titlebar,[\s\S]*?backdrop-filter: none !important/.test(shellCss)) {
   ok("R90 大表面取消实时背景模糊，保留单一侧栏宽度源");
 } else {
@@ -1541,7 +1673,10 @@ if (
   /button\.title = \(item && item\.label\)/.test(read("src/renderer/shell/chrome.js")) &&
   /rail-glyph-custom/.test(read("src/renderer/shell/chrome.js")) &&
   !/railTooltip|rail-tooltip|lg-rail-tooltip/.test(ipcSource + page87 + read("src/renderer/shell/chrome.js")) &&
-  /panelExpand/.test(read("src/renderer/shell/chrome.js"))
+  /panelExpand/.test(read("src/renderer/shell/chrome.js")) &&
+  /pin\.replaceChildren\(railGlyph/.test(read("src/renderer/shell/chrome.js")) &&
+  /users\.replaceChildren\(railGlyph/.test(read("src/renderer/shell/chrome.js")) &&
+  /\.rail-glyph svg,[\s\S]*?\.rail-btn > svg/.test(read("src/renderer/shell/shell.css"))
 ) {
   ok("R88 标题栏题号入口、原生侧栏提示、区分化自定义图标与面板型展开按钮在位");
 } else {

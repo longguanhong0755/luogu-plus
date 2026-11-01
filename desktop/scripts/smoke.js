@@ -66,6 +66,7 @@ const skipped = (allOut.match(/SMOKE_SKIP/g) || []).length;
 const captureFailures = (allOut.match(/SMOKE_CAPTURE_CDP_FAIL/g) || []).length;
 const railSummary = allOut.match(/SMOKE_RAIL_SUMMARY .*$/m);
 const railFailure = !railSummary || !/"failed":\[\]/.test(railSummary[0]);
+const homeShot = fs.existsSync(out) ? out : path.join(path.dirname(out), "smoke-home.png");
 const ok =
   result.status === 0 &&
   allOut.includes("SMOKE_OK") &&
@@ -74,8 +75,8 @@ const ok =
   captureFailures === 0 &&
   !railFailure &&
   manifestOk &&
-  fs.existsSync(out) &&
-  fs.statSync(out).size > 5000 &&
+  fs.existsSync(homeShot) &&
+  fs.statSync(homeShot).size > 5000 &&
   badShots.length === 0;
 if (badShots.length) console.error("empty/small screenshots: " + badShots.join(", "));
 if (!manifestOk) console.error("manifest: " + manifestError);

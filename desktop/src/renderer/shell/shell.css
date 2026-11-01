@@ -202,10 +202,13 @@ body:not(.rail-pinned) #rail-top::-webkit-scrollbar {
   background-clip: padding-box;
 }
 #rail-head {
-  height: 36px;
-  flex: 0 0 36px;
+  height: 32px;
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
+}
+#rail-head .rail-btn {
+  margin-block: 0;
 }
 #rail-bottom {
   padding-top: 8px;
@@ -231,16 +234,18 @@ body:not(.rail-pinned) #rail-top::-webkit-scrollbar {
     color var(--dur-1) var(--ease);
 }
 .rail-glyph {
-  width: 20px;
+  width: 24px;
   height: 20px;
   flex: none;
   display: inline-grid;
   place-items: center;
 }
 
-.rail-glyph svg {
+.rail-glyph svg,
+.rail-btn > svg {
   width: 20px;
   height: 20px;
+  flex: none;
 }
 
 .rail-glyph-custom {
@@ -1987,32 +1992,133 @@ body:not(.rail-pinned) #rail-bottom > .rail-group:first-child {
   gap: var(--sp-5);
 }
 
-.home-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
+.home-daily {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sp-4);
+  padding: 0 2px var(--sp-4);
+  border-bottom: 1px solid var(--divider);
 }
-.home-date {
+.home-daily-copy {
+  min-width: 0;
+}
+.home-greeting {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-xl);
   line-height: var(--lh-xl);
   font-weight: 600;
   color: var(--text);
 }
-.home-hello {
-  font-size: var(--fs-xl);
-  line-height: var(--lh-xl);
-  font-weight: 600;
+.home-greeting strong {
   color: var(--accent-text);
+  font-weight: 700;
+}
+.home-meta {
+  min-height: 24px;
+  margin-top: var(--sp-2);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.home-date {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.home-date-month,
+.home-date-week {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.home-date-day {
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  color: var(--text);
+  font-weight: 700;
+}
+.home-fortune {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+}
+.home-fortune-result {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.home-fortune-good {
+  color: var(--green);
+}
+.home-fortune-bad {
+  color: var(--text-2);
 }
 .home-quote {
-  max-width: 560px;
+  max-width: 640px;
+  margin-top: 6px;
   font-size: var(--fs-xs);
   line-height: var(--lh-xs);
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.home-daily-side {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.home-countdowns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.home-countdown {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  white-space: nowrap;
+}
+.home-countdown-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-countdown-days {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.home-countdown-unit {
+  color: var(--text-3);
+}
+.home-meta .home-refresh {
+  margin-left: auto;
 }
 .home-refresh {
   width: var(--h-sm);
@@ -2407,16 +2513,6 @@ body:not(.rail-pinned) #rail-bottom > .rail-group:first-child {
   white-space: nowrap;
 }
 
-/* 官方问候/运势卡（登录态，缺席隐藏） */
-.welcome-card .welcome-line {
-  padding: 0 var(--sp-5) var(--sp-3);
-  font-size: var(--fs-sm);
-  color: var(--text);
-}
-.welcome-card .welcome-line.sub {
-  color: var(--text-2);
-}
-
 .announcement-card .welcome-line {
   padding-top: var(--sp-3);
   color: var(--text-2);
@@ -2489,7 +2585,7 @@ body:not(.rail-pinned) #rail-bottom > .rail-group:first-child {
   background: var(--surface);
 }
 
-#home.plain-home .home-hello {
+#home.plain-home .home-greeting {
   font-size: var(--fs-xl);
 }
 
@@ -3214,12 +3310,25 @@ body.perf #ide-pane {
   :root {
     --page-pad: 20px;
   }
+  .home-daily {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home-daily-side {
+    justify-content: space-between;
+  }
+  .home-countdowns {
+    justify-content: flex-start;
+  }
   .home-grid {
     grid-template-columns: minmax(0, 1fr);
   }
   .home-side {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .home-side > * {
+    align-self: start;
   }
   .home-side .queue-card {
     grid-column: 1 / -1;

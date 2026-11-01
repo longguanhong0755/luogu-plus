@@ -62,6 +62,7 @@ export const ICONS = {
   ),
   logout: S('<path d="M10 4H5v16h5"/><path d="M14 12h7"/><path d="m18 8 4 4-4 4"/>'),
   user: S('<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'),
+  userSearch: S('<circle cx="10" cy="9" r="3.4"/><path d="M4 19c1.2-3.1 3.3-4.7 6-4.7 1.1 0 2.1.25 3 .75"/><circle cx="16.5" cy="16.5" r="3"/><path d="m18.8 18.8 2 2"/>'),
   chevronUp: S('<path d="m6 15 6-6 6 6"/>'),
   chevronDown: S('<path d="m6 9 6 6 6-6"/>'),
   image: S(

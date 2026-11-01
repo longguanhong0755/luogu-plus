@@ -1,6 +1,6 @@
 ﻿# 便携包打包：Electron 运行时 + resources/app（package.json + src/）。
 # 产物：repo/.lg-dev/dist/luogu-desktop-<版本>-portable.zip
-# 解压后双击根目录 electron.exe 即运行（resources/app 为约定布局）。
+# 解压后双击根目录 Luogu Desktop.exe 即运行（resources/app 为约定布局）。
 # 说明：未签名、无自动更新——按 ROADMAP 排期在 v1.0 接入 electron-builder。
 $ErrorActionPreference = "Stop"
 $desktop = Split-Path -Parent $PSScriptRoot
@@ -42,9 +42,19 @@ if (Test-Path $localeDir) {
 }
 Remove-Item (Join-Path $stage "resources\default_app.asar") -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $stage "debug.log") -Force -ErrorAction SilentlyContinue
-# 3) 布局自检：主程序与入口齐全
-$exe = Join-Path $stage "electron.exe"
-if (-not (Test-Path $exe)) { throw "electron.exe 缺失" }
+# 3) Windows 资源：写回洛谷图标、产品名、版本号，并换成正式执行体名称。
+$sourceExe = Join-Path $stage "electron.exe"
+$exe = Join-Path $stage "Luogu Desktop.exe"
+$icon = Join-Path $desktop "src\assets\icon.ico"
+if (-not (Test-Path $sourceExe)) { throw "electron.exe 缺失" }
+& node (Join-Path $desktop "scripts\patch-exe.js") $sourceExe $exe $icon
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) { throw "写入应用 EXE 图标/版本资源失败" }
+Remove-Item $sourceExe -Force
+$vi = (Get-Item -LiteralPath $exe).VersionInfo
+if ($vi.ProductName -ne "Luogu Desktop" -or $vi.FileDescription -ne "洛谷桌面版") {
+  throw "应用 EXE 版本资源未生效"
+}
+# 布局自检：主程序与入口齐全
 if (-not (Test-Path (Join-Path $appDir "package.json"))) { throw "resources/app/package.json 缺失" }
 if (-not (Test-Path (Join-Path $appDir "src\main\index.js"))) { throw "src/main/index.js 缺失" }
 
@@ -116,15 +126,21 @@ try {
 }
 $sfxModule = Join-Path (Split-Path -Parent $seven) "7z.sfx"
 if (Test-Path $sfxModule) {
+  $patchedSfx = Join-Path $env:TEMP ("luogu-sfx-" + (Get-Date -Format "HHmmssfff") + ".exe")
+  & node (Join-Path $desktop "scripts\patch-exe.js") $sfxModule $patchedSfx $icon
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path $patchedSfx)) { throw "写入自解压 EXE 图标/版本资源失败" }
+  $sfxVersion = (Get-Item -LiteralPath $patchedSfx).VersionInfo
+  if ($sfxVersion.ProductName -ne "Luogu Desktop") { throw "自解压 EXE 版本资源未生效" }
   $out = [IO.File]::Create($portableExe)
   try {
-    $sfxBytes = [IO.File]::ReadAllBytes($sfxModule)
+    $sfxBytes = [IO.File]::ReadAllBytes($patchedSfx)
     $out.Write($sfxBytes, 0, $sfxBytes.Length)
     $archiveBytes = [IO.File]::ReadAllBytes($archive)
     $out.Write($archiveBytes, 0, $archiveBytes.Length)
   } finally {
     $out.Dispose()
   }
+  Remove-Item $patchedSfx -Force -ErrorAction SilentlyContinue
   try {
     $signedSfx = Set-AuthenticodeSignature -FilePath $portableExe -Certificate $cert -ErrorAction SilentlyContinue
     if ($signedSfx.SignerCertificate) {
@@ -140,4 +156,5 @@ $sizeMb = [math]::Round((Get-Item $archive).Length / 1MB, 1)
 $sfxMb = if (Test-Path $portableExe) { [math]::Round((Get-Item $portableExe).Length / 1MB, 1) } else { 0 }
 if ($sizeMb -ge 100 -or ($sfxMb -and $sfxMb -ge 100)) {
   throw "便携包超过 100MB：7z=$sizeMb MB sfx=$sfxMb MB"
-}Write-Output ("PACK-OK " + $archive + " (" + $sizeMb + " MB); SFX=" + $portableExe + " (" + $sfxMb + " MB)")
+}
+Write-Output ("PACK-OK " + $archive + " (" + $sizeMb + " MB); SFX=" + $portableExe + " (" + $sfxMb + " MB)")

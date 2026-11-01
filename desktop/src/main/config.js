@@ -83,6 +83,7 @@ const DEFAULTS = {
 
 let data = clone(DEFAULTS);
 let file = "";
+let saveTimer = null;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -216,52 +217,69 @@ function save() {
   }
 }
 
+/* 设置写盘不占交互首帧：内存先更新，180ms 合并后落盘；退出时 flush。 */
+function queueSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    save();
+  }, 180);
+}
+
+function flush() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  save();
+}
+
 function setAppearance(patch) {
   data.appearance = Object.assign({}, data.appearance, patch || {});
   sanitize();
-  save();
+  queueSave();
   return data.appearance;
 }
 
 function setRail(patch) {
   data.rail = Object.assign({}, data.rail, patch || {});
   sanitize();
-  save();
+  queueSave();
   return data.rail;
 }
 
 function setGeneral(patch) {
   data.general = Object.assign({}, data.general, patch || {});
   sanitize();
-  save();
+  queueSave();
   return data.general;
 }
 
 function setFeatures(patch) {
   data.features = Object.assign({}, data.features, patch || {});
   sanitize();
-  save();
+  queueSave();
   return data.features;
 }
 
 function setNotify(patch) {
   data.notify = Object.assign({}, data.notify, patch || {});
   sanitize();
-  save();
+  queueSave();
   return data.notify;
 }
 
 function setWindow(patch) {
   data.window = Object.assign({}, data.window, patch || {});
   sanitize();
-  save();
+  queueSave();
   return data.window;
 }
 
 function resetRail() {
   data.rail = clone(DEFAULTS.rail);
   compileRailOrder(data.rail);
-  save();
+  queueSave();
   return data.rail;
 }
 
@@ -274,13 +292,13 @@ function replaceData(raw) {
   data = merge(DEFAULTS, raw);
   compileRailOrder(data.rail);
   sanitize();
-  save();
+  queueSave();
   return clone(data);
 }
 
 function resetAll() {
   data = clone(DEFAULTS);
-  save();
+  queueSave();
   return clone(data);
 }
 
@@ -295,6 +313,7 @@ module.exports = {
   init,
   get,
   save,
+  flush,
   setAppearance,
   setRail,
   setGeneral,

@@ -85,8 +85,7 @@ function homeKey(state) {
     home.contest ? [home.contest.id, home.contest.start, home.contest.live].join("|") : "",
     (home.contests || []).map((c) => [c.id, c.start, c.live ? 1 : 0].join(":")).join(","),
     home.official
-      ? (home.official.countdowns || []).map((cd) => cd.name + ":" + cd.days).join(",") +
-        "|" + String(home.official.welcome || "") + "|" + String(home.official.fortune || "")
+      ? JSON.stringify(home.official.countdowns || []) + "|" + JSON.stringify(home.official.fortune || null)
       : "",
     (home.heat || []).length,
     JSON.stringify(state.features || {}),
@@ -235,6 +234,10 @@ async function boot() {
   let windowFocused = true;
   let scrolling = false;
   let scrollTimer = null;
+  let scrollFrame = 0;
+  let wallClassKey = "";
+  let wallVideo = null;
+  let wallVideoPaused = null;
 
   function syncWallpaper() {
     const state = stateBox.data;
@@ -243,14 +246,35 @@ async function boot() {
     const perf = !!(state.general && state.general.performanceMode);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const paused = perf || reduced || !windowFocused || document.hidden || scrolling;
-    document.body.classList.toggle("wall-motion", !!wall.motion);
-    document.body.classList.toggle("wall-zoom", !!wall.zoom);
-    document.body.classList.toggle("wall-paused", paused);
+    const classKey = `${wall.motion ? 1 : 0}:${wall.zoom ? 1 : 0}:${paused ? 1 : 0}`;
+    if (classKey !== wallClassKey) {
+      wallClassKey = classKey;
+      document.body.classList.toggle("wall-motion", !!wall.motion);
+      document.body.classList.toggle("wall-zoom", !!wall.zoom);
+      document.body.classList.toggle("wall-paused", paused);
+    }
     const video = document.querySelector("#wallpaper video");
-    if (video) {
+    if (video !== wallVideo) {
+      wallVideo = video;
+      wallVideoPaused = null;
+    }
+    if (video && wallVideoPaused !== paused) {
+      wallVideoPaused = paused;
       if (paused) video.pause();
       else video.play().catch(() => {});
     }
+  }
+
+  function beginScroll() {
+    if (!scrolling) {
+      scrolling = true;
+      syncWallpaper();
+    }
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      scrolling = false;
+      syncWallpaper();
+    }, 120);
   }
 
   window.lg.onWindowFocus((focused) => {
@@ -261,15 +285,13 @@ async function boot() {
   document.addEventListener(
     "scroll",
     () => {
-      scrolling = true;
-      syncWallpaper();
-      clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(() => {
-        scrolling = false;
-        syncWallpaper();
-      }, 140);
+      if (scrollFrame) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0;
+        beginScroll();
+      });
     },
-    true
+    { capture: true, passive: true }
   );
 
   document.addEventListener("visibilitychange", () => syncWallpaper());

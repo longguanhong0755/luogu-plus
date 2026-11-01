@@ -22,6 +22,103 @@ function formatDate(date) {
   return `${date.getFullYear()} 年 ${date.getMonth() + 1} 月 ${date.getDate()} 日 · 星期${WEEK[date.getDay()]}`;
 }
 
+function cleanFortunePart(value) {
+  return String(value || "")
+    .replace(/^[宜忌]\s*[:：]?\s*/, "")
+    .replace(/[§·,，。;；]+$/g, "")
+    .trim()
+    .slice(0, 18);
+}
+
+function normalizeFortune(value) {
+  if (!value) return null;
+  if (typeof value === "object") {
+    const result = String(value.result || "").trim().slice(0, 8);
+    const good = cleanFortunePart(value.good);
+    const bad = cleanFortunePart(value.bad);
+    return result || good || bad ? { result, good, bad } : null;
+  }
+  const raw = String(value).replace(/\s+/g, " ").trim();
+  const result = (raw.match(/(大吉|中吉|小吉|末吉|吉|大凶|凶)/) || [])[1] || "";
+  const good = cleanFortunePart((raw.match(/(?:^|[·,，。;；\s])宜\s*[:：]?\s*([^·,，。;；]+)/) || [])[1]);
+  const bad = cleanFortunePart((raw.match(/(?:^|[·,，。;；\s])忌\s*[:：]?\s*([^·,，。;；]+)/) || [])[1]);
+  return result || good || bad ? { result, good, bad } : null;
+}
+
+function buildDailyHeader(home, user, features, actions, offline, showOfficial) {
+  const now = new Date();
+  const head = el("header", "home-daily");
+  const copy = el("div", "home-daily-copy");
+  const greeting = el("h1", "home-greeting");
+  const name = String((user && user.name) || "").trim();
+  if (user && user.loggedIn && name) {
+    greeting.appendChild(document.createTextNode("欢迎回来，"));
+    greeting.appendChild(el("strong", "", name));
+  } else {
+    greeting.appendChild(document.createTextNode("欢迎来到洛谷"));
+  }
+  copy.appendChild(greeting);
+
+  const meta = el("div", "home-meta");
+  const date = el("time", "home-date");
+  date.dateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  date.title = formatDate(now);
+  date.appendChild(el("span", "home-date-month", `${now.getMonth() + 1} 月`));
+  date.appendChild(el("strong", "home-date-day nums", pad(now.getDate())));
+  date.appendChild(el("span", "home-date-week", `星期${WEEK[now.getDay()]}`));
+  meta.appendChild(date);
+
+  const official = home.official || {};
+  const fortune = showOfficial
+    ? normalizeFortune(features.changeFortune ? { result: "大吉", good: "万事皆宜" } : official.fortune)
+    : null;
+  if (fortune) {
+    const badge = el("span", "home-fortune");
+    if (fortune.result) badge.appendChild(el("strong", "home-fortune-result", fortune.result));
+    if (fortune.good) badge.appendChild(el("span", "home-fortune-good", "宜 " + fortune.good));
+    if (fortune.bad) badge.appendChild(el("span", "home-fortune-bad", "忌 " + fortune.bad));
+    meta.appendChild(badge);
+  }
+  if (offline) {
+    const chip = el("span", "offline-chip", "离线");
+    chip.title = "当前没有网络：浏览缓存数据可用，提交会进入离线队列。";
+    meta.appendChild(chip);
+  }
+  copy.appendChild(meta);
+
+  if (home.quote) {
+    const quote = el("div", "home-quote", "每日寄语：" + home.quote);
+    quote.title = String(home.quote);
+    copy.appendChild(quote);
+  }
+
+  const side = el("div", "home-daily-side");
+  const countdowns = showOfficial && Array.isArray(official.countdowns) ? official.countdowns.slice(0, 3) : [];
+  if (countdowns.length) {
+    const list = el("div", "home-countdowns");
+    for (const item of countdowns) {
+      if (!item || !item.name) continue;
+      const chip = el("span", "home-countdown");
+      chip.appendChild(el("span", "home-countdown-name", "距 " + item.name));
+      const days = Number(item.days);
+      chip.appendChild(el("strong", "home-countdown-days nums", days <= 0 ? "今天" : String(days)));
+      if (days > 0) chip.appendChild(el("span", "home-countdown-unit", "天"));
+      list.appendChild(chip);
+    }
+    if (list.childElementCount) side.appendChild(list);
+  }
+  const refresh = el("button", "home-refresh");
+  refresh.type = "button";
+  refresh.title = "刷新";
+  refresh.setAttribute("aria-label", "刷新");
+  refresh.innerHTML = icon("refresh");
+  refresh.addEventListener("click", () => actions.refresh());
+  if (side.childElementCount) side.appendChild(refresh);
+  else meta.appendChild(refresh);
+  head.append(copy, side);
+  return head;
+}
+
 function pad(n) {
   return String(n).padStart(2, "0");
 }
@@ -155,23 +252,10 @@ function buildHeat(home) {
 }
 
 function buildContest(home, actions) {
+  const contests = Array.isArray(home.contests) ? home.contests.slice(0, 5) : [];
+  if (!contests.length) return null;
   const card = el("div", "contest-card card");
-  const official = home.official || {};
-  const contests = home.contests || [];
-  card.appendChild(cardHead("比赛日历", "contest"));
-  const cds = Array.isArray(official.countdowns) ? official.countdowns : [];
-  if (!cds.length && !contests.length) {
-    card.appendChild(el("span", "cc-empty", "暂无比赛信息"));
-    return card;
-  }
-
-  for (const cd of cds) {
-    const row = el("div", "cd-row");
-    row.appendChild(el("span", "cd-name", "距 " + cd.name));
-    row.appendChild(el("span", "cd-days nums", cd.days <= 0 ? "今天" : "还剩 " + cd.days + " 天"));
-    card.appendChild(row);
-  }
-  if (cds.length && contests.length) card.appendChild(el("div", "cal-divider"));
+  card.appendChild(cardHead("近期比赛", "contest"));
 
   let live = null;
   for (const contest of contests) {
@@ -343,19 +427,6 @@ function buildFirstRun(actions) {
   btn.addEventListener("click", () => actions.setGeneral({ firstRunSeen: true }));
   card.appendChild(lines);
   card.appendChild(btn);
-  return card;
-}
-
-function buildWelcome(home, features) {
-  const official = home.official || {};
-  if (!official.welcome && !official.fortune) return null;
-  const card = el("div", "welcome-card card");
-  card.appendChild(cardHead("官方问候", "home"));
-  if (official.welcome) card.appendChild(el("div", "welcome-line", official.welcome));
-  if (official.fortune) {
-    const fortune = features.changeFortune ? "§ 大吉 § · 万事皆宜" : official.fortune;
-    card.appendChild(el("div", "welcome-line sub", fortune));
-  }
   return card;
 }
 
@@ -552,23 +623,9 @@ export function renderHome(state, actions) {
     ? { homeAnnouncement: true, homeTasks: true, homeLinks: true, homeCommunity: true, homeOfficial: true, homeContest: true, homeHeat: true, homeRecent: true, homeFirstRun: true }
     : features;
 
-  const head = el("div", "home-row");
-  if (user.name) head.appendChild(el("div", "home-hello", "你好，" + user.name));
-  head.appendChild(el("div", "home-date", formatDate(new Date())));
-  if (home.quote) head.appendChild(el("div", "home-quote", "每日寄语：" + home.quote));
-  if (offline) {
-    const chip = el("span", "offline-chip", "离线");
-    chip.title = "当前没有网络：浏览缓存数据可用，提交会进入离线队列。";
-    head.appendChild(chip);
-  }
-  const refresh = el("button", "home-refresh");
-  refresh.type = "button";
-  refresh.title = "刷新";
-  refresh.setAttribute("aria-label", "刷新");
-  refresh.innerHTML = icon("refresh");
-  refresh.addEventListener("click", () => actions.refresh());
-  head.appendChild(refresh);
-  wrap.appendChild(head);
+  wrap.appendChild(
+    buildDailyHeader(home, user, features, actions, offline, sections.homeOfficial !== false)
+  );
 
   if (offline && home.updatedAt) {
     wrap.appendChild(el("div", "offline-note", "离线模式 · 以下为本地数据，更新于 " + formatWhen(home.updatedAt) + "。"));
@@ -586,12 +643,13 @@ export function renderHome(state, actions) {
   }
   if (sections.homeAnnouncement !== false) main.appendChild(buildAnnouncement(home, actions));
 
-  const welcomeCard = sections.homeOfficial !== false ? buildWelcome(home, features) : null;
-  if (welcomeCard) side.appendChild(welcomeCard);
   if (sections.homeFirstRun !== false && state.general && state.general.firstRunSeen === false) {
     side.appendChild(buildFirstRun(actions));
   }
-  if (sections.homeContest !== false) side.appendChild(buildContest(home, actions));
+  if (sections.homeContest !== false) {
+    const contestCard = buildContest(home, actions);
+    if (contestCard) side.appendChild(contestCard);
+  }
   if (sections.homeTasks !== false) side.appendChild(buildTasks(actions));
   if (sections.homeCommunity !== false) side.appendChild(buildCommunity(home, actions));
   if (sections.homeLinks !== false) side.appendChild(buildLinks(actions));

@@ -89,7 +89,7 @@ export function initChrome(actions) {
     railTop.scrollTop = scrollTop;
     if (focusedId && railButtons.has(focusedId)) railButtons.get(focusedId).focus({ preventScroll: true });
     syncButtonTitles();
-    applyActive(activeId);
+    applyActive(activeId, true);
   }
 
   function appendRailItems(container, items) {
@@ -110,13 +110,19 @@ export function initChrome(actions) {
     }
   }
 
-  function applyActive(id) {
-    activeId = String(id || "");
-    for (const button of rail.querySelectorAll(".rail-btn[data-id]")) {
-      const on = button.dataset.id === activeId && button.dataset.kind !== "action";
-      button.classList.toggle("active", on);
-      if (on) button.setAttribute("aria-current", "page");
-      else button.removeAttribute("aria-current");
+  function applyActive(id, force = false) {
+    const nextId = String(id || "");
+    if (!force && nextId === activeId) return;
+    activeId = nextId;
+    const previous = rail.querySelector(".rail-btn.active");
+    if (previous) {
+      previous.classList.remove("active");
+      previous.removeAttribute("aria-current");
+    }
+    const next = railButtons.get(activeId);
+    if (next && next.dataset.kind !== "action") {
+      next.classList.add("active");
+      next.setAttribute("aria-current", "page");
     }
   }
 
@@ -148,11 +154,10 @@ export function initChrome(actions) {
     document.body.classList.toggle("rail-pinned", !!pinned);
     pin.classList.toggle("on", !!pinned);
     pin.setAttribute("aria-pressed", pinned ? "true" : "false");
-    pin.innerHTML = icon(pinned ? "panelCollapse" : "panelExpand");
     const label = document.createElement("span");
     label.className = "rail-label";
     label.textContent = pinned ? "收起侧栏" : "展开侧栏";
-    pin.appendChild(label);
+    pin.replaceChildren(railGlyph({ kind: "action", icon: pinned ? "panelCollapse" : "panelExpand" }), label);
     pin.title = pinned ? "收起侧栏（Ctrl+B）" : "展开侧栏（Ctrl+B）";
     pin.setAttribute("aria-label", pin.title);
     syncButtonTitles();
@@ -277,12 +282,11 @@ export function initChrome(actions) {
   users.dataset.id = "users";
   users.dataset.kind = "action";
   users.setAttribute("aria-label", "用户搜索");
-  users.innerHTML = icon("user");
   users.title = "用户搜索（Ctrl+U）";
   const usersLabel = document.createElement("span");
   usersLabel.className = "rail-label";
   usersLabel.textContent = "用户搜索";
-  users.appendChild(usersLabel);
+  users.replaceChildren(railGlyph({ kind: "action", icon: "userSearch" }), usersLabel);
   users.addEventListener("click", () => actions.openUserSearch());
 
   pin.addEventListener("click", () => {

@@ -500,6 +500,7 @@ function bootstrap() {
 
   app.on("before-quit", () => {
     app.quitting = true;
+    if (ctx.cfg) ctx.cfg.flush();
     if (ctx.store) ctx.store.flushAll();
   });
 
