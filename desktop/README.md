@@ -32,8 +32,8 @@ npm run smoke    # 隔离 profile 冒烟：隐藏窗口跑探针矩阵与皮肤�
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/pack-portable.ps1
 ```
 
-产物为未签名便携 zip（electron 运行时 + resources/app），解压双击 electron.exe 即用；
-NSIS 安装器/代码签名/自动更新按 ROADMAP 在 v1.0 接入 electron-builder。
+产物为自签便携 zip（electron 运行时 + resources/app，随附自签 .cer），解压双击 electron.exe 即用；
+自签为终态；将 .cer 装入「受信任的发布者」即可消除本机验证警告。正式 CA 证书、NSIS 安装器与自动更新不再接入。
 
 ## 已知行为披露
 
