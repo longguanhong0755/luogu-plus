@@ -755,7 +755,7 @@ desktop/src/assets/ 官方图标、托盘、AC/WA 角标
 - `SMOKE_PERF`：`body.perf`、`--blur:0px`、标题/侧栏/内容 blur 全为 `none`；
   `SMOKE_LAZY` 失焦冻结、聚焦恢复均为 true。
 - `LGTEST_PROFILE`：头像打开独立 `profile:<uid>` 页面；个人页不误高亮主页。
-- `npm run check`：421 项静态契约（含字号/圆角/阴影扫描、令牌存在性、单侧栏/钉子/
+- `npm run check`：425 项静态契约（含字号/圆角/阴影扫描、令牌存在性、单侧栏/钉子/
   active/性能模式契约、题库筛选参数/标签桥/分组标题、阅读面真实类、快照水合前不保存裸
   markdown，且要求正文类已出现）。
 
@@ -1110,3 +1110,14 @@ R2/R3 各停在 95、差 1 分，扣分点即本轮已补证/已拍板的非代�
 - **验证**：默认冒烟包含 23 项侧栏行为用例，连续 20 次固定切换、8 个自定义项
   滚动、active 唯一性、页面 View 边界误差均进入失败裁决；不再依赖
   `LG_SMOKE_RAIL=1` 才执行。
+
+### 15.18 开发态热加载（R86）
+
+- `npm start`/`npm run dev` 通过 `scripts/dev.js` 启动 Electron；`npm run start:plain`
+  保留原始无监听启动，正常便携包不受文件监听影响。
+- `src/renderer/shell` 改动刷新主外壳；`src/renderer/settings` 刷新设置窗；
+  `src/renderer/shared` 与 `src/assets` 同时刷新两个渲染宿主；`src/renderer/skin`
+  重新注入所有已打开页面皮肤。
+- `src/main`、`src/preload` 或 `package.json` 改动通过父子进程 IPC 命令优雅退出并
+  重启 Electron；180ms 去抖合并编辑器连续保存，启动后 600ms 忽略历史文件事件。
+- 热加载命令链与文件分类纳入 `npm run check`，不引入额外依赖。

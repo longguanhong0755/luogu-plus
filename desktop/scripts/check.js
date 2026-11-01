@@ -1371,6 +1371,51 @@ else fail("R73 package.json 缺元数据");
 if (/Ctrl\+F` 页内查找/.test(fs.readFileSync(path.join(ROOT, "..", "README.md"), "utf8"))) ok("R73 README 快捷键收录查找/缩放");
 else fail("R73 README 快捷键未收录新功能");
 
+/* ---------- R86 开发态热加载 ---------- */
+const devPkg = JSON.parse(read("package.json"));
+if (devPkg.scripts && devPkg.scripts.start === "node scripts/dev.js" && devPkg.scripts.dev === "node scripts/dev.js") {
+  ok("npm start/dev 默认启用热加载启动器");
+} else {
+  fail("npm start/dev 未接入 scripts/dev.js");
+}
+if (devPkg.scripts && devPkg.scripts["start:plain"] === "electron .") ok("保留无监听 start:plain 入口");
+else fail("缺少 start:plain 无监听入口");
+
+const { classifyChange } = require(path.join(__dirname, "dev.js"));
+const { handleDevCommand } = require(path.join(ROOT, "src", "main", "dev-reload.js"));
+const hotMap = {
+  "src/main/index.js": "restart",
+  "src/preload/shell.js": "restart",
+  "src/renderer/shell/chrome.js": "reload-shell",
+  "src/renderer/settings/settings.js": "reload-settings",
+  "src/renderer/skin/luogu-skin.css": "reload-skin",
+  "src/renderer/shared/theme.js": "reload-ui",
+  "src/assets/icon.ico": "reload-ui",
+};
+if (Object.entries(hotMap).every(([file, expected]) => classifyChange(file) === expected)) {
+  ok("热加载文件分类覆盖主进程/预加载/外壳/设置/皮肤");
+} else {
+  fail("热加载文件分类不完整");
+}
+const hotCalls = [];
+const hotCtx = {
+  win: { isDestroyed: () => false, webContents: { isDestroyed: () => false, reloadIgnoringCache: () => hotCalls.push("win") } },
+  settingsWin: { isDestroyed: () => false, webContents: { isDestroyed: () => false, reloadIgnoringCache: () => hotCalls.push("settings") } },
+  views: { updateTheme: () => hotCalls.push("skin") },
+};
+const originalLog = console.log;
+console.log = () => {};
+try {
+  handleDevCommand("reload-shell", hotCtx);
+  handleDevCommand("reload-settings", hotCtx);
+  handleDevCommand("reload-ui", hotCtx);
+  handleDevCommand("reload-skin", hotCtx);
+} finally {
+  console.log = originalLog;
+}
+if (hotCalls.join(",") === "win,settings,win,settings,skin") ok("热加载命令执行链正确");
+else fail("热加载命令执行链错误");
+
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";

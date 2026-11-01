@@ -6,10 +6,13 @@
 
 ```bash
 npm install
-npm start        # electron .（开发/日常均可）
+npm start        # 热加载开发模式
+npm run start:plain # electron .（无文件监听）
 ```
 
-可自建桌面快捷方式指向 electron 并以本目录为参数启动（始终运行最新源码）。关闭窗口默认最小化到托盘，退出请用托盘菜单「退出」。
+`npm start` 会监听 `src/main`、`src/preload`、`src/renderer`、`src/assets` 与
+`package.json`：外壳/设置/皮肤改动原地刷新，主进程或预加载改动自动重启 Electron。
+可自建桌面快捷方式指向 electron 并以本目录为参数启动（无热加载）。关闭窗口默认最小化到托盘，退出请用托盘菜单「退出」。
 
 ## 验证
 

@@ -48,7 +48,8 @@ legacy/    3.17.0 旧版 LuoguLab 完整归档（git 历史保留，可作参考
 ```bash
 cd desktop
 npm install
-npm start          # 启动
+npm start          # 热加载开发启动（渲染层原地刷新，主进程/预加载自动重启）
+npm run start:plain # 无文件监听的 Electron 启动
 npm run check      # 静态检查：语法、必需文件、HTML 引用、IPC 双向、产品关键约束
 npm run smoke      # 不可见启动 + 截图到 ../.lg-dev/（隔离 userData）
 npm run gen:icons  # 自绘应用/托盘/角标图标（蓝底白洛字；已入库的官方标不会被覆盖，强制重生成加 -Force）

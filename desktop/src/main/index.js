@@ -13,6 +13,7 @@ const { createNotifier } = require("./notify");
 const { createTray } = require("./tray");
 const { registerIpc, broadcastState, state } = require("./ipc");
 const adblock = require("./adblock");
+const { installDevReload } = require("./dev-reload");
 const smoke = () => require("./smoke");
 
 const UA =
@@ -300,6 +301,7 @@ function bootstrap() {
       }
     };
     ctx.openSettings = () => createSettingsWindow(ctx);
+    installDevReload(ctx);
 
     ctx.applyAutoLaunch = () => {
       if (process.platform !== "win32") return;

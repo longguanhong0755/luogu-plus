@@ -9,6 +9,8 @@
 - 主进程单一 `rail:layout` 宽度源同步外壳与页面视图；性能模式/reduced-motion 瞬切。
 - 新增路由 active/`aria-current`、keyed DOM 滚动保持、`F6`/方向键/`Esc` 键盘链。
 - 题号跳转改为 `Ctrl+L` 全局面板模式，关闭后恢复页面焦点。
+- 新增开发态热加载：`npm start/dev` 监听源码；渲染层原地刷新，主进程/预加载自动重启；
+  `npm run start:plain` 保留无监听启动。check 421→425。
 
 ## v0.7.15 (2026-11-01) — R83 parity 增量（9/12 旅程）
 
