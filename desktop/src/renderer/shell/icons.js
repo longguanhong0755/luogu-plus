@@ -27,6 +27,10 @@ export const ICONS = {
   ),
   link: S('<path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7L11.6 6"/><path d="M14 10.5a4 4 0 0 0-5.7 0L5.5 13.3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>'),
   dot: S('<circle cx="12" cy="12" r="3.2"/>'),
+  chevronLeft: S('<path d="m15 5-7 7 7 7"/>'),
+  chevronRight: S('<path d="m9 5 7 7-7 7"/>'),
+  panelExpand: S('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M13 10l2 2-2 2"/>'),
+  panelCollapse: S('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 10l-2 2 2 2"/>'),
   record: S(
     '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>'
   ),

@@ -282,6 +282,32 @@ section[data-panel] {
   gap: var(--sp-2);
   flex-wrap: wrap;
 }
+.shortcut-input {
+  width: 116px;
+  height: var(--h-md);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+}
+.shortcut-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .setting-row.stacked .setting-control {
   justify-content: flex-start;
   width: 100%;

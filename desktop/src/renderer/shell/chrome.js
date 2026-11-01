@@ -13,7 +13,8 @@ export function initChrome(actions) {
   const browseEl = document.getElementById("browse");
   const avatar = document.getElementById("tb-avatar");
   const pin = document.getElementById("rail-pin");
-  const jump = document.getElementById("rail-jump");
+  const titleJump = document.getElementById("tb-jump");
+  const users = document.getElementById("rail-users");
 
   let data = null;
   let railSignature = "";
@@ -21,6 +22,29 @@ export function initChrome(actions) {
   let pinState = null;
   let activeId = "";
   let railButtons = new Map();
+
+  function customGlyph(item) {
+    const label = String(item.label || "").trim();
+    const digits = label.match(/[0-9]+/g);
+    const letters = Array.from(label).filter((char) => /[\p{L}\p{N}]/u.test(char));
+    return digits ? digits[digits.length - 1].slice(-2) : letters.slice(0, 2).join("").toUpperCase() || "链";
+  }
+
+  function railGlyph(item) {
+    if (item.kind !== "custom") {
+      const shell = document.createElement("span");
+      shell.className = "rail-glyph";
+      shell.innerHTML = icon(item.icon) || icon("dot");
+      return shell;
+    }
+    const glyph = document.createElement("span");
+    glyph.className = "rail-glyph rail-glyph-custom";
+    glyph.textContent = customGlyph(item);
+    let hash = 0;
+    for (const char of String(item.id || item.label || "")) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
+    glyph.style.setProperty("--rail-glyph-hue", String(hash % 360));
+    return glyph;
+  }
 
   function navButton(item) {
     let btn = railButtons.get(item.id);
@@ -39,10 +63,9 @@ export function initChrome(actions) {
       railButtons.set(item.id, btn);
     }
     btn._railItem = item;
-    btn.title = item.label;
     btn.setAttribute("aria-label", item.label);
     btn.dataset.kind = item.kind;
-    btn.innerHTML = icon(item.icon) || icon("dot");
+    btn.replaceChildren(railGlyph(item));
     const label = document.createElement("span");
     label.className = "rail-label";
     label.textContent = item.label;
@@ -65,6 +88,7 @@ export function initChrome(actions) {
     appendRailItems(railBottom, config.bottom);
     railTop.scrollTop = scrollTop;
     if (focusedId && railButtons.has(focusedId)) railButtons.get(focusedId).focus({ preventScroll: true });
+    syncButtonTitles();
     applyActive(activeId);
   }
 
@@ -124,13 +148,23 @@ export function initChrome(actions) {
     document.body.classList.toggle("rail-pinned", !!pinned);
     pin.classList.toggle("on", !!pinned);
     pin.setAttribute("aria-pressed", pinned ? "true" : "false");
-    pin.innerHTML = icon(pinned ? "pin" : "pinOff");
+    pin.innerHTML = icon(pinned ? "panelCollapse" : "panelExpand");
     const label = document.createElement("span");
     label.className = "rail-label";
     label.textContent = pinned ? "收起侧栏" : "展开侧栏";
     pin.appendChild(label);
     pin.title = pinned ? "收起侧栏（Ctrl+B）" : "展开侧栏（Ctrl+B）";
     pin.setAttribute("aria-label", pin.title);
+    syncButtonTitles();
+  }
+
+  function syncButtonTitles() {
+    for (const button of rail.querySelectorAll(".rail-btn[data-id]")) {
+      const item = button._railItem;
+      button.title = (item && item.label) || button.getAttribute("aria-label") || "";
+    }
+    const users = document.getElementById("rail-users");
+    if (users) users.title = "用户搜索（Ctrl+U）";
   }
 
   function update(next) {
@@ -141,6 +175,7 @@ export function initChrome(actions) {
     renderRail(next.rail);
     syncPin(next.rail.pinned);
     applyActive(next.page.railId);
+    users.hidden = !(next.features && next.features.userSearch);
     const page = next.page;
     titleEl.textContent = page.home ? "主页" : page.title || "";
     if (page.library) titleEl.textContent = (next.rail.all.find((item) => item.id === page.library) || {}).label || page.title;
@@ -237,14 +272,18 @@ export function initChrome(actions) {
     return btn;
   }
 
-  jump.dataset.id = "jump";
-  jump.dataset.kind = "action";
-  jump.innerHTML = icon("search");
-  const jumpLabel = document.createElement("span");
-  jumpLabel.className = "rail-label";
-  jumpLabel.textContent = "题号跳转";
-  jump.appendChild(jumpLabel);
-  jump.addEventListener("click", () => actions.openJump());
+  titleJump.innerHTML = icon("search") + "<span>搜索题号</span>";
+  titleJump.addEventListener("click", () => actions.openJump());
+  users.dataset.id = "users";
+  users.dataset.kind = "action";
+  users.setAttribute("aria-label", "用户搜索");
+  users.innerHTML = icon("user");
+  users.title = "用户搜索（Ctrl+U）";
+  const usersLabel = document.createElement("span");
+  usersLabel.className = "rail-label";
+  usersLabel.textContent = "用户搜索";
+  users.appendChild(usersLabel);
+  users.addEventListener("click", () => actions.openUserSearch());
 
   pin.addEventListener("click", () => {
     const next = !(data && data.rail && data.rail.pinned);

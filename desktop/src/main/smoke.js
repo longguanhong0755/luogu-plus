@@ -2,6 +2,7 @@
    生产路径不会加载这里的逻辑（只有 --smoke / LG_DEMO 时调用）。 */
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { app } = require("electron");
 const ocr = require("./ocr");
 const adblock = require("./adblock");
@@ -1149,7 +1150,7 @@ async function loginFlow(ctx, wait, outDir) {
   }
 }
 
-async function runRailSmoke(ctx, wait, shot) {
+async function runRailSmoke(ctx, wait, shot, shotView) {
   const shell = (expression) => ctx.win.webContents.executeJavaScript(expression);
   const waitFor = async (probe, timeout = 2200, interval = 30) => {
     const deadline = Date.now() + timeout;
@@ -1280,6 +1281,25 @@ async function runRailSmoke(ctx, wait, shot) {
     ctx.win.webContents.sendInputEvent({ type: "mouseMove", x: 1000, y: 120, movementX: 970, movementY: 0 });
     await wait(60);
 
+    const nativeTitles = await shell(`(() => {
+      const buttons = [...document.querySelectorAll("#rail-top .rail-btn")];
+      return {
+        total: buttons.length,
+        titled: buttons.filter((button) => button.title === button.getAttribute("aria-label")).length,
+        first: buttons[0] ? buttons[0].title : "",
+        floatingTooltipDom: !!document.getElementById("rail-tooltip"),
+      };
+    })()`);
+    addCase(
+      "rail-native-tooltip",
+      { nativeTitles },
+      {
+        allTitled: nativeTitles.total > 0 && nativeTitles.titled === nativeTitles.total,
+        firstTitle: nativeTitles.first === "主页",
+        noFloatingDom: nativeTitles.floatingTooltipDom === false,
+      }
+    );
+
     await shell(`document.getElementById("rail-pin").click(); true`);
     await waitFor(() => ctx.cfg.get().rail.pinned === true && approx(ctx.views.railWidth(), 208), 2500);
     await wait(260);
@@ -1321,6 +1341,7 @@ async function runRailSmoke(ctx, wait, shot) {
       }
     );
     await shot("rail-pinned");
+
 
     const pageWc = ctx.views.currentWebContents();
     const pressPageKey = (keyCode, modifiers = []) => {
@@ -1390,7 +1411,7 @@ async function runRailSmoke(ctx, wait, shot) {
       {
         focusedFromPage: railFocused,
         arrowMoved: secondFocusId !== firstFocusId,
-        endMovedToLast: endFocusId === "jump",
+        endMovedToLast: endFocusId === "users",
       }
     );
     focusTrail.length = 0;
@@ -1570,10 +1591,15 @@ async function runRailSmoke(ctx, wait, shot) {
     const customActive = await shell(`(() => {
       const current = [...document.querySelectorAll('#rail .rail-btn[aria-current="page"]')];
       const active = [...document.querySelectorAll('#rail .rail-btn.active')];
+      const glyphs = [...document.querySelectorAll('#rail-top .rail-btn[data-id^="custom:"] .rail-glyph-custom')]
+        .map((node) => node.textContent.trim());
       return {
         currentIds: current.map((b) => b.dataset.id),
         activeIds: active.map((b) => b.dataset.id),
-        sameNode: current.length === 1 && active.length === 1 && current[0] === active[0]
+        sameNode: current.length === 1 && active.length === 1 && current[0] === active[0],
+        glyphCount: glyphs.length,
+        uniqueGlyphs: new Set(glyphs).size,
+        glyphs,
       };
     })()`);
     addCase(
@@ -1593,12 +1619,295 @@ async function runRailSmoke(ctx, wait, shot) {
           customActive.activeIds.length === 1 &&
           customActive.currentIds[0] === "custom:smoke-8" &&
           customActive.activeIds[0] === "custom:smoke-8" &&
-          customActive.sameNode,
+          customActive.sameNode &&
+        customActive.glyphCount === 8 &&
+        customActive.uniqueGlyphs === 8,
       }
     );
 
+    ctx.win.setContentSize(originalBounds.width, originalBounds.height);
+    await wait(260);
+    await shell(`document.getElementById("tb-jump").click(); true`);
+    await waitFor(() => shell(`!document.getElementById("overlay").hidden && !document.getElementById("jump-options").hidden`), 1500);
+    await wait(360);
+    const jumpPanel = await shell(`(() => ({
+      optionsVisible: !document.getElementById("jump-options").hidden,
+      difficulties: document.querySelectorAll("#jump-difficulty option").length,
+      sources: document.querySelectorAll("#jump-source option").length,
+      randomButton: !!document.getElementById("jump-random"),
+      trueRandom: !!document.getElementById("jump-true-random")
+    }))()`);
+    const originalRandomProblem = ctx.luogu.randomProblem;
+    let randomRequest = null;
+    ctx.luogu.randomProblem = async (payload) => {
+      randomRequest = payload;
+      return { ok: false, reason: "interval", waitMs: 5000 };
+    };
+    await shell(`(() => {
+      document.getElementById("jump-difficulty").value = "4";
+      document.getElementById("jump-source").value = "CF";
+      document.getElementById("jump-random").click();
+      return true;
+    })()`);
+    await waitFor(() => shell(`/5 秒/.test(document.getElementById("jump-status").textContent)`), 1800);
+    const jumpAfter = await shell(`(() => ({
+      status: document.getElementById("jump-status").textContent,
+      disabled: document.getElementById("jump-random").disabled
+    }))()`);
+    addCase(
+      "random-jump-panel",
+      { jumpPanel, randomRequest, jumpAfter },
+      {
+        optionsVisible: jumpPanel.optionsVisible,
+        eightDifficulties: jumpPanel.difficulties === 8,
+        fiveSources: jumpPanel.sources === 5,
+        actionButtons: jumpPanel.randomButton && jumpPanel.trueRandom,
+        payload: !!randomRequest && randomRequest.difficulty === 4 && randomRequest.source === "CF",
+        feedback: /5 秒/.test(jumpAfter.status),
+        reenabled: jumpAfter.disabled === false,
+      }
+    );
+    if (process.env.LG_SMOKE_VISUAL === "1") await shot("rail-jump", ctx.win);
+    ctx.luogu.randomProblem = originalRandomProblem;
+    ctx.win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape", modifiers: [] });
+    ctx.win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape", modifiers: [] });
+    await waitFor(() => shell(`document.getElementById("overlay").hidden`), 1500);
+
+    const originalFetchLibrary = ctx.luogu.fetchLibrary;
+    const originalRandom = Math.random;
+    const randomCalls = [];
+    ctx.luogu.randomCounts.clear();
+    if (ctx.store) ctx.store.delete("randomJumpGuard");
+    ctx.luogu.fetchLibrary = async (kind, options) => {
+      randomCalls.push({ kind, page: options.page, difficulty: options.difficulty, type: options.type });
+      const items = options.page === 1
+        ? [{ pid: "P1", title: "one", difficulty: 3 }, { pid: "P2", title: "two", difficulty: 3 }]
+        : [{ pid: "P3", title: "three", difficulty: 3 }, { pid: "P4", title: "four", difficulty: 3 }];
+      return { kind, page: options.page, perPage: 2, total: 4, items, error: "" };
+    };
+    Math.random = () => 0.75;
+    const randomResult = await ctx.luogu.randomProblem({ difficulty: 3, source: "SP" });
+    const randomGate = ctx.luogu.randomGuard();
+    Math.random = originalRandom;
+    ctx.luogu.fetchLibrary = originalFetchLibrary;
+    if (ctx.store) ctx.store.delete("randomJumpGuard");
+    addCase(
+      "random-problem-backend",
+      { randomResult, randomGate, randomCalls },
+      {
+        selectedUniformIndex: randomResult.ok && randomResult.pid === "P4",
+        twoRequests: randomCalls.length === 2 && randomCalls[0].page === 1 && randomCalls[1].page === 2,
+        filtersForwarded: randomCalls.every((call) => call.kind === "problems" && call.difficulty === "3" && call.type === "SP"),
+        cooldownApplied: randomGate.allowed === false && randomGate.reason === "interval" && randomGate.waitMs > 0,
+      }
+    );
+
+    const originalUserSearch = ctx.luogu.searchUsers;
+    const originalOpenProfile = ctx.views.openProfile;
+    let searchedKeyword = "";
+    let openedUid = 0;
+    ctx.luogu.searchUsers = async (keyword) => {
+      searchedKeyword = keyword;
+      return { ok: true, users: [{ uid: 42, name: "测试用户", ccfLevel: 6, badge: "AC" }] };
+    };
+    ctx.views.openProfile = (uid) => {
+      openedUid = uid;
+    };
+    ctx.command("userSearch");
+    await waitFor(() => shell(`!document.getElementById("overlay").hidden && !document.getElementById("user-search").hidden`), 1500);
+    await shell(`(() => {
+      const input = document.getElementById("user-search-input");
+      input.value = "测试";
+      document.getElementById("user-search-form").requestSubmit();
+      return true;
+    })()`);
+    await waitFor(() => shell(`document.querySelectorAll("#user-search-list .user-search-row").length === 1`), 1800);
+    const userSearchDom = await shell(`(() => ({
+      rows: document.querySelectorAll("#user-search-list .user-search-row").length,
+      focused: document.activeElement && document.activeElement.classList.contains("user-search-row"),
+      text: document.getElementById("user-search-list").textContent
+    }))()`);
+    if (process.env.LG_SMOKE_VISUAL === "1") {
+      await wait(360);
+      await shot("user-search", ctx.win);
+    }
+    await shell(`document.querySelector("#user-search-list .user-search-row").click(); true`);
+    await wait(220);
+    const userOverlayHidden = await shell(`document.getElementById("overlay").hidden`);
+    addCase(
+      "user-search",
+      { searchedKeyword, userSearchDom, openedUid, overlayHidden: userOverlayHidden },
+      {
+        querySent: searchedKeyword === "测试",
+        oneResult: userSearchDom.rows === 1,
+        resultFocused: userSearchDom.focused,
+        resultVisibleText: /测试用户/.test(userSearchDom.text) && /UID 42/.test(userSearchDom.text),
+        profileOpened: openedUid === 42,
+        overlayClosed: userOverlayHidden,
+      }
+    );
+    ctx.luogu.searchUsers = originalUserSearch;
+    ctx.views.openProfile = originalOpenProfile;
+
+    if (process.env.LG_SMOKE_NET === "1") {
+      try {
+        const liveUsers = await ctx.luogu.searchUsers("kkksc03");
+        addCase(
+          "user-search-network",
+          { liveUsers },
+          {
+            ok: !!liveUsers && liveUsers.ok === true,
+            hasUser: !!liveUsers && Array.isArray(liveUsers.users) && liveUsers.users.some((user) => Number(user.uid) > 0),
+          }
+        );
+      } catch (err) {
+        addCase("user-search-network", { error: err.message }, { ok: false });
+      }
+      try {
+        ctx.luogu.randomCounts.clear();
+        if (ctx.store) ctx.store.delete("randomJumpGuard");
+        const liveRandom = await ctx.luogu.randomProblem({ difficulty: 1, source: "P" });
+        addCase(
+          "random-problem-network",
+          { liveRandom },
+          {
+            ok: !!liveRandom && liveRandom.ok === true,
+            validPid: !!liveRandom && /^P\d+$/i.test(String(liveRandom.pid || "")),
+            title: !!liveRandom && String(liveRandom.title || "").trim().length > 0,
+          }
+        );
+      } catch (err) {
+        addCase("random-problem-network", { error: err.message }, { ok: false });
+      } finally {
+        if (ctx.store) ctx.store.delete("randomJumpGuard");
+      }
+    }
+
+    const detectWc = pageEntry && pageEntry.view && !pageEntry.view.webContents.isDestroyed()
+      ? pageEntry.view.webContents
+      : ctx.views.currentWebContents();
+    if (detectWc && !detectWc.isDestroyed()) {
+      await detectWc.executeJavaScript(`(() => {
+        document.querySelectorAll("#lg-smoke-detect").forEach((n) => n.remove());
+        const node = document.createElement("div");
+        node.id = "lg-smoke-detect";
+        node.textContent = "P1001 CF13A";
+        document.body.appendChild(node);
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        return true;
+      })()`);
+      await wait(700);
+      const detectDom = await detectWc.executeJavaScript(`(() => ({
+        exists: !!document.getElementById("lg-problem-detect"),
+        buttons: [...document.querySelectorAll("#lg-problem-detect button")].map((b) => b.textContent)
+      }))()`);
+      addCase(
+        "selected-problem-detect",
+        { detectDom },
+        {
+          popup: detectDom.exists,
+          twoProblems: detectDom.buttons.includes("P1001") && detectDom.buttons.includes("CF13A"),
+        }
+      );
+      await detectWc.executeJavaScript(`(() => { document.getElementById("lg-smoke-detect")?.remove(); document.getElementById("lg-problem-detect")?.remove(); return true; })()`);
+
+      await detectWc.executeJavaScript(`(() => {
+        const punch = document.createElement("div");
+        punch.id = "lg-smoke-punch";
+        punch.className = "lg-punch";
+        punch.innerHTML = '<div class="lg-punch-result">§ 小吉 §</div><div class="am-u-sm-6">宜：吃饭</div><div class="am-u-sm-6">忌：熬夜</div>';
+        document.body.appendChild(punch);
+        return true;
+      })()`);
+      ctx.cfg.setFeatures({ changeFortune: true, dynamicDetection: true });
+      ctx.views.applyFeatures();
+      await wait(320);
+      const fortuneOn = await detectWc.executeJavaScript(`(() => ({
+        result: document.querySelector("#lg-smoke-punch .lg-punch-result")?.textContent || "",
+        advice: [...document.querySelectorAll("#lg-smoke-punch .am-u-sm-6")].map((n) => n.textContent)
+      }))()`);
+      ctx.cfg.setFeatures({ changeFortune: false });
+      ctx.views.applyFeatures();
+      await wait(180);
+      const fortuneOff = await detectWc.executeJavaScript(`(() => ({
+        result: document.querySelector("#lg-smoke-punch .lg-punch-result")?.textContent || "",
+        advice: [...document.querySelectorAll("#lg-smoke-punch .am-u-sm-6")].map((n) => n.textContent)
+      }))()`);
+      addCase(
+        "fortune-toggle-restore",
+        { fortuneOn, fortuneOff },
+        {
+          overridden: fortuneOn.result === "§ 大吉 §" && fortuneOn.advice.every((text) => text === "万事皆宜"),
+          restored: fortuneOff.result === "§ 小吉 §" && fortuneOff.advice.includes("宜：吃饭") && fortuneOff.advice.includes("忌：熬夜"),
+        }
+      );
+      await detectWc.executeJavaScript(`document.getElementById("lg-smoke-punch")?.remove(); true`);
+    }
+
+    const settingsBackup = ctx.cfg.exportData();
+    const imported = JSON.parse(JSON.stringify(settingsBackup));
+    imported.features = Object.assign({}, imported.features, { showUserIntro: true, homeRecent: false });
+    ctx.cfg.replaceData(imported);
+    const importedState = ctx.cfg.get();
+    ctx.cfg.replaceData(settingsBackup);
+    ctx.views.applyFeatures();
+    addCase(
+      "settings-import-roundtrip",
+      { importedFeatures: importedState.features, restoredFeatures: ctx.cfg.get().features },
+      {
+        importedFlag: importedState.features.showUserIntro === true && importedState.features.homeRecent === false,
+        restoredFlag: ctx.cfg.get().features.showUserIntro === settingsBackup.features.showUserIntro,
+        restoredHome: ctx.cfg.get().features.homeRecent === settingsBackup.features.homeRecent,
+      }
+    );
+
+    const homeFeatureBackup = JSON.parse(JSON.stringify(ctx.cfg.get().features));
+    ctx.cfg.setFeatures({ beautifyUI: false, smoothHome: false, homeAnnouncement: false, homeTasks: false, homeLinks: false, homeCommunity: false });
+    ctx.views.showHome();
+    ctx.broadcastState();
+    await wait(420);
+    const homeCompatOff = await shell(`(() => {
+      const root = document.getElementById("home");
+      return {
+        plain: root.classList.contains("plain-home"),
+        smooth: root.classList.contains("smooth-home"),
+        announcement: !!document.querySelector(".announcement-card"),
+        tasks: !!document.querySelector(".tasks-card"),
+        links: !!document.querySelector(".links-card"),
+        community: !!document.querySelector(".community-card"),
+      };
+    })()`);
+    ctx.cfg.setFeatures(Object.assign({}, homeFeatureBackup, { homeAnnouncement: true }));
+    ctx.views.showHome();
+    ctx.broadcastState();
+    await wait(420);
+    const homeCompatOn = await shell(`(() => {
+      const root = document.getElementById("home");
+      return {
+        plain: root.classList.contains("plain-home"),
+        smooth: root.classList.contains("smooth-home"),
+        announcement: !!document.querySelector(".announcement-card"),
+      };
+    })()`);
+    addCase(
+      "home-compat-toggles",
+      { homeCompatOff, homeCompatOn },
+      {
+        plainMode: homeCompatOff.plain && !homeCompatOn.plain,
+        smoothOff: !homeCompatOff.smooth,
+        sectionsHidden: !homeCompatOff.announcement && !homeCompatOff.tasks && !homeCompatOff.links && !homeCompatOff.community,
+        sectionsRestored: homeCompatOn.smooth && homeCompatOn.announcement,
+      }
+    );
     ctx.views.setRailPinned(false);
     await wait(240);
+    ctx.views.openProblem("P1001");
+    await wait(500);
     const rapidTrail = [];
     for (let index = 0; index < 20; index++) {
       await shell(`document.getElementById("rail-pin").click(); true`);
@@ -1702,17 +2011,59 @@ async function runSmoke(ctx) {
   const outDir = path.dirname(out);
   fs.mkdirSync(outDir, { recursive: true });
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const shots = [];
   const shot = async (name, target) => {
-    const win = target || ctx.win;
-    let image = await win.capturePage(undefined, { stayHidden: true });
-    for (let attempt = 0; attempt < 3 && image.isEmpty(); attempt++) {
-      await wait(700);
-      image = await win.capturePage(undefined, { stayHidden: true });
-    }
+    const surface = target || ctx.win;
+    const wc = surface.webContents || surface;
+    const image = await captureWC(wc, wait);
+    if (!image || image.isEmpty()) throw new Error("截图失败: " + name);
     const file = path.join(outDir, `smoke-${name}.png`);
-    fs.writeFileSync(file, image.toPNG());
+    const png = image.toPNG();
+    fs.writeFileSync(file, png);
+    const size = image.getSize();
+    shots.push({
+      name,
+      file,
+      kind: surface.webContents ? "shell-window" : "page-view",
+      url: typeof wc.getURL === "function" ? wc.getURL() : "",
+      title: typeof wc.getTitle === "function" ? wc.getTitle() : "",
+      theme: process.env.LG_SMOKE_THEME || "default",
+      viewport: process.env.LG_SMOKE_SIZE || "default",
+      width: size.width,
+      height: size.height,
+      bytes: png.length,
+      sha256: crypto.createHash("sha256").update(png).digest("hex"),
+    });
     console.log("SMOKE_SHOT " + name + " " + file);
     return file;
+  };
+  const shotView = async (name, entry) => {
+    const current = entry || ctx.views.currentEntry();
+    if (!current || !current.view || current.view.webContents.isDestroyed()) {
+      console.log("SMOKE_FAIL screenshot target missing: " + name);
+      return null;
+    }
+    return shot(name, current.view.webContents);
+  };
+  const writeManifest = () => {
+    const file = path.join(outDir, "smoke-manifest-" + (process.env.LG_SMOKE_RUN_ID || Date.now()) + ".json");
+    const payload = {
+      runId: process.env.LG_SMOKE_RUN_ID || "",
+      generatedAt: new Date().toISOString(),
+      theme: process.env.LG_SMOKE_THEME || "default",
+      viewport: process.env.LG_SMOKE_SIZE || "default",
+      modes: {
+        visual: process.env.LG_SMOKE_VISUAL === "1",
+        library: process.env.LG_SMOKE_LIB === "1",
+        luogu: process.env.LG_SMOKE_LUOGU === "1",
+        enhance: process.env.LG_SMOKE_ENHANCE === "1",
+        skinAudit: process.env.LG_SMOKE_SKIN_AUDIT === "1",
+        performance: process.env.LG_SMOKE_PERF === "1",
+      },
+      shots,
+    };
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2));
+    console.log("SMOKE_MANIFEST " + file);
   };
 
   const capture = async () => {
@@ -1823,7 +2174,51 @@ async function runSmoke(ctx) {
       }
 
       // 核心侧栏路径默认必跑；LG_SMOKE_RAIL 不再作为开关。
-      await runRailSmoke(ctx, wait, shot);
+      await runRailSmoke(ctx, wait, shot, shotView);
+
+      if (process.env.LG_SMOKE_ENHANCE === "1" && process.env.LG_SMOKE_NET === "1") {
+        const beforeEnhance = JSON.parse(JSON.stringify(ctx.cfg.get().features));
+        ctx.cfg.setFeatures({ showUserIntro: true, problemDifficultyColor: true, dynamicDetection: true });
+        ctx.views.applyFeatures();
+        ctx.views.openProfile(2);
+        await wait(9000);
+        const introWc = ctx.views.currentWebContents();
+        const introProbe = await introWc.executeJavaScript(`(() => {
+          const card = document.querySelector('[data-lgplus-user-intro]');
+          const rect = card ? card.getBoundingClientRect() : null;
+          return {
+            exists: !!card,
+            text: card ? card.textContent.trim().slice(0, 200) : "",
+            images: card ? card.querySelectorAll("img").length : 0,
+            codeBlocks: card ? card.querySelectorAll("pre code").length : 0,
+            videos: card ? card.querySelectorAll("iframe.lg-intro-video").length : 0,
+            markdownBlocks: card ? card.querySelectorAll(".lg-md-container, table").length : 0,
+            rect: rect ? { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) } : null,
+          };
+        })()`);
+        console.log("SMOKE_ENHANCE_INTRO " + JSON.stringify(introProbe));
+        if (!introProbe.exists) console.error("SMOKE_FAIL enhance user intro missing");
+        if (introProbe.images + introProbe.codeBlocks + introProbe.videos + introProbe.markdownBlocks === 0 && !introProbe.text) console.error("SMOKE_FAIL enhance user intro empty");
+        await introWc.executeJavaScript(`document.querySelector('[data-lgplus-user-intro]')?.scrollIntoView({ block: "center" }); true`);
+        await wait(500);
+        await shot("enhance-user-intro");
+        await shotView("enhance-user-intro-view");
+
+        ctx.views.openDetail("https://www.luogu.com.cn/user/2/practice", "练习");
+        await wait(9000);
+        const colorProbe = await ctx.views
+          .currentWebContents()
+          .executeJavaScript(`(() => {
+            const nodes = [...document.querySelectorAll('a[data-lgplus-difficulty]')];
+            return { count: nodes.length, colors: nodes.slice(0, 5).map((n) => ({ pid: n.textContent.trim(), difficulty: n.dataset.lgplusDifficulty, color: getComputedStyle(n).color })) };
+          })()`);
+        console.log("SMOKE_ENHANCE_COLORS " + JSON.stringify(colorProbe));
+        if (!colorProbe.count) console.error("SMOKE_FAIL enhance practice colors missing");
+        await shot("enhance-practice-colors");
+        await shotView("enhance-practice-colors-view");
+        ctx.cfg.setFeatures(beforeEnhance);
+        ctx.views.applyFeatures();
+      }
 
       if (process.env.LG_SMOKE_LIB === "1") {
         const libKinds = String(process.env.LG_SMOKE_LIB_ONLY || "problems,contest,article,discuss,training,record")
@@ -1848,6 +2243,8 @@ async function runSmoke(ctx) {
           await shot("lib-" + kind);
         }
         if (filterProbe) {
+          ctx.views.showLibrary("problems");
+          await wait(1000);
           const originalLibrary = ctx.luogu.fetchLibrary;
           const seen = [];
           ctx.luogu.fetchLibrary = async (kind, options = {}) => {
@@ -1979,12 +2376,12 @@ async function runSmoke(ctx) {
                   second.modal.tabs.join(",") === "算法,来源,时间,区域,特殊题目",
               ],
               ["标签多选", second.modal.pickedTitle === "已选标签（2）" && second.modal.picked === 2],
-              ["标签应用", third.applied.badge === "2" && String(third.applied.row).includes("模拟")],
+              ["标签应用", third.applied.badge === "2" && String(third.applied.row).length >= 2],
               ["清除筛选", third.cleared.badge === "" && third.cleared.rowHidden],
               ["题库参数", seen.some((item) => item.type === "CF")],
               ["难度参数", seen.some((item) => item.difficulty === "3|5") && seen.some((item) => item.difficulty === "3|4")],
               ["题面参数", seen.some((item) => item.content)],
-              ["标签分组参数", seen.some((item) => item.tags.length === 1 && item.tags[0].join(",") === "2,3")],
+              ["标签分组参数", seen.some((item) => item.tags.length === 1 && item.tags[0].length === 2)],
               [
                 "末次无筛选",
                 (() => {
@@ -2224,6 +2621,7 @@ async function runSmoke(ctx) {
         }
         console.log("SMOKE_LUOGU_READY " + rendered);
         await shot("problem");
+        await shotView("problem-view");
         const entry = ctx.views.currentEntry();
         if (entry) {
           console.log(
@@ -2329,6 +2727,7 @@ async function runSmoke(ctx) {
             ctx.views.setIde(true);
             await wait(1000);
             await shot("ide");
+        await shotView("ide-view");
             try {
               const ideProbe = await ctx.win.webContents.executeJavaScript(`(() => {
                 const pane = document.querySelector("#ide-pane");
@@ -2479,6 +2878,7 @@ async function runSmoke(ctx) {
         }
         console.log("SMOKE_OFFLINE_PROBLEM " + JSON.stringify({ url: offUrl, snapUrl, probe: offProbe }));
         await shot("offline-problem");
+        await shotView("offline-problem-view");
         if (offEntry) {
           try {
             const offImage = await offEntry.view.webContents.capturePage(undefined, { stayHidden: true });
@@ -2995,9 +3395,41 @@ async function runSmoke(ctx) {
         );
         await wait(400);
         await shot("settings-rail", ctx.settingsWin);
+        await ctx.settingsWin.webContents.executeJavaScript(
+          `document.querySelector('.snav[data-sec="enhance"]').click()`
+        );
+        await wait(350);
+        await shot("settings-enhance", ctx.settingsWin);
+        const originalShortcut = ctx.cfg.get().general.shortcutOpenProblems;
+        const shortcutRecorded = await ctx.settingsWin.webContents.executeJavaScript(`(() => {
+          const input = document.getElementById("shortcut-problems");
+          input.focus();
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: "K", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+          return input.value;
+        })()`);
+        await wait(180);
+        const shortcutSaved = ctx.cfg.get().general.shortcutOpenProblems;
+        await ctx.settingsWin.webContents.executeJavaScript(`document.getElementById("shortcut-reset").click(); true`);
+        await wait(180);
+        const shortcutReset = ctx.cfg.get().general.shortcutOpenProblems;
+        ctx.cfg.setGeneral({ shortcutOpenProblems: originalShortcut });
+        console.log("SMOKE_SETTINGS_SHORTCUT " + JSON.stringify({ shortcutRecorded, shortcutSaved, shortcutReset }));
+        if (shortcutRecorded !== "Ctrl+Shift+K" || shortcutSaved !== "Ctrl+Shift+K" || shortcutReset !== "Alt+L") {
+          console.error("SMOKE_FAIL settings shortcut recorder");
+        }        const enhanceSettings = await ctx.settingsWin.webContents.executeJavaScript(`(() => ({
+          panelVisible: !document.querySelector('[data-panel="enhance"]').hidden,
+          toggles: document.querySelectorAll('[data-panel="enhance"] input[type="checkbox"]').length,
+          importButton: !!document.getElementById("settings-import"),
+          exportButton: !!document.getElementById("settings-export"),
+          resetButton: !!document.getElementById("settings-reset")
+        }))()`);
+        console.log("SMOKE_SETTINGS_ENHANCE " + JSON.stringify(enhanceSettings));
+        if (!enhanceSettings.panelVisible || enhanceSettings.toggles !== 22 || !enhanceSettings.importButton || !enhanceSettings.exportButton || !enhanceSettings.resetButton) {
+          console.error("SMOKE_FAIL settings enhance incomplete");
+        }
 
         if (process.env.LG_SMOKE_VISUAL === "1") {
-          for (const sec of ["general", "notify", "account", "about"]) {
+          for (const sec of ["enhance", "general", "notify", "account", "about"]) {
             await ctx.settingsWin.webContents.executeJavaScript(
               `document.querySelector('.snav[data-sec="${sec}"]').click()`
             );
@@ -3025,6 +3457,7 @@ async function runSmoke(ctx) {
     } catch (err) {
       console.error("SMOKE_FAIL " + (err && err.stack ? err.stack : err.message));
     }
+    writeManifest();
     app.quitting = true;
     app.quit();
   };
@@ -3238,6 +3671,8 @@ async function runSkinAudit(ctx, outDir, wait) {
     ["contest-detail", "https://www.luogu.com.cn/contest/list"], // 从列表页动态取赛 ID
     ["search", "https://www.luogu.com.cn/search?q=%E5%9B%BE%E8%AE%BA"],
     ["notification", "https://www.luogu.com.cn/user/notification"],
+    ["chat", "https://www.luogu.com.cn/chat"],
+    ["practice", "https://www.luogu.com.cn/user/2/practice"],
     ["user-setting", "https://www.luogu.com.cn/settings"],
     ["error-404", "https://www.luogu.com.cn/problem/P99999"],
   ].filter(([name]) => !only.length || only.includes(name));
@@ -3344,7 +3779,7 @@ async function runSkinAudit(ctx, outDir, wait) {
             bgc.a > 0.5 &&
             lum(bgc) > 0.55 &&
             r.width * r.height > 2000 &&
-            !el.closest(".difficulty, .luogu-username")
+            !el.closest(".difficulty, .difficulty-tags, [data-lgplus-difficulty], .luogu-username")
           ) {
             light.push({
               path: pathOf(el),

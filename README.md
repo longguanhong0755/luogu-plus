@@ -17,9 +17,12 @@
   可固定展开到 208px。当前栏目有唯一高亮，图标栏与页面视图共享同一宽度状态。
 - **壁纸透出可调**：设置 → 外观 →「壁纸透出」0–100，拉到 100 时内容面完全透明，
   壁纸原样透出；中间档位按可读下限兜底，不会出现文字压不住背景。
-- **广告拦截可关**：设置 → 通用 →「拦截广告」，默认关闭，开启后当场生效
+- **广告拦截可关**：设置 → 通用 →「拦截广告」，默认开启，切换后当场生效
   （不重启、不刷新已开页面）。
 - 左侧导航可**排序、显隐、加自定义链接**（设置 → 侧边栏）。
+- **洛谷 Plus 兼容增强**：随机跳题（8 难度 × 5 题库）、纯数字/CF 简写补全、
+  划词识别题号、用户搜索、他人介绍（Markdown/公式/B 站）、练习页难度显色、动态内容检测与“逆天改运”。
+- **主页与设置可配置**：主页板块显隐、全部增强开关、设置导入/导出/恢复默认。
 - **性能优先开关 + 动态降载**：失焦、最小化、滚动、切页时自动暂停壁纸与页面动效；
   设置 → 通用可关闭全部模糊与动画。
 - 壁纸支持**文件夹轮换与 Wallpaper Engine 导入**（视频壁纸可播，场景壁纸以预览图呈现）。
@@ -27,6 +30,7 @@
 - 窗口/托盘使用**洛谷官方图标**。
 
 像素级设计规范见 [design.md](design.md)：全部尺寸、颜色、透明度公式、对比度与动效曲线。
+逐页面/逐功能四维质量门禁见 [docs/QUALITY-MATRIX.md](docs/QUALITY-MATRIX.md)。
 迭代路线、每轮范围与验收标准见 [ROADMAP.md](ROADMAP.md)（0.6.0 R54–R63、0.7.0 R64 皮肤收敛、0.7.1 R69 丝滑打磨、0.7.2 R70 同层透出·主页融合·侧栏抽屉、0.7.3 R71 生产加固（openExternal 协议白名单/崩溃落盘/自述文档）、0.7.4–0.7.15 R72–R83 评审加固与 parity 增量，以及 0.7.15 R84 登录态补证均已交付）。
 
 ## 目录结构
@@ -78,7 +82,7 @@ LG_SMOKE_FIND=1 npm run smoke            # R76：Ctrl+F 查找条/缩放 HUD 行
 LG_SMOKE_SEC=1 npm run smoke             # R77：安全注入探针（window.open/跨源导航断言全拒）
 LG_SMOKE_AUDIT=1 npm run smoke           # 深色/浅色对比度审计 → ../.lg-dev/audit-dark.json
 LG_SMOKE_THEME=light npm run smoke       # 以浅色模式跑同一套
-LG_SMOKE_RAIL=1 npm run smoke            # 64↔208 固定切换、active、键盘与页面视图同步
+npm run smoke                           # 默认必跑 64↔208、active、键盘、滚动与页面视图同步
 LG_SMOKE_PERF=1 npm run smoke            # 性能模式：模糊归零 + 失焦冻结/聚焦恢复
 LG_SMOKE_FOLDER=<dir> / LG_SMOKE_WE=<dir> npm run smoke   # 壁纸文件夹 / Wallpaper Engine
 LG_SMOKE_CAPTCHA_MANUAL=1 npm run smoke   # 验证码不自动识别，等人工写答案文件（默认自动 ddddocr）
@@ -129,7 +133,8 @@ LG_SMOKE_PALETTE=1 npm run smoke          # R61：命令面板题目/页面/恢�
   可读下限：外壳 58 / 纱层 50 / 卡片 55。
 - **对比度**：正文 ≥ 4.5:1，焦点环 2px 强调色；主按钮文字按 `--accent-fill` 计算，
   自定义强调色另有 `--accent-text` 保证文字可读。
-- **快捷键**：`Ctrl+K` 面板 · `Ctrl+L` 题号跳转 · `Ctrl+B` 固定/收起侧栏 · `F6` 聚焦侧栏 ·
+- **快捷键**：`Ctrl+K` 面板 · `Ctrl+L` 题号/随机跳题 · `Ctrl+U` 用户搜索 ·
+  `Alt+L` 题库 · `Ctrl+B` 固定/收起侧栏 · `F6` 聚焦侧栏 ·
   `Shift+F6` 返回页面 · `Ctrl+Tab` 切换器 · `Ctrl+,` 设置 ·
   `F5`/`Ctrl+R` 刷新 · `Alt+←/→` 后退/前进 · `Ctrl+W` 关页面 ·
   `Ctrl+Shift+T` 恢复关闭 · `Ctrl+F` 页内查找 · `Ctrl+=`/`Ctrl+-`/`Ctrl+0` 阅读缩放 ·

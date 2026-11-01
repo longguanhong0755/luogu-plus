@@ -1,5 +1,6 @@
 /* 所有 IPC 的登记处（主进程 handler + preload 暴露 + 本文件三处同步维护）。 */
 const { app, ipcMain, dialog, clipboard } = require("electron");
+const fs = require("node:fs");
 const { LIBRARY_IDS, resolveRail, canonicalPid } = require("./sections");
 
 /* 冒烟裁决守卫（smoke-guard.js 纯模块）：handler 异常即打 SMOKE_FAIL，
@@ -27,6 +28,7 @@ function state(ctx) {
     version: app.getVersion(),
     appearance: cfg.appearance,
     general: cfg.general,
+    features: cfg.features,
     notify: cfg.notify,
     rail,
     window: { width: bounds.width, height: bounds.height },
@@ -128,6 +130,56 @@ function registerIpc(ctx) {
       broadcastState(ctx);
     }
     return general;
+  });
+
+  ipcMain.handle("app:setFeatures", (_event, patch) => {
+    const features = ctx.cfg.setFeatures(patch || {});
+    if (features.autoRefresh !== false) ctx.views.applyFeatures();
+    broadcastState(ctx);
+    return features;
+  });
+
+  ipcMain.handle("app:exportSettings", async () => {
+    const result = await dialog.showSaveDialog(ctx.settingsWin || ctx.win, {
+      title: "导出设置",
+      defaultPath: "luogu-desktop-settings.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(result.filePath, JSON.stringify(ctx.cfg.exportData(), null, 2), "utf8");
+    return { ok: true, path: result.filePath };
+  });
+
+  ipcMain.handle("app:importSettings", async () => {
+    const result = await dialog.showOpenDialog(ctx.settingsWin || ctx.win, {
+      title: "导入设置",
+      properties: ["openFile"],
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true, state: state(ctx) };
+    const file = result.filePaths[0];
+    const stat = fs.statSync(file);
+    if (stat.size > 1024 * 1024) throw new Error("设置文件不能超过 1MB");
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    ctx.cfg.replaceData(parsed);
+    await ctx.refreshAppearance({ reschedule: false });
+    ctx.scheduleWallpaperRotation();
+    ctx.views.setRailPinned(!!ctx.cfg.get().rail.pinned);
+    ctx.views.applyAdBlock();
+    ctx.views.applyFeatures();
+    broadcastState(ctx);
+    return { ok: true, state: state(ctx) };
+  });
+
+  ipcMain.handle("app:resetSettings", async () => {
+    ctx.cfg.resetAll();
+    await ctx.refreshAppearance({ reschedule: false });
+    ctx.scheduleWallpaperRotation();
+    ctx.views.setRailPinned(false);
+    ctx.views.applyAdBlock();
+    ctx.views.applyFeatures();
+    broadcastState(ctx);
+    return { ok: true, state: state(ctx) };
   });
 
   ipcMain.handle("app:setNotify", (_event, patch) => {
@@ -237,6 +289,14 @@ function registerIpc(ctx) {
   ipcMain.handle("app:openProblem", (_event, pid) => {
     ctx.views.openProblem(pid);
   });
+
+  ipcMain.handle("app:openUser", (_event, uid) => {
+    ctx.views.openProfile(Number(uid));
+  });
+
+  ipcMain.handle("app:randomProblem", (_event, payload) => ctx.luogu.randomProblem(payload || {}));
+
+  ipcMain.handle("app:searchUsers", (_event, keyword) => ctx.luogu.searchUsers(keyword));
 
   ipcMain.handle("app:viewAction", (_event, action) => {
     if (action === "back") ctx.views.back();
@@ -413,6 +473,36 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:getVersion", () => app.getVersion());
+
+  ipcMain.handle("app:checkUpdate", async () => {
+    const current = app.getVersion();
+    const response = await fetch("https://api.github.com/repos/longguanhong0755/luogu-plus/releases?per_page=1", {
+      headers: { "User-Agent": "Luogu-Desktop/" + current, Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!response.ok) throw new Error("发布页返回 HTTP " + response.status);
+    const releases = await response.json();
+    const release = Array.isArray(releases) ? releases[0] : null;
+    if (!release) return { ok: true, current, latest: current, newer: false, notes: "项目尚未发布 Release。" };
+    const normalize = (value) => String(value || "").replace(/^v/i, "").split(/[.-]/).map((part) => Number(part) || 0);
+    const a = normalize(current);
+    const b = normalize(release.tag_name);
+    let newer = false;
+    for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      if ((b[index] || 0) === (a[index] || 0)) continue;
+      newer = (b[index] || 0) > (a[index] || 0);
+      break;
+    }
+    return {
+      ok: true,
+      current,
+      latest: release.tag_name || "",
+      newer,
+      url: release.html_url || "",
+      notes: String(release.body || "").slice(0, 4000),
+      prerelease: !!release.prerelease,
+    };
+  });
 
   ipcMain.on("page:open-problem", (_event, pid) => {
     ctx.views.openProblem(pid);

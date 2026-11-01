@@ -27,6 +27,16 @@ export function initOverlays(actions) {
   const input = document.getElementById("pal-input");
   const palList = document.getElementById("pal-list");
   const swList = document.getElementById("sw-list");
+  const jumpOptions = document.getElementById("jump-options");
+  const jumpDifficulty = document.getElementById("jump-difficulty");
+  const jumpSource = document.getElementById("jump-source");
+  const jumpStatus = document.getElementById("jump-status");
+  const jumpRandom = document.getElementById("jump-random");
+  const jumpTrueRandom = document.getElementById("jump-true-random");
+  const userSearch = document.getElementById("user-search");
+  const userForm = document.getElementById("user-search-form");
+  const userInput = document.getElementById("user-search-input");
+  const userList = document.getElementById("user-search-list");
   const palFoot = palette.querySelector(".pal-foot");
   const palFootDefault = palFoot ? palFoot.textContent : "";
 
@@ -36,6 +46,7 @@ export function initOverlays(actions) {
   let swRows = [];
   let swSelected = 0;
   let queryToken = 0;
+  let featureState = {};
   let lastFocus = null;
   let closeTimer = null;
 
@@ -66,6 +77,8 @@ export function initOverlays(actions) {
     reveal();
     palette.hidden = false;
     switcher.hidden = true;
+    userSearch.hidden = true;
+    jumpOptions.hidden = true;
     input.value = "";
     input.placeholder = "输入题号、题名或功能…";
     input.setAttribute("aria-label", "搜索题号、题名或功能");
@@ -89,6 +102,8 @@ export function initOverlays(actions) {
     reveal();
     palette.hidden = false;
     switcher.hidden = true;
+    userSearch.hidden = true;
+    jumpOptions.hidden = featureState.betterSearch === false;
     input.value = "";
     input.placeholder = "输入题号，例如 P1001";
     input.setAttribute("aria-label", "输入题号跳转");
@@ -97,10 +112,28 @@ export function initOverlays(actions) {
     palette.setAttribute("aria-label", "题号跳转");
     palList.hidden = true;
     palList.textContent = "";
-    if (palFoot) palFoot.textContent = "输入完整题号，例如 P1001 · ↵ 跳转 · Esc 关闭";
+    if (palFoot) palFoot.textContent = featureState.betterSearch === false
+      ? "题号支持 P1001 / 1001 / 13A · ↵ 跳转 · Esc 关闭"
+      : "题号支持 P1001 / 1001 / 13A · ↵ 跳转 · 难度/题库随机 · Esc 关闭";
+    if (jumpStatus) jumpStatus.textContent = "可输入题号，或按难度与题库随机跳题";
+    if (jumpRandom) jumpRandom.disabled = false;
     actions.overlay(true);
     input.focus();
     input.select();
+  }
+
+  function openUserSearch() {
+    lastFocus = document.activeElement;
+    mode = "user";
+    reveal();
+    palette.hidden = true;
+    switcher.hidden = true;
+    userSearch.hidden = false;
+    userInput.value = "";
+    userList.textContent = "";
+    userList.appendChild(loadingRow("输入用户名或 UID 后搜索", "sw"));
+    actions.overlay(true);
+    userInput.focus();
   }
 
   function openSwitcher() {
@@ -109,6 +142,7 @@ export function initOverlays(actions) {
     reveal();
     switcher.hidden = false;
     palette.hidden = true;
+    userSearch.hidden = true;
     actions.overlay(true);
     swSelected = 0;
     swRows = [];
@@ -142,6 +176,8 @@ export function initOverlays(actions) {
       overlay.hidden = true;
       palette.hidden = true;
       switcher.hidden = true;
+      userSearch.hidden = true;
+      if (jumpOptions) jumpOptions.hidden = true;
       input.removeAttribute("aria-invalid");
       if (lastFocus && lastFocus !== document.body && typeof lastFocus.focus === "function") lastFocus.focus();
       lastFocus = null;
@@ -270,6 +306,114 @@ export function initOverlays(actions) {
     if (active && scroll) active.scrollIntoView({ block: "nearest" });
   }
 
+  function normalizeProblemInput(raw) {
+    let value = String(raw || "").trim().toUpperCase();
+    if (/^\d+$/.test(value)) value = "P" + value;
+    else if (/^\d{1,4}[A-Z]\d?$/.test(value)) value = "CF" + value;
+    return /^(?:AT_?[A-Z0-9_]+|CF\d{1,4}[A-Z]\d?|SP\d{1,5}|UVA\d{1,5}|[PBU]\d{1,6})$/.test(value)
+      ? value
+      : "";
+  }
+
+  function setJumpStatus(text, bad) {
+    if (!jumpStatus) return;
+    jumpStatus.textContent = text;
+    jumpStatus.classList.toggle("bad", !!bad);
+  }
+
+  async function runRandomProblem() {
+    if (!jumpRandom || jumpRandom.disabled) return;
+    jumpRandom.disabled = true;
+    setJumpStatus("正在随机选题…", false);
+    try {
+      const result = await actions.randomProblem({
+        difficulty: Number(jumpDifficulty.value),
+        source: jumpSource.value,
+      });
+      if (result && result.ok && result.pid) {
+        close();
+        actions.openProblem(result.pid);
+        return;
+      }
+      const wait = result && result.waitMs ? Math.ceil(result.waitMs / 1000) + " 秒后再试" : "稍后再试";
+      const messages = {
+        daily: "今日随机次数已达上限",
+        interval: "冷却中，请 " + wait,
+        offline: "当前离线，无法随机跳题",
+        empty: "该条件下暂无题目",
+        network: "加载失败，请稍后再试",
+      };
+      setJumpStatus((result && messages[result.reason]) || "加载失败，请稍后再试", true);
+    } catch {
+      setJumpStatus("加载失败，请稍后再试", true);
+    } finally {
+      if (jumpRandom) jumpRandom.disabled = false;
+    }
+  }
+
+  function renderUserResults(result) {
+    userList.textContent = "";
+    const users = result && Array.isArray(result.users) ? result.users : [];
+    if (!users.length) {
+      const text =
+        result && result.reason === "interval" ? "操作过于频繁，请稍后再试" :
+        result && result.reason === "daily" ? "今日用户搜索次数已达上限" :
+        result && result.reason === "offline" ? "当前离线，无法搜索用户" :
+        "未搜索到相关内容";
+      userList.appendChild(loadingRow(text, "sw"));
+      return;
+    }
+    for (const user of users) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "user-search-row";
+      row.setAttribute("role", "option");
+      const avatar = document.createElement("span");
+      avatar.className = "user-search-avatar";
+      avatar.textContent = String(user.name || "洛").slice(0, 1);
+      if (/^https?:\/\//i.test(String(user.avatar || ""))) {
+        avatar.textContent = "";
+        const image = document.createElement("img");
+        image.src = user.avatar;
+        image.alt = "";
+        image.loading = "lazy";
+        avatar.appendChild(image);
+      }
+      const info = document.createElement("span");
+      const name = document.createElement("strong");
+      name.textContent = user.name || "未命名用户";
+      const meta = document.createElement("small");
+      meta.textContent = "UID " + user.uid + (user.badge ? " · " + user.badge : "") + (user.ccfLevel ? " · CCF " + user.ccfLevel : "");
+      info.appendChild(name);
+      info.appendChild(meta);
+      row.appendChild(avatar);
+      row.appendChild(info);
+      row.addEventListener("click", () => {
+        close();
+        actions.openUser(user.uid);
+      });
+      userList.appendChild(row);
+    }
+    const first = userList.querySelector(".user-search-row");
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  async function submitUserSearch() {
+    const keyword = userInput.value.trim();
+    if (!keyword) {
+      renderUserResults({ users: [], reason: "empty" });
+      userInput.focus();
+      return;
+    }
+    userList.textContent = "";
+    userList.appendChild(loadingRow("正在搜索用户…", "sw"));
+    try {
+      renderUserResults(await actions.searchUsers(keyword));
+    } catch {
+      renderUserResults({ users: [], reason: "network" });
+    }
+  }
+
   function choose(item) {
     close();
     actions.run(item);
@@ -292,14 +436,14 @@ export function initOverlays(actions) {
   input.addEventListener("keydown", (event) => {
     if (mode === "jump" && event.key === "Enter") {
       event.preventDefault();
-      const raw = input.value.trim();
-      if (!/^[A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*$/.test(raw)) {
+      const pid = normalizeProblemInput(input.value);
+      if (!pid) {
         input.setAttribute("aria-invalid", "true");
         input.select();
         return;
       }
       close();
-      actions.openProblem(raw);
+      actions.openProblem(pid);
       return;
     }
     if (event.key === "ArrowDown") {
@@ -323,11 +467,35 @@ export function initOverlays(actions) {
     }
   });
 
+  jumpRandom.addEventListener("click", runRandomProblem);
+  jumpTrueRandom.addEventListener("click", () => {
+    close();
+    actions.openUrl("https://www.luogu.com.cn/problem/random", "随机跳题");
+  });
+  userForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitUserSearch();
+  });
+  userList.addEventListener("keydown", (event) => {
+    const nodes = [...userList.querySelectorAll(".user-search-row")];
+    if (!nodes.length) return;
+    const index = nodes.indexOf(document.activeElement);
+    let next = -1;
+    if (event.key === "ArrowDown") next = index < 0 ? 0 : (index + 1) % nodes.length;
+    else if (event.key === "ArrowUp") next = index < 0 ? nodes.length - 1 : (index - 1 + nodes.length) % nodes.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = nodes.length - 1;
+    if (next < 0) return;
+    event.preventDefault();
+    nodes[next].focus({ preventScroll: false });
+  });
+
   document.addEventListener("keydown", (event) => {
     if (overlay.hidden) return;
     if (event.key === "Tab") {
       event.preventDefault();
-      if (mode === "palette") input.focus();
+      if (mode === "palette" || mode === "jump") input.focus();
+      else if (mode === "user") userInput.focus();
       else switcher.focus();
       return;
     }
@@ -357,5 +525,9 @@ export function initOverlays(actions) {
 
   scrim.addEventListener("click", close);
 
-  return { openPalette, openJump, openSwitcher, close, isOpen: () => !overlay.hidden };
+  function setFeatures(next) {
+    featureState = next && typeof next === "object" ? next : {};
+  }
+
+  return { setFeatures, openPalette, openJump, openUserSearch, openSwitcher, close, isOpen: () => !overlay.hidden };
 }

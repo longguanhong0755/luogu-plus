@@ -120,6 +120,31 @@ body.wall-fade .wall-layer {
   height: 100%;
   object-fit: cover;
 }
+.tb-action {
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+.tb-action svg {
+  width: 15px;
+  height: 15px;
+}
+.tb-action:hover,
+.tb-action:focus-visible {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--text);
+  outline: none;
+}
 #tb-avatar:hover {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
 }
@@ -191,9 +216,6 @@ body:not(.rail-pinned) #rail-top::-webkit-scrollbar {
   margin-top: 8px;
   border-top: 1px solid var(--border);
 }
-#rail-jump {
-  margin-top: 8px;
-}
 .rail-btn {
   width: 100%;
   height: 32px;
@@ -212,10 +234,35 @@ body:not(.rail-pinned) #rail-top::-webkit-scrollbar {
     background-color var(--dur-1) var(--ease),
     color var(--dur-1) var(--ease);
 }
-.rail-btn svg {
+.rail-glyph {
   width: 20px;
   height: 20px;
   flex: none;
+  display: inline-grid;
+  place-items: center;
+}
+
+.rail-glyph svg {
+  width: 20px;
+  height: 20px;
+}
+
+.rail-glyph-custom {
+  border: 1px solid hsl(var(--rail-glyph-hue, 216) 58% 56% / 0.42);
+  border-radius: var(--r-sm);
+  background: hsl(var(--rail-glyph-hue, 216) 62% 46% / 0.14);
+  color: hsl(var(--rail-glyph-hue, 216) 68% 44%);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  text-transform: uppercase;
+}
+
+html[data-theme="dark"] .rail-glyph-custom {
+  border-color: hsl(var(--rail-glyph-hue, 216) 72% 67% / 0.46);
+  background: hsl(var(--rail-glyph-hue, 216) 68% 58% / 0.18);
+  color: hsl(var(--rail-glyph-hue, 216) 82% 76%);
 }
 .rail-label {
   min-width: 0;
@@ -279,8 +326,11 @@ body:not(.rail-pinned) #rail-bottom > .rail-group:first-child {
   box-shadow: inset 0 0 0 var(--focus-w) var(--accent);
 }
 .rail-btn.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.rail-btn.active svg {
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 .rail-btn.active::before {
   content: "";
@@ -293,10 +343,9 @@ body:not(.rail-pinned) #rail-bottom > .rail-group:first-child {
   background: var(--accent);
 }
 .rail-pin.on {
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
 }
-
 /* ---------- 内容区：高不透明度画布，正文不再直接压在壁纸上 ----------
    这里不再挂 backdrop-filter：94% 底色已经足够，整块内容区实时模糊
    是切栏目/滚动卡顿的大头，玻璃只保留在标题栏、侧栏、工具条和浮层。 */
@@ -2372,6 +2421,90 @@ body:not(.rail-pinned) #rail-bottom > .rail-group:first-child {
   color: var(--text-2);
 }
 
+.announcement-card .welcome-line {
+  padding-top: var(--sp-3);
+  color: var(--text-2);
+}
+
+.task-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--sp-2);
+}
+
+.task-row,
+.community-row {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  text-align: left;
+}
+
+.task-row:hover,
+.task-row:focus-visible,
+.community-row:hover,
+.community-row:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+.task-title,
+.community-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-action,
+.community-meta {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+.community-row {
+  min-height: 46px;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.community-card .sign-btn {
+  margin-top: var(--sp-2);
+}
+
+#home.plain-home .home-wrap {
+  max-width: 920px;
+  gap: var(--sp-3);
+}
+
+#home.plain-home .card {
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--surface);
+}
+
+#home.plain-home .home-hello {
+  font-size: var(--fs-xl);
+}
+
+#home.smooth-home .card {
+  border-radius: var(--r-lg);
+}
+
+#home:not(.smooth-home) .card {
+  border-radius: var(--r-xs);
+}
+
 .list-card {
   overflow: hidden;
 }
@@ -2624,6 +2757,9 @@ html[data-theme="light"] #scrim {
 #switcher {
   width: min(560px, 88%);
 }
+#user-search {
+  width: min(680px, 90%);
+}
 .pal-head {
   display: flex;
   align-items: center;
@@ -2657,6 +2793,144 @@ html[data-theme="light"] #scrim {
 }
 #pal-input[aria-invalid="true"] {
   color: var(--red);
+}
+.jump-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border);
+}
+.jump-options[hidden] {
+  display: none;
+}
+.jump-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+.jump-options select,
+#user-search-input {
+  height: 34px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  color: var(--text);
+  font: inherit;
+}
+.jump-options select:focus-visible,
+#user-search-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.jump-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+#jump-status {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+#jump-status.bad {
+  color: var(--red);
+}
+.jump-actions button,
+.jump-submit {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
+}
+.jump-actions button:hover,
+.jump-submit:hover {
+  border-color: var(--accent);
+}
+.jump-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.jump-actions button.secondary {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-2);
+}
+#user-search-form {
+  gap: 8px;
+}
+#user-search-input {
+  flex: 1;
+}
+.user-search-list {
+  max-height: 440px;
+  overflow-y: auto;
+  padding: 8px;
+}
+.user-search-row {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.user-search-row:hover,
+.user-search-row:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.user-search-row strong {
+  display: block;
+  font-weight: 600;
+}
+.user-search-avatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+  overflow: hidden;
+}
+.user-search-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.user-search-row small {
+  display: block;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+.user-search-empty {
+  padding: 24px;
+  color: var(--text-3);
+  text-align: center;
 }
 .pal-esc {
   font-size: var(--fs-2xs);

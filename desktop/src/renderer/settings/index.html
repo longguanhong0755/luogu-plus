@@ -27,6 +27,7 @@
           <button class="snav on" data-sec="appearance" type="button"><span class="snav-icon"></span><span>外观</span></button>
           <button class="snav" data-sec="wallpaper" type="button"><span class="snav-icon"></span><span>壁纸</span></button>
           <button class="snav" data-sec="rail" type="button"><span class="snav-icon"></span><span>侧边栏</span></button>
+          <button class="snav" data-sec="enhance" type="button"><span class="snav-icon"></span><span>增强</span></button>
           <button class="snav" data-sec="general" type="button"><span class="snav-icon"></span><span>通用</span></button>
           <button class="snav" data-sec="notify" type="button"><span class="snav-icon"></span><span>通知</span></button>
           <button class="snav" data-sec="account" type="button"><span class="snav-icon"></span><span>账号</span></button>
@@ -189,6 +190,123 @@
             </div>
           </section>
 
+          <section data-panel="enhance" hidden>
+            <div class="pane-head">
+              <h2 tabindex="-1">增强</h2>
+              <p>洛谷页面增强与随机跳题。所有改动即时应用。</p>
+            </div>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-label"><span>选中题号识别</span><small>选中 P1001、CF13A 等文本后快速打开</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-problem-detect" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>显示他人介绍</span><small>在用户主页渲染安全 Markdown、公式、代码与 B 站嵌入</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-user-intro" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>尝试题目显色</span><small>按难度为练习页题目链接着色</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-problem-color" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>用户搜索</span><small>侧栏入口与 Ctrl+U，按用户名或 UID 搜索</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-user-search" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>增强快捷键</span><small>Alt+L 打开题库；其余应用快捷键始终可用</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-shortcuts" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>打开题库快捷键</span><small>点击输入框后按下组合键；Esc 恢复 Alt+L</small></div>
+                <div class="setting-control btn-line">
+                  <input type="text" class="shortcut-input" id="shortcut-problems" readonly aria-label="打开题库快捷键" />
+                  <button type="button" class="btn btn-secondary" id="shortcut-reset">恢复默认</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>动态内容检测</span><small>监听 SPA 页面变化并重新应用增强</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-dynamic" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>逆天改运</span><small>客户端展示“§ 大吉 §”，关闭后恢复原文</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-fortune" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>项目支持提示</span><small>在主页显示低干扰的 Star 入口</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-support" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>增强题号跳转</span><small>在跳题面板显示难度与题库随机跳题</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-better-search" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>主页美化</span><small>使用仪表盘主页；关闭后切换为朴素信息流</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-beautify-home" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>更圆滑的主页</span><small>为主页卡片与交互面启用圆角</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-smooth-home" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>设置后自动应用</span><small>更改增强开关时立即刷新当前页面状态</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-auto-refresh" /><span class="box"></span>启用</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>自定义板块显示</span><small>启用下面各主页板块的独立显隐控制</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-custom-sections" /><span class="box"></span>启用</label></div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="pane-head compact"><h2 tabindex="-1">主页板块</h2><p>控制原生主页卡片显隐，布局即时重排。</p></div>
+              <div class="setting-row">
+                <div class="setting-label"><span>最近提交</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-recent" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>官方问候</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-official" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>比赛日历</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-contest" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>打卡热力图</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-heat" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>首次使用卡</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-first-run" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>本站公告</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-announcement" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>任务计划与常用入口</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-tasks" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>友情链接</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-links" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>最近讨论</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-community" /><span class="box"></span>显示</label></div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="setting-row">
+                <div class="setting-label"><span>设置备份</span><small>导入、导出或恢复全部客户端设置</small></div>
+                <div class="setting-control btn-line">
+                  <button type="button" class="btn btn-secondary" id="settings-export">导出</button>
+                  <button type="button" class="btn btn-secondary" id="settings-import">导入</button>
+                  <button type="button" class="btn btn-secondary" id="settings-reset">恢复默认</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section data-panel="general" hidden>
             <div class="pane-head">
               <h2 tabindex="-1">通用</h2>
@@ -308,6 +426,36 @@
                 <div class="setting-control hint-line">
                   题面快照、列表缓存、草稿与离线提交队列保存在本机。断网时仍可浏览已缓存的题目和列表；联网后队列自动重放。
                 </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>检查更新</span><small>从项目发布页读取最新版本与更新说明</small></div>
+                <div class="setting-control btn-line">
+                  <button type="button" class="btn btn-secondary" id="check-update">检查更新</button>
+                  <span class="hint-line" id="update-status">尚未检查</span>
+                </div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="pane-head compact"><h2 tabindex="-1">公告</h2><p>当前版本与兼容增强进度。</p></div>
+              <div class="setting-row stacked">
+                <div class="setting-control hint-line" id="about-announcement">
+                  侧栏已收敛为单 DOM；64px/208px、随机跳题、用户搜索、介绍渲染、练习显色与主页板块控制均在当前版本中。
+                </div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="pane-head compact"><h2 tabindex="-1">致谢</h2><p>参考项目与开源依赖。</p></div>
+              <div class="setting-row stacked">
+                <div class="setting-control hint-line">
+                  Luogu Plus、Carbon Luogu、Markdown Palettes、Luogu Problem Jumper、Luogu Search AnyWhere 与本项目贡献者。
+                </div>
+              </div>
+            </div>
+            <div class="settings-group">
+              <div class="pane-head compact"><h2 tabindex="-1">使用声明</h2><p>增强功能会代你发起少量洛谷请求，请遵守站内规则。</p></div>
+              <div class="setting-row">
+                <div class="setting-label"><span>已阅读并同意</span><small>随机跳题与用户搜索均有限流；因自行修改限制或滥用造成的后果由使用者承担。</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="disclaimer-accepted" /><span class="box"></span>同意</label></div>
               </div>
             </div>
           </section>

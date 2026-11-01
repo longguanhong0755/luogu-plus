@@ -89,9 +89,22 @@ function homeKey(state) {
         "|" + String(home.official.welcome || "") + "|" + String(home.official.fortune || "")
       : "",
     (home.heat || []).length,
+    JSON.stringify(state.features || {}),
     state.online === false ? "off" : "on",
     (state.queue && state.queue.items || []).map((item) => [item.id, item.status, item.tries]).join(","),
   ]);
+}
+
+function matchesShortcut(event, accelerator) {
+  const parts = String(accelerator || "").split("+");
+  const key = String(parts.pop() || "").toLowerCase();
+  const has = (name) => parts.some((part) => part.toLowerCase() === name);
+  return (
+    key === String(event.key || "").toLowerCase() &&
+    !!(event.ctrlKey || event.metaKey) === has("ctrl") &&
+    !!event.altKey === has("alt") &&
+    !!event.shiftKey === has("shift")
+  );
 }
 
 async function boot() {
@@ -170,6 +183,10 @@ async function boot() {
     listPages: () => window.lg.switcher(),
     switchTo: (key) => window.lg.switchTo(key),
     openProblem: (pid) => window.lg.openProblem(pid),
+    randomProblem: (payload) => window.lg.randomProblem(payload),
+    searchUsers: (keyword) => window.lg.searchUsers(keyword),
+    openUser: (uid) => window.lg.openUser(uid),
+    openUrl: (url, title) => window.lg.openDetail({ url, title }),
     run: runItem,
   });
 
@@ -182,6 +199,7 @@ async function boot() {
     ide: (on) => window.lg.setIde(on),
     custom: (payload) => window.lg.openCustom(payload),
     openJump: () => overlays.openJump(),
+    openUserSearch: () => overlays.openUserSearch(),
     focusPage: () => window.lg.command("focusPage"),
     setRailPinned: (pinned) => window.lg.setRailPinned(pinned),
   });
@@ -196,6 +214,7 @@ async function boot() {
       applyTheme(state.theme);
     }
     chrome.update(state);
+    overlays.setFeatures(state.features);
     if (state.page.home) {
       const key = homeKey(state);
       if (key !== homeSignature) {
@@ -310,6 +329,7 @@ async function boot() {
     if (name === "palette") overlays.openPalette();
     else if (name === "switcher") overlays.openSwitcher();
     else if (name === "jump") overlays.openJump();
+    else if (name === "userSearch") overlays.openUserSearch();
     else if (name === "focusRail") chrome.focusRail();
   });
   window.lg.onToast(toast);
@@ -332,6 +352,13 @@ async function boot() {
       event.preventDefault();
       const pinned = !!(stateBox.data && stateBox.data.rail && stateBox.data.rail.pinned);
       window.lg.setRailPinned(!pinned);
+    } else if (ctrl && event.key.toLowerCase() === "u") {
+      event.preventDefault();
+      if (!(stateBox.data && stateBox.data.features && stateBox.data.features.userSearch === false)) overlays.openUserSearch();
+    } else if (stateBox.data && matchesShortcut(event, stateBox.data.general && stateBox.data.general.shortcutOpenProblems)) {
+      event.preventDefault();
+      const enabled = !(stateBox.data.features && stateBox.data.features.shortcuts === false);
+      if (enabled) window.lg.nav("problems");
     } else if (event.key === "F6") {
       event.preventDefault();
       if (event.shiftKey) window.lg.command("focusPage");

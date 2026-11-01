@@ -346,13 +346,109 @@ function buildFirstRun(actions) {
   return card;
 }
 
-function buildWelcome(home) {
+function buildWelcome(home, features) {
   const official = home.official || {};
   if (!official.welcome && !official.fortune) return null;
   const card = el("div", "welcome-card card");
   card.appendChild(cardHead("官方问候", "home"));
   if (official.welcome) card.appendChild(el("div", "welcome-line", official.welcome));
-  if (official.fortune) card.appendChild(el("div", "welcome-line sub", official.fortune));
+  if (official.fortune) {
+    const fortune = features.changeFortune ? "§ 大吉 § · 万事皆宜" : official.fortune;
+    card.appendChild(el("div", "welcome-line sub", fortune));
+  }
+  return card;
+}
+
+function sectionData(home, name) {
+  const sections = home.official && home.official.sections;
+  return (sections && sections[name]) || {};
+}
+
+function buildAnnouncement(home) {
+  const section = sectionData(home, "announcement");
+  const card = el("div", "announcement-card card");
+  card.appendChild(cardHead("本站公告", "bell"));
+  const text = String(section.text || "欢迎使用洛谷桌面版。公告、通知与站内动态会继续在这里同步。").trim();
+  card.appendChild(el("div", "welcome-line", text.slice(0, 220)));
+  return card;
+}
+
+function buildTasks(actions) {
+  const card = el("div", "tasks-card card");
+  card.appendChild(cardHead("任务计划", "calendarCheck"));
+  const list = el("div", "task-links");
+  const items = [
+    ["每日练习", "打开题库", () => actions.nav("problems")],
+    ["专项训练", "进入训练", () => actions.nav("training")],
+    ["检查记录", "查看提交", () => actions.nav("record")],
+  ];
+  for (const [title, label, run] of items) {
+    const row = el("button", "task-row");
+    row.type = "button";
+    row.appendChild(el("span", "task-title", title));
+    row.appendChild(el("span", "task-action", label));
+    row.addEventListener("click", run);
+    list.appendChild(row);
+  }
+  card.appendChild(list);
+  return card;
+}
+
+function buildLinks(actions) {
+  const card = el("div", "links-card card");
+  card.appendChild(cardHead("友情链接", "external"));
+  const list = el("div", "task-links");
+  const links = [
+    ["洛谷讨论区", "https://www.luogu.com.cn/discuss"],
+    ["洛谷帮助", "https://help.luogu.com.cn/"],
+    ["桌面版项目", "https://github.com/longguanhong0755/luogu-plus"],
+  ];
+  for (const [label, url] of links) {
+    const row = el("button", "task-row");
+    row.type = "button";
+    row.appendChild(el("span", "task-title", label));
+    row.appendChild(el("span", "task-action", "打开"));
+    row.addEventListener("click", () => actions.openDetail({ url, title: label }));
+    list.appendChild(row);
+  }
+  card.appendChild(list);
+  return card;
+}
+
+function buildCommunity(home, actions) {
+  const card = el("div", "community-card card");
+  const section = sectionData(home, "discussions");
+  const items = Array.isArray(section.items) ? section.items.slice(0, 4) : [];
+  card.appendChild(cardHead("最近讨论", "discuss", items.length ? "站内动态" : ""));
+  if (!items.length) {
+    card.appendChild(el("div", "empty-line", "暂无讨论数据，打开讨论区查看最新内容。"));
+  } else {
+    for (const item of items) {
+      const row = el("button", "community-row");
+      row.type = "button";
+      row.appendChild(el("span", "community-title", String(item.title || "未命名讨论").slice(0, 80)));
+      const meta = [item.author, item.replies ? item.replies + " 回复" : ""].filter(Boolean).join(" · ");
+      if (meta) row.appendChild(el("span", "community-meta", meta));
+      if (item.url) row.addEventListener("click", () => actions.openDetail({ url: item.url, title: item.title || "讨论" }));
+      else row.addEventListener("click", () => actions.nav("discuss"));
+      card.appendChild(row);
+    }
+  }
+  const more = el("button", "sign-btn", "打开讨论区");
+  more.type = "button";
+  more.addEventListener("click", () => actions.nav("discuss"));
+  card.appendChild(more);
+  return card;
+}
+
+function buildSupport(actions) {
+  const card = el("div", "support-card card");
+  card.appendChild(cardHead("支持项目", "star"));
+  card.appendChild(el("div", "welcome-line sub", "如果这个客户端对你有帮助，可以前往仓库点一个 Star。"));
+  const btn = el("button", "sign-btn", "前往项目仓库");
+  btn.type = "button";
+  btn.addEventListener("click", () => actions.openDetail({ url: "https://github.com/longguanhong0755/luogu-plus", title: "项目仓库" }));
+  card.appendChild(btn);
   return card;
 }
 
@@ -433,6 +529,12 @@ export function renderHome(state, actions) {
   const home = state.home || {};
   const user = state.user || {};
   const offline = state.online === false;
+  const features = state.features || {};
+  root.classList.toggle("plain-home", features.beautifyUI === false);
+  root.classList.toggle("smooth-home", features.smoothHome !== false);
+  const sections = features.customSections === false
+    ? { homeAnnouncement: true, homeTasks: true, homeLinks: true, homeCommunity: true, homeOfficial: true, homeContest: true, homeHeat: true, homeRecent: true, homeFirstRun: true }
+    : features;
 
   const head = el("div", "home-row");
   if (user.name) head.appendChild(el("div", "home-hello", "你好，" + user.name));
@@ -461,19 +563,24 @@ export function renderHome(state, actions) {
   const side = el("div", "home-side");
 
   if (user.loggedIn) {
-    main.appendChild(buildHeat(home));
-    main.appendChild(buildRecent(home, actions, offline));
+    if (sections.homeHeat !== false) main.appendChild(buildHeat(home));
+    if (sections.homeRecent !== false) main.appendChild(buildRecent(home, actions, offline));
   } else {
     grid.classList.add("single");
   }
+  if (sections.homeAnnouncement !== false) main.appendChild(buildAnnouncement(home));
 
-  const welcomeCard = buildWelcome(home);
+  const welcomeCard = sections.homeOfficial !== false ? buildWelcome(home, features) : null;
   if (welcomeCard) side.appendChild(welcomeCard);
-  if (state.general && state.general.firstRunSeen === false) {
+  if (sections.homeFirstRun !== false && state.general && state.general.firstRunSeen === false) {
     side.appendChild(buildFirstRun(actions));
   }
-  side.appendChild(buildContest(home, actions));
+  if (sections.homeContest !== false) side.appendChild(buildContest(home, actions));
+  if (sections.homeTasks !== false) side.appendChild(buildTasks(actions));
+  if (sections.homeCommunity !== false) side.appendChild(buildCommunity(home, actions));
+  if (sections.homeLinks !== false) side.appendChild(buildLinks(actions));
   side.appendChild(buildSign(state, actions));
+  if (features.supportPrompt) side.appendChild(buildSupport(actions));
   const queueCard = buildQueue(state, actions);
   if (queueCard) side.appendChild(queueCard);
 

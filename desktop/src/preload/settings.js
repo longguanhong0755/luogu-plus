@@ -13,6 +13,10 @@ contextBridge.exposeInMainWorld("lgSettings", {
   setRail: (patch) => ipcRenderer.invoke("app:setRail", patch),
   resetRail: () => ipcRenderer.invoke("app:resetRail"),
   setGeneral: (patch) => ipcRenderer.invoke("app:setGeneral", patch),
+  setFeatures: (patch) => ipcRenderer.invoke("app:setFeatures", patch),
+  exportSettings: () => ipcRenderer.invoke("app:exportSettings"),
+  importSettings: () => ipcRenderer.invoke("app:importSettings"),
+  resetSettings: () => ipcRenderer.invoke("app:resetSettings"),
   setNotify: (patch) => ipcRenderer.invoke("app:setNotify", patch),
   pickWallpaper: () => ipcRenderer.invoke("app:pickWallpaper"),
   pickWallpaperDir: () => ipcRenderer.invoke("app:pickWallpaperDir"),
@@ -22,5 +26,6 @@ contextBridge.exposeInMainWorld("lgSettings", {
   nav: (target) => ipcRenderer.invoke("app:nav", target),
   logout: () => ipcRenderer.invoke("app:logout"),
   getVersion: () => ipcRenderer.invoke("app:getVersion"),
+  checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   onState: (callback) => on("app:state", callback),
 });

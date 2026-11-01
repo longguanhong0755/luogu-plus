@@ -224,7 +224,7 @@ for (const [name, content, needle] of [
 }
 
 const shellHtml = read("src/renderer/shell/index.html");
-if (/id="rail-jump"/.test(shellHtml) && !/rail-jump-input/.test(shellHtml) && /id="library"/.test(shellHtml)) {
+if (/id="tb-jump"/.test(shellHtml) && !/rail-jump-input/.test(shellHtml) && /id="library"/.test(shellHtml)) {
   ok("外壳包含题号跳转按钮与原生列表容器");
 } else {
   fail("外壳缺少题号跳转按钮或仍保留侧栏内联输入框");
@@ -460,9 +460,9 @@ if (/--lg-text-shadow/.test(read("src/main/views.js")) && /pageScrim <= 40/.test
   fail("低纱层正文缺少投影保护");
 }
 
-/* 广告拦截：默认关闭，配置/设置页/IPC/页面兜底四处齐 */
+/* 广告拦截：对齐 Luogu Plus 默认开启，配置/设置页/IPC/页面兜底四处齐 */
 const preloadPageSource = read("src/preload/page.js");
-if (/adBlock: false/.test(configSource) && /g\.adBlock = !!g\.adBlock/.test(configSource)) ok("广告拦截默认关闭且落盘收敛");
+if (/adBlock: true/.test(configSource) && /g\.adBlock = !!g\.adBlock/.test(configSource)) ok("广告拦截默认开启且落盘收敛");
 else fail("config.js 缺少 adBlock 默认值/收敛");
 if (/id="ad-block"/.test(settingsHtml) && /setGeneral\(\{ adBlock:/.test(read("src/renderer/settings/settings.js"))) ok("设置页提供广告拦截开关");
 else fail("设置页缺少广告拦截开关");
@@ -530,7 +530,8 @@ const singleRailRemoved =
   !fs.existsSync(path.join(ROOT, "src", "renderer", "rail", "rail.js")) &&
   !fs.existsSync(path.join(ROOT, "src", "renderer", "rail", "rail.css")) &&
   !/ensureRailOverlay|railDrawer|railHover|renderer\/rail|preload[^\n]*rail\.js/.test(viewsSource) &&
-  !/app:railHover|rail:focus|lgRail/.test(shellPreloadSource);
+  !/app:railHover|rail:focus|lgRail|railTooltip/.test(shellPreloadSource) &&
+  !/app:rail-tooltip|lg-rail-tooltip/.test(read("src/preload/page.js"));
 if (singleRailRemoved) {
   ok("单侧栏 DOM：旧 rail WebContentsView/preload/浮层通道已移除");
 } else {
@@ -542,7 +543,7 @@ if (
   railDomCount === 1 &&
   /id="rail-top"/.test(shellHtml) &&
   /id="rail-bottom"/.test(shellHtml) &&
-  !/rail-user|rail-jump-input/.test(shellHtml)
+  !/id="rail-user"|rail-jump-input/.test(shellHtml)
 ) {
   ok("外壳仅保留一份侧栏 DOM，且无账户卡/内联跳转输入框");
 } else {
@@ -607,7 +608,7 @@ if (
 }
 
 if (
-  /pinOff/.test(chromeSource) &&
+  /panelExpand|panelCollapse/.test(chromeSource) &&
   /setAttribute\("aria-pressed"/.test(chromeSource) &&
   /actions\.setRailPinned\(next\)/.test(chromeSource) &&
   /event\.key\.toLowerCase\(\) === "b"[\s\S]*?setRailPinned\(!pinned\)/.test(shellJsSource) &&
@@ -635,7 +636,7 @@ if (
   /name === "jump"\) overlays\.openJump\(\)/.test(shellJsSource) &&
   /function openJump\(\)/.test(overlaysSource) &&
   /input\.focus\(\)/.test(overlaysSource) &&
-  /jump\.addEventListener\("click", \(\) => actions\.openJump\(\)\)/.test(chromeSource)
+  /titleJump\.addEventListener\("click", \(\) => actions\.openJump\(\)\)/.test(chromeSource)
 ) {
   ok("Ctrl+L 与侧栏题号跳转按钮共用全局面板");
 } else {
@@ -786,8 +787,7 @@ if (
   fail("侧栏分组/固定底部工具区契约缺失");
 }
 if (
-  !/rail-user/.test(chromeRailSrc) &&
-  !/rail-user/.test(read("src/renderer/shell/index.html")) &&
+  !/id="rail-user"/.test(read("src/renderer/shell/index.html")) &&
   /id="tb-avatar"/.test(read("src/renderer/shell/index.html")) &&
   /avatar\.addEventListener\("click", \(\) => actions\.profile\(\)\)/.test(chromeRailSrc)
 ) {
@@ -797,9 +797,9 @@ if (
 }
 if (
   /id="rail-pin"/.test(read("src/renderer/shell/index.html")) &&
-  /id="rail-jump"/.test(read("src/renderer/shell/index.html")) &&
+  /id="tb-jump"/.test(read("src/renderer/shell/index.html")) &&
   /\.rail-pin\.on/.test(read("src/renderer/shell/shell.css")) &&
-  /#rail-jump \{\s*margin-top: 8px;/.test(read("src/renderer/shell/shell.css"))
+  /\.tb-action \{/.test(read("src/renderer/shell/shell.css"))
 ) {
   ok("固定按钮和题号跳转入口始终存在");
 } else {
@@ -891,9 +891,9 @@ if (
   !/#rail-user/.test(railCss) &&
   /\.rail-btn\.active::before/.test(railCss) &&
   /width: 2px;/.test(railCss) &&
-  /background: color-mix\(in srgb, var\(--accent\) 10%, transparent\)/.test(railCss)
+  /background: color-mix\(in srgb, var\(--accent\) 7%, transparent\)/.test(railCss)
 ) {
-  ok("侧栏无旧浮层/账户卡，active 使用 2px accent + 10% 背景");
+  ok("侧栏无旧浮层/账户卡，active 使用 2px accent + 7% 背景");
 } else {
   fail("侧栏仍有旧浮层/账户卡，或 active 视觉契约缺失");
 }
@@ -1064,7 +1064,7 @@ for (const [name, re, src] of [
   ["官方主页抓取管线", /async fetchOfficialHome\(\)/, luogu70],
   ["比赛日历数据", /buildContests\(contests\)/, luogu70],
   ["refresh 容错挂载", /next\.official = await this\.fetchOfficialHome\(\)/, luogu70],
-  ["欢迎卡渲染", /function buildWelcome\(home\)/, homeJs70],
+  ["欢迎卡渲染", /function buildWelcome\(home/, homeJs70],
   ["比赛日历行", /"cal-row"/, homeJs70],
   ["官方倒计时行", /"cd-row"/, homeJs70],
   ["主页问候", /home-hello/, homeJs70],
@@ -1152,7 +1152,7 @@ if (/function canonicalPid/.test(sections76) && /AT_/.test(sections76) && /toLow
 else fail("R76 缺 canonicalPid 单源");
 if (/canonicalPid/.test(views70) && /canonicalPid/.test(ipcSource) && (views70.match(/canonicalPid/g) || []).length >= 3) ok("R76 views/ipc 接入 canonicalPid（openProblem/palette/submit/草稿）");
 else fail("R76 views/ipc 未接入 canonicalPid");
-if (page76x.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1 && overlays76.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1) ok("R76 题号入口正则接受下划线题号（页面转交 + 全局面板）");
+if (page76x.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1 && /normalizeProblemInput/.test(overlays76)) ok("R76 题号入口正则接受下划线题号（页面转交 + 全局面板）");
 else fail("R76 题号入口正则未更新");
 if (/LG_SMOKE_FIND === "1"/.test(smoke74) && /SMOKE_FIND /.test(smoke74)) ok("R76 FIND 行为探针（Ctrl+F/缩放 HUD/Esc 真实键鼠链）");
 else fail("R76 缺 FIND 行为探针");
@@ -1415,6 +1415,166 @@ try {
 }
 if (hotCalls.join(",") === "win,settings,win,settings,skin") ok("热加载命令执行链正确");
 else fail("热加载命令执行链错误");
+
+/* ---------- R87 Luogu Plus 功能对齐 ---------- */
+const config87 = read("src/main/config.js");
+const featureKeys = [
+  "problemDetect", "showUserIntro", "problemDifficultyColor", "userSearch",
+  "shortcuts", "dynamicDetection", "changeFortune", "supportPrompt",
+  "betterSearch", "beautifyUI", "smoothHome", "autoRefresh", "customSections",
+  "homeRecent", "homeOfficial", "homeContest", "homeHeat", "homeFirstRun",
+  "homeAnnouncement", "homeTasks", "homeLinks", "homeCommunity",
+];
+if (featureKeys.every((key) => new RegExp(key + ":").test(config87)) && /function setFeatures/.test(config87)) {
+  ok("R87 增强配置与持久化齐备（22 个开关）");
+} else {
+  fail("R87 增强配置缺项");
+}
+if (/features: cfg\.features/.test(ipcSource) && /app:setFeatures/.test(ipcSource) && /applyFeatures\(\)/.test(viewsSource)) {
+  ok("R87 features 状态广播并下发所有页面");
+} else {
+  fail("R87 features 状态链路缺失");
+}
+const luogu87 = read("src/main/luogu.js");
+if (
+  /randomProblem\(options = \{\}\)/.test(luogu87) &&
+  /\["P", "CF", "SP", "AT", "UVA"\]/.test(luogu87) &&
+  /Math\.floor\(Math\.random\(\) \* total\)/.test(luogu87) &&
+  /randomJumpGuard/.test(luogu87) &&
+  /\/api\/user\/search\?keyword=/.test(luogu87)
+) {
+  ok("R87 随机跳题均匀抽样/限流与用户搜索后端在位");
+} else {
+  fail("R87 随机跳题或用户搜索后端缺失");
+}
+const overlays87 = read("src/renderer/shell/overlays.js");
+if (
+  /jump-difficulty/.test(read("src/renderer/shell/index.html")) &&
+  /jump-source/.test(read("src/renderer/shell/index.html")) &&
+  /normalizeProblemInput/.test(overlays87) &&
+  /openUserSearch/.test(overlays87) &&
+  /randomProblem/.test(overlays87)
+) {
+  ok("R87 题号/随机跳题/用户搜索原生面板在位");
+} else {
+  fail("R87 原生跳题或用户搜索面板缺失");
+}
+const page87 = read("src/preload/page.js");
+if (
+  /problemIdsInText/.test(page87) &&
+  /showProblemDetect/.test(page87) &&
+  /data-lgplus-user-intro/.test(page87) &&
+  /problemDifficultyColor/.test(page87) &&
+  /changeFortune/.test(page87) &&
+  /new MutationObserver/.test(page87) &&
+  /lg:features/.test(page87)
+) {
+  ok("R87 划词题号/他人介绍/练习显色/运势/动态检测在位");
+} else {
+  fail("R87 页面增强功能缺项");
+}
+if (/feat-problem-detect/.test(read("src/renderer/settings/index.html")) && /feat-home-recent/.test(read("src/renderer/settings/index.html")) && /FEATURE_CONTROLS/.test(read("src/renderer/settings/settings.js"))) {
+  ok("R87 设置页集中管理增强与主页板块");
+} else {
+  fail("R87 设置页增强分区缺失");
+}
+if (/homeRecent !== false/.test(read("src/renderer/shell/home.js")) && /homeContest !== false/.test(read("src/renderer/shell/home.js")) && /supportPrompt/.test(read("src/renderer/shell/home.js"))) {
+  ok("R87 主页板块显隐与支持入口接入");
+} else {
+  fail("R87 主页板块配置未接入");
+}
+if (/id="rail-users"/.test(read("src/renderer/shell/index.html")) && /searchUsers/.test(read("src/preload/shell.js")) && /Ctrl\+U/.test(read("src/renderer/shell/index.html")) && /shortcutOpenProblems/.test(read("src/renderer/shell/shell.js"))) {
+  ok("R87 用户搜索入口与 Alt+L/Ctrl+U 快捷键在位");
+} else {
+  fail("R87 用户搜索入口或快捷键缺失");
+}
+if (/\.lg-problem-detect/.test(read("src/renderer/skin/luogu-skin.css")) && /\.lg-plus-intro-card/.test(read("src/renderer/skin/luogu-skin.css"))) {
+  ok("R87 页面增强视觉组件已主题化");
+} else {
+  fail("R87 页面增强视觉组件缺失");
+}
+if (
+  /id="tb-jump"/.test(read("src/renderer/shell/index.html")) &&
+  /button\.title = \(item && item\.label\)/.test(read("src/renderer/shell/chrome.js")) &&
+  /rail-glyph-custom/.test(read("src/renderer/shell/chrome.js")) &&
+  !/railTooltip|rail-tooltip|lg-rail-tooltip/.test(ipcSource + page87 + read("src/renderer/shell/chrome.js")) &&
+  /panelExpand/.test(read("src/renderer/shell/chrome.js"))
+) {
+  ok("R88 标题栏题号入口、原生侧栏提示、区分化自定义图标与面板型展开按钮在位");
+} else {
+  fail("R88 侧栏视觉收敛链路缺失或仍保留浮层提示");
+}
+if (
+  /renderIntroMarkdown/.test(page87) &&
+  /player\.bilibili\.com/.test(page87) &&
+  /lg-katex-inline/.test(read("src/renderer/skin/luogu-skin.css")) &&
+  /lg-md-container/.test(read("src/renderer/skin/luogu-skin.css")) &&
+  /lgplus:difficulty:/.test(page87)
+) {
+  ok("R89 用户介绍安全 Markdown/公式/B 站嵌入/扩展块与练习色缓存齐备");
+} else {
+  fail("R89 用户介绍或练习色缓存能力缺失");
+}
+if (
+  /buildAnnouncement/.test(read("src/renderer/shell/home.js")) &&
+  /buildTasks/.test(read("src/renderer/shell/home.js")) &&
+  /buildLinks/.test(read("src/renderer/shell/home.js")) &&
+  /buildCommunity/.test(read("src/renderer/shell/home.js")) &&
+  /beautifyUI/.test(read("src/renderer/shell/home.js")) &&
+  /smoothHome/.test(read("src/renderer/shell/home.js")) &&
+  /customSections/.test(read("src/renderer/shell/home.js")) &&
+  /sections:\s*\{/.test(luogu87) &&
+  /announcement:\s*\{/.test(luogu87) &&
+  /discussionLinks/.test(luogu87)
+) {
+  ok("R89 主页美化/圆滑/板块总控/公告/任务/链接/讨论齐备");
+} else {
+  fail("R89 主页兼容板块不完整");
+}
+if (
+  /shortcutOpenProblems/.test(config87) &&
+  /acceleratorMatches/.test(viewsSource) &&
+  /matchesShortcut/.test(read("src/renderer/shell/shell.js")) &&
+  /shortcut-problems/.test(read("src/renderer/settings/index.html")) &&
+  /shortcut-reset/.test(read("src/renderer/settings/settings.js"))
+) {
+  ok("R89 题库快捷键可录制并可恢复默认");
+} else {
+  fail("R89 快捷键录制链路缺失");
+}
+if (
+  /app:checkUpdate/.test(ipcSource) &&
+  /checkUpdate/.test(read("src/preload/settings.js")) &&
+  /check-update/.test(read("src/renderer/settings/index.html")) &&
+  /disclaimer-accepted/.test(read("src/renderer/settings/index.html")) &&
+  /about-announcement/.test(read("src/renderer/settings/index.html"))
+) {
+  ok("R89 更新检查/公告/致谢/使用声明齐备");
+} else {
+  fail("R89 关于页兼容能力缺失");
+}
+if (
+  /user-search-network/.test(smoke84) &&
+  /random-problem-network/.test(smoke84) &&
+  /SMOKE_MANIFEST/.test(read("scripts/smoke.js")) &&
+  /sha256/.test(read("scripts/smoke.js"))
+) {
+  ok("R89 真实用户搜索/随机跳题与截图清单哈希门禁齐备");
+} else {
+  fail("R89 真实网络探针或截图清单门禁缺失");
+}
+if (
+  /function exportData/.test(config87) &&
+  /function replaceData/.test(config87) &&
+  /function resetAll/.test(config87) &&
+  /app:exportSettings/.test(ipcSource) &&
+  /app:importSettings/.test(ipcSource) &&
+  /settings-export/.test(read("src/renderer/settings/index.html"))
+) {
+  ok("R88 设置导入/导出/恢复默认链路齐备");
+} else {
+  fail("R88 设置备份链路缺失");
+}
 
 let pkgVersion = "";
 try {

@@ -17,6 +17,19 @@ const { SOURCE: PASSKEY_GUARD } = require("./passkey-guard");
 const MAX_PROBLEMS = 8;
 const MAX_DETAILS = 10;
 
+function acceleratorMatches(input, accelerator) {
+  const parts = String(accelerator || "").split("+");
+  const key = String(parts.pop() || "").toLowerCase();
+  const has = (name) => parts.some((part) => part.toLowerCase() === name);
+  const ctrl = !!(input.control || input.meta);
+  return (
+    key === String(input.key || "").toLowerCase() &&
+    ctrl === has("ctrl") &&
+    !!input.alt === has("alt") &&
+    !!input.shift === has("shift")
+  );
+}
+
 function isLuoguHost(hostname) {
   const host = String(hostname || "").toLowerCase();
   return host === "luogu.com.cn" || host.endsWith(".luogu.com.cn") || host === "luogu.org" || host.endsWith(".luogu.org");
@@ -177,6 +190,14 @@ class ViewManager {
       this.layout();
     } else {
       this.animateRailLayout(fromW, this.railTargetWidth());
+    }
+  }
+
+  applyFeatures() {
+    const features = this.ctx.cfg ? this.ctx.cfg.get().features : {};
+    for (const entry of this.entries.values()) {
+      const wc = entry.view.webContents;
+      if (wc && !wc.isDestroyed()) wc.send("lg:features", features);
     }
   }
 
@@ -726,6 +747,7 @@ class ViewManager {
     }
     const t = this.ctx.theme;
     const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
+    const features = this.ctx.cfg && this.ctx.cfg.get().features ? this.ctx.cfg.get().features : {};
     const view = new WebContentsView({
       webPreferences: {
         preload: path.join(PRELOAD, "page.js"),
@@ -742,6 +764,7 @@ class ViewManager {
           "--lg-motion=" + (!perf && this.ctx.cfg.get().appearance.wallpaperMotion ? "1" : "0"),
           "--lg-zoom=" + (!perf && this.ctx.cfg.get().appearance.wallpaperZoom ? "1" : "0"),
           "--lg-adblock=" + (this.ctx.cfg.get().general.adBlock ? "1" : "0"),
+          "--lg-features=" + encodeURIComponent(JSON.stringify(features)),
           "--lg-boot-mode=" + (t.isDark ? "dark" : "light"),
           // 首帧就给链接正确的主题色,否则皮肤变量落地前链接是官方灰、再扫成主题色
           "--lg-boot-accent=" + encodeURIComponent(t.colors.accentText + "," + t.colors.accent),
@@ -921,6 +944,7 @@ class ViewManager {
       if (ctrl && !input.shift && key === "k") command = "palette";
       else if (ctrl && !input.shift && key === "l") command = "jump";
       else if (ctrl && !input.shift && key === "b") command = "railPin";
+      else if (ctrl && !input.shift && key === "u" && this.ctx.cfg.get().features.userSearch) command = "userSearch";
       else if (ctrl && input.key === "Tab") command = "switcher";
       else if (ctrl && input.shift && key === "t") command = "reopen";
       else if (ctrl && (input.key === "," || input.key === "，")) command = "settings";
@@ -931,6 +955,7 @@ class ViewManager {
       else if (input.key === "F5" || (ctrl && !input.shift && key === "r")) command = "reload";
       else if (input.alt && input.key === "ArrowLeft") command = "back";
       else if (input.alt && input.key === "ArrowRight") command = "forward";
+      else if (this.ctx.cfg.get().features.shortcuts && acceleratorMatches(input, this.ctx.cfg.get().general.shortcutOpenProblems)) command = "problems";
       else if (ctrl && !input.shift && key === "w") command = "closepage";
       else if (ctrl && !input.shift && key === "f") command = "find";
       else if (ctrl && !input.shift && (input.key === "=" || input.key === "+")) command = "zoomin";

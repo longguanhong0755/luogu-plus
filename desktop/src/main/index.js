@@ -355,13 +355,17 @@ function bootstrap() {
 
     ctx.command = (name) => {
       if (!ctx.win || ctx.win.isDestroyed()) return;
-      if (name === "palette" || name === "switcher" || name === "jump" || name === "focusRail") {
+      if (name === "palette" || name === "switcher" || name === "jump" || name === "userSearch" || name === "focusRail") {
         ctx.showWindow();
         ctx.win.webContents.send("app:command", name);
         return;
       }
       if (name === "railPin") {
         ctx.views.setRailPinned(!ctx.cfg.get().rail.pinned);
+        return;
+      }
+      if (name === "problems") {
+        if (ctx.cfg.get().features.shortcuts) ctx.views.showLibrary("problems");
         return;
       }
       if (name === "focusPage") {

@@ -1,5 +1,5 @@
 /* 配置持久化：userData/config.json。
-   结构固定为四节，写入时整文件替换（体量很小）。
+   结构按 appearance/rail/general/features/notify/window 分区，写入时整文件替换。
    注意：这里只存设置，不存「上次打开的页面/滚动位置」——产品要求不记忆会话。 */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -37,9 +37,35 @@ const DEFAULTS = {
   general: {
     closeAction: "tray", // tray | quit
     autoLaunch: false,
-    adBlock: false, // 拦截广告与推广，默认关闭
+    adBlock: true, // 拦截广告与推广（对齐 Luogu Plus 默认开启）
     performanceMode: false, // 关闭壁纸运动 / 背景模糊 / 切换动画
     firstRunSeen: false, // 首启引导卡已看过（首次启动显示欢迎卡）
+    disclaimerAccepted: false, // Luogu Plus 兼容功能使用声明已确认
+    shortcutOpenProblems: "Alt+L", // 可录制：Ctrl/Alt/Shift + 单键
+  },
+  features: {
+    problemDetect: true,
+    showUserIntro: false,
+    problemDifficultyColor: false,
+    userSearch: true,
+    shortcuts: true,
+    dynamicDetection: true,
+    changeFortune: false,
+    supportPrompt: false,
+    betterSearch: true,
+    beautifyUI: true,
+    smoothHome: true,
+    autoRefresh: true,
+    customSections: true,
+    homeRecent: true,
+    homeOfficial: true,
+    homeContest: true,
+    homeHeat: true,
+    homeFirstRun: true,
+    homeAnnouncement: true,
+    homeTasks: true,
+    homeLinks: true,
+    homeCommunity: true,
   },
   notify: {
     judge: true,
@@ -146,6 +172,12 @@ function sanitize() {
   g.adBlock = !!g.adBlock;
   g.performanceMode = !!g.performanceMode;
   g.firstRunSeen = !!g.firstRunSeen;
+  g.disclaimerAccepted = !!g.disclaimerAccepted;
+  if (typeof g.shortcutOpenProblems !== "string" || !/^(?:(?:Ctrl|Alt|Shift)\+){1,3}[A-Z0-9]$/.test(g.shortcutOpenProblems)) g.shortcutOpenProblems = "Alt+L";
+
+  const featureKeys = Object.keys(DEFAULTS.features);
+  data.features = Object.assign({}, data.features);
+  for (const key of featureKeys) data.features[key] = !!data.features[key];
 
   const n = data.notify;
   n.judge = !!n.judge;
@@ -205,6 +237,13 @@ function setGeneral(patch) {
   return data.general;
 }
 
+function setFeatures(patch) {
+  data.features = Object.assign({}, data.features, patch || {});
+  sanitize();
+  save();
+  return data.features;
+}
+
 function setNotify(patch) {
   data.notify = Object.assign({}, data.notify, patch || {});
   sanitize();
@@ -226,6 +265,25 @@ function resetRail() {
   return data.rail;
 }
 
+function exportData() {
+  return clone(data);
+}
+
+function replaceData(raw) {
+  if (!isPlainObject(raw)) throw new Error("设置文件格式无效");
+  data = merge(DEFAULTS, raw);
+  compileRailOrder(data.rail);
+  sanitize();
+  save();
+  return clone(data);
+}
+
+function resetAll() {
+  data = clone(DEFAULTS);
+  save();
+  return clone(data);
+}
+
 function compileRailOrder(target) {
   sanitizeRail(target);
 }
@@ -240,8 +298,12 @@ module.exports = {
   setAppearance,
   setRail,
   setGeneral,
+  setFeatures,
   setNotify,
   setWindow,
   resetRail,
+  exportData,
+  replaceData,
+  resetAll,
   sanitize,
 };

@@ -16,6 +16,7 @@ const NAV_ICONS = {
   appearance: "palette",
   wallpaper: "image",
   rail: "sidebar",
+  enhance: "star",
   general: "settings",
   notify: "bell",
   account: "user",
@@ -65,11 +66,45 @@ function apply(state) {
   applyAppearance(state);
   applyWallpaper(state);
   renderRail(state);
+  applyFeatures(state);
   applyGeneral(state);
   applyAccount(state);
 
   if (section === "wallpaper" && state.appearance.weRoot && !weItems.length && !weScanning) {
     scanWe();
+  }
+}
+
+const FEATURE_CONTROLS = {
+  "feat-problem-detect": "problemDetect",
+  "feat-user-intro": "showUserIntro",
+  "feat-problem-color": "problemDifficultyColor",
+  "feat-user-search": "userSearch",
+  "feat-shortcuts": "shortcuts",
+  "feat-dynamic": "dynamicDetection",
+  "feat-fortune": "changeFortune",
+  "feat-support": "supportPrompt",
+  "feat-better-search": "betterSearch",
+  "feat-beautify-home": "beautifyUI",
+  "feat-smooth-home": "smoothHome",
+  "feat-auto-refresh": "autoRefresh",
+  "feat-custom-sections": "customSections",
+  "feat-home-recent": "homeRecent",
+  "feat-home-official": "homeOfficial",
+  "feat-home-contest": "homeContest",
+  "feat-home-heat": "homeHeat",
+  "feat-home-first-run": "homeFirstRun",
+  "feat-home-announcement": "homeAnnouncement",
+  "feat-home-tasks": "homeTasks",
+  "feat-home-links": "homeLinks",
+  "feat-home-community": "homeCommunity",
+};
+
+function applyFeatures(state) {
+  const features = state.features || {};
+  for (const [id, key] of Object.entries(FEATURE_CONTROLS)) {
+    const input = $(id);
+    if (input) input.checked = !!features[key];
   }
 }
 
@@ -166,6 +201,8 @@ function applyGeneral(state) {
   $("autolaunch").checked = !!state.general.autoLaunch;
   $("ad-block").checked = !!state.general.adBlock;
   $("perf-mode").checked = !!state.general.performanceMode;
+  $("disclaimer-accepted").checked = !!state.general.disclaimerAccepted;
+  $("shortcut-problems").value = state.general.shortcutOpenProblems || "Alt+L";
   document.body.classList.toggle("perf", !!state.general.performanceMode);
   $("notify-judge").checked = !!state.notify.judge;
   $("notify-contest").checked = !!state.notify.contest;
@@ -452,6 +489,79 @@ function bind() {
   $("autolaunch").addEventListener("change", (event) => api.setGeneral({ autoLaunch: event.target.checked }));
   $("ad-block").addEventListener("change", (event) => api.setGeneral({ adBlock: event.target.checked }));
   $("perf-mode").addEventListener("change", (event) => api.setGeneral({ performanceMode: event.target.checked }));
+  $("disclaimer-accepted").addEventListener("change", (event) => api.setGeneral({ disclaimerAccepted: event.target.checked }));
+  $("shortcut-problems").addEventListener("keydown", (event) => {
+    event.preventDefault();
+    if (event.key === "Escape") {
+      $("shortcut-problems").value = "Alt+L";
+      api.setGeneral({ shortcutOpenProblems: "Alt+L" });
+      return;
+    }
+    const key = String(event.key || "").toUpperCase();
+    if (!/^[A-Z0-9]$/.test(key)) return;
+    const parts = [];
+    if (event.ctrlKey || event.metaKey) parts.push("Ctrl");
+    if (event.altKey) parts.push("Alt");
+    if (event.shiftKey) parts.push("Shift");
+    if (!parts.length) return;
+    const accelerator = parts.concat(key).join("+");
+    $("shortcut-problems").value = accelerator;
+    api.setGeneral({ shortcutOpenProblems: accelerator });
+  });
+  $("shortcut-reset").addEventListener("click", () => {
+    $("shortcut-problems").value = "Alt+L";
+    api.setGeneral({ shortcutOpenProblems: "Alt+L" });
+  });
+
+  for (const [id, key] of Object.entries(FEATURE_CONTROLS)) {
+    const input = $(id);
+    if (input) input.addEventListener("change", () => api.setFeatures({ [key]: input.checked }));
+  }
+  $("settings-export").addEventListener("click", async () => {
+    try {
+      await api.exportSettings();
+    } catch (err) {
+      alert("导出设置失败：" + err.message);
+    }
+  });
+  $("settings-import").addEventListener("click", async () => {
+    try {
+      const res = await api.importSettings();
+      if (res && res.state) apply(res.state);
+    } catch (err) {
+      alert("导入设置失败：" + err.message);
+    }
+  });
+  $("settings-reset").addEventListener("click", async () => {
+    if (!confirm("恢复全部默认设置？当前外观、侧栏、增强与通知配置都会被重置。")) return;
+    try {
+      const res = await api.resetSettings();
+      if (res && res.state) apply(res.state);
+    } catch (err) {
+      alert("恢复默认失败：" + err.message);
+    }
+  });
+  $("check-update").addEventListener("click", async () => {
+    const button = $("check-update");
+    const status = $("update-status");
+    button.disabled = true;
+    status.textContent = "正在检查…";
+    try {
+      const result = await api.checkUpdate();
+      status.textContent = result.newer
+        ? "发现 " + result.latest + "，可前往发布页查看"
+        : result.latest
+          ? "已是最新版本（" + result.current + "）"
+          : "暂无发布版本（当前 " + result.current + "）";
+      if (result.newer && result.notes) {
+        $("about-announcement").textContent = result.notes.slice(0, 1200);
+      }
+    } catch (err) {
+      status.textContent = "检查失败：" + err.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("notify-judge").addEventListener("change", (event) => api.setNotify({ judge: event.target.checked }));
   $("notify-contest").addEventListener("change", (event) => api.setNotify({ contest: event.target.checked }));
   $("notify-lead").addEventListener("change", (event) => {
