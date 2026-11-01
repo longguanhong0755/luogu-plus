@@ -25,23 +25,14 @@
 
       <nav id="rail" aria-label="主导航">
         <div id="rail-head">
-          <button id="rail-pin" type="button" title="固定侧栏（常驻展开）" aria-label="固定侧栏" aria-pressed="false"></button>
+          <button id="rail-pin" class="rail-btn rail-pin" type="button" title="展开侧栏" aria-label="展开侧栏" aria-pressed="false">
+            <span class="rail-label">展开侧栏</span>
+          </button>
         </div>
         <div id="rail-top"></div>
-        <form id="rail-jump" autocomplete="off">
-          <svg class="rj-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="6.5"></circle>
-            <path d="m16 16 4.5 4.5"></path>
-          </svg>
-          <input id="rail-jump-input" type="text" maxlength="12" placeholder="题号跳转" spellcheck="false" aria-label="按题号跳转" />
-        </form>
         <div id="rail-bottom"></div>
-        <button id="rail-user" type="button" aria-label="账户">
-          <span class="rail-user-avatar" aria-hidden="true">洛</span>
-          <span class="rail-user-text">
-            <span class="rail-user-name">未登录</span>
-            <span class="rail-user-sub">点击登录</span>
-          </span>
+        <button id="rail-jump" class="rail-btn" type="button" title="题号跳转（Ctrl+L）" aria-label="题号跳转">
+          <span class="rail-label">题号跳转</span>
         </button>
       </nav>
 

@@ -2,6 +2,14 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
+## 未发布 — R85 侧栏单实例重构
+
+- 删除独立 rail WebContentsView/preload/renderer，侧栏收敛为外壳内唯一 DOM。
+- 折叠态 64px、固定态 208px；悬停不再展开或抢焦点，钉子/`Ctrl+B` 显式切换。
+- 主进程单一 `rail:layout` 宽度源同步外壳与页面视图；性能模式/reduced-motion 瞬切。
+- 新增路由 active/`aria-current`、keyed DOM 滚动保持、`F6`/方向键/`Esc` 键盘链。
+- 题号跳转改为 `Ctrl+L` 全局面板模式，关闭后恢复页面焦点。
+
 ## v0.7.15 (2026-11-01) — R83 parity 增量（9/12 旅程）
 
 - docs/PARITY.md 首批扩至 9 旅程（+历史导航与恢复关闭/断网队列管理/

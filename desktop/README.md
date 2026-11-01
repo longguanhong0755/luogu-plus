@@ -1,6 +1,6 @@
 # Luogu Desktop（洛谷桌面版）
 
-为 Windows 打造的洛谷客户端。Electron 39，`WebContentsView` 每页一视图、壁纸复刻层玻璃皮肤、原生折叠侧栏、离线题库、IDE 分栏。产品设计与像素规范见 [`../design.md`](../design.md)，迭代路线见 [`../ROADMAP.md`](../ROADMAP.md)。
+为 Windows 打造的洛谷客户端。Electron 39，`WebContentsView` 每页一视图、壁纸复刻层玻璃皮肤、原生 64px 图标侧栏、离线题库、IDE 分栏。产品设计与像素规范见 [`../design.md`](../design.md)，迭代路线见 [`../ROADMAP.md`](../ROADMAP.md)。
 
 ## 运行
 
@@ -23,7 +23,7 @@ npm run smoke    # 隔离 profile 冒烟：隐藏窗口跑探针矩阵与皮肤�
 ## 结构
 
 - `src/main/` — 主进程：窗口/视图管理、材质档位（`material.js`）、皮肤注入、离线快照、托盘、冒烟与审计。
-- `src/renderer/` — 外壳（shell）、折叠侧栏（rail）、原生列表、设置、皮肤 CSS。
+- `src/renderer/` — 外壳（含唯一侧栏实例）、原生列表、设置、皮肤 CSS。
 - `scripts/check.js` — 静态门禁（CI 与本地共用）；`scripts/smoke.js` — 探针/审计运行器。
 
 ## 打包与分发

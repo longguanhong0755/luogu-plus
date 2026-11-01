@@ -13,33 +13,40 @@ export function initChrome(actions) {
   const browseEl = document.getElementById("browse");
   const avatar = document.getElementById("tb-avatar");
   const pin = document.getElementById("rail-pin");
-  const jumpForm = document.getElementById("rail-jump");
-  const jumpInput = document.getElementById("rail-jump-input");
-  const railUser = document.getElementById("rail-user");
+  const jump = document.getElementById("rail-jump");
 
   let data = null;
   let railSignature = "";
   let toolbarSignature = "";
   let pinState = null;
-  let hoverTimer = 0;
+  let activeId = "";
+  let railButtons = new Map();
 
   function navButton(item) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "rail-btn";
+    let btn = railButtons.get(item.id);
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "rail-btn";
+      btn.dataset.id = item.id;
+      btn.addEventListener("click", () => {
+        const current = btn._railItem;
+        if (!current) return;
+        if (current.kind === "custom") actions.custom({ id: current.id, url: current.url, label: current.label });
+        else if (current.kind === "action") actions.settings();
+        else actions.nav(current.id);
+      });
+      railButtons.set(item.id, btn);
+    }
+    btn._railItem = item;
     btn.title = item.label;
     btn.setAttribute("aria-label", item.label);
-    btn.dataset.id = item.id;
+    btn.dataset.kind = item.kind;
     btn.innerHTML = icon(item.icon) || icon("dot");
     const label = document.createElement("span");
     label.className = "rail-label";
     label.textContent = item.label;
     btn.appendChild(label);
-    btn.addEventListener("click", () => {
-      if (item.kind === "custom") actions.custom(item.url, item.label);
-      else if (item.kind === "action") actions.settings();
-      else actions.nav(item.id);
-    });
     return btn;
   }
 
@@ -47,10 +54,18 @@ export function initChrome(actions) {
     const signature = JSON.stringify([config.top, config.bottom]);
     if (signature === railSignature) return;
     railSignature = signature;
+    const scrollTop = railTop.scrollTop;
+    const focusedId = rail.contains(document.activeElement) ? document.activeElement.dataset.id || "" : "";
+    railButtons = new Map(
+      [...rail.querySelectorAll(".rail-btn[data-id]")].map((button) => [button.dataset.id, button])
+    );
     railTop.textContent = "";
     railBottom.textContent = "";
     appendRailItems(railTop, config.top);
     appendRailItems(railBottom, config.bottom);
+    railTop.scrollTop = scrollTop;
+    if (focusedId && railButtons.has(focusedId)) railButtons.get(focusedId).focus({ preventScroll: true });
+    applyActive(activeId);
   }
 
   function appendRailItems(container, items) {
@@ -71,33 +86,13 @@ export function initChrome(actions) {
     }
   }
 
-  function updateRailUser(user) {
-    if (!railUser) return;
-    const logged = !!(user && user.loggedIn);
-    const name = logged ? String(user.name || "我的洛谷") : "未登录";
-    const sub = logged ? "个人主页" : "点击登录";
-    railUser.classList.toggle("guest", !logged);
-    railUser.title = name + " · " + sub;
-    railUser.setAttribute("aria-label", name + "，" + sub);
-    const nameEl = railUser.querySelector(".rail-user-name");
-    const subEl = railUser.querySelector(".rail-user-sub");
-    if (nameEl) nameEl.textContent = name;
-    if (subEl) subEl.textContent = sub;
-    const box = railUser.querySelector(".rail-user-avatar");
-    if (!box) return;
-    const url = logged && user.avatar ? String(user.avatar) : "";
-    if (url) {
-      if (box.dataset.url !== url) {
-        box.dataset.url = url;
-        box.textContent = "";
-        const img = document.createElement("img");
-        img.src = url;
-        img.alt = "";
-        box.appendChild(img);
-      }
-    } else {
-      box.dataset.url = "";
-      box.textContent = "洛";
+  function applyActive(id) {
+    activeId = String(id || "");
+    for (const button of rail.querySelectorAll(".rail-btn[data-id]")) {
+      const on = button.dataset.id === activeId && button.dataset.kind !== "action";
+      button.classList.toggle("active", on);
+      if (on) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
     }
   }
 
@@ -130,14 +125,22 @@ export function initChrome(actions) {
     pin.classList.toggle("on", !!pinned);
     pin.setAttribute("aria-pressed", pinned ? "true" : "false");
     pin.innerHTML = icon(pinned ? "pin" : "pinOff");
-    pin.title = pinned ? "取消固定（回到折叠，悬停自动展开）" : "固定侧栏（常驻展开）";
+    const label = document.createElement("span");
+    label.className = "rail-label";
+    label.textContent = pinned ? "收起侧栏" : "展开侧栏";
+    pin.appendChild(label);
+    pin.title = pinned ? "收起侧栏（Ctrl+B）" : "展开侧栏（Ctrl+B）";
     pin.setAttribute("aria-label", pin.title);
   }
 
   function update(next) {
     data = next;
+    const railWidth = Number(next.rail && next.rail.width);
+    const width = Number.isFinite(railWidth) && railWidth > 0 ? railWidth : next.rail.pinned ? 208 : 64;
+    document.documentElement.style.setProperty("--rail-current-w", width + "px");
     renderRail(next.rail);
     syncPin(next.rail.pinned);
+    applyActive(next.page.railId);
     const page = next.page;
     titleEl.textContent = page.home ? "主页" : page.title || "";
     if (page.library) titleEl.textContent = (next.rail.all.find((item) => item.id === page.library) || {}).label || page.title;
@@ -147,9 +150,7 @@ export function initChrome(actions) {
     libraryEl.hidden = !page.library;
     browseEl.hidden = page.home || !!page.library;
 
-    // 侧栏只做入口，不表示当前页面：所有页面都不高亮
     updateAvatar(next.user);
-    updateRailUser(next.user);
 
     if (!page.home && !page.library) renderToolbar(page);
     else {
@@ -236,37 +237,14 @@ export function initChrome(actions) {
     return btn;
   }
 
-  jumpForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const raw = jumpInput.value.trim();
-    const match = raw.match(/^([A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*)$/);
-    if (!match) {
-      jumpForm.classList.add("bad");
-      setTimeout(() => jumpForm.classList.remove("bad"), 900);
-      jumpInput.select();
-      return;
-    }
-    jumpInput.value = "";
-    jumpInput.blur();
-    actions.openProblem(match[1]); // 规范化（AT_ 小写形等）在主进程单源完成
-  });
-
-  jumpForm.addEventListener("click", (event) => {
-    if (!data || !data.rail) return;
-    if (data.rail.pinned) {
-      if (event.target !== jumpInput) jumpInput.focus();
-      return;
-    }
-    event.preventDefault();
-    actions.railHover({ open: true, focus: "jump" });
-  });
-
-  jumpInput.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      jumpInput.value = "";
-      jumpInput.blur();
-    }
-  });
+  jump.dataset.id = "jump";
+  jump.dataset.kind = "action";
+  jump.innerHTML = icon("search");
+  const jumpLabel = document.createElement("span");
+  jumpLabel.className = "rail-label";
+  jumpLabel.textContent = "题号跳转";
+  jump.appendChild(jumpLabel);
+  jump.addEventListener("click", () => actions.openJump());
 
   pin.addEventListener("click", () => {
     const next = !(data && data.rail && data.rail.pinned);
@@ -274,34 +252,42 @@ export function initChrome(actions) {
     actions.setRailPinned(next);
   });
 
-  rail.addEventListener("mouseenter", () => {
-    if (!data || !data.rail || data.rail.pinned) return;
-    if (hoverTimer) clearTimeout(hoverTimer);
-    // 悬停意图：掠过侧栏不展开，停留 ~70ms 才展开
-    hoverTimer = setTimeout(() => {
-      hoverTimer = 0;
-      if (data && data.rail && !data.rail.pinned) actions.railHover(true);
-    }, 70);
-  });
-  rail.addEventListener("mouseleave", () => {
-    if (hoverTimer) clearTimeout(hoverTimer);
-    hoverTimer = 0;
-    actions.railHover(false);
-  });
-
-  if (railUser) {
-    railUser.addEventListener("click", () => {
-      const logged = !!(data && data.user && data.user.loggedIn);
-      if (data && data.rail && !data.rail.pinned) actions.railHover(false);
-      if (logged) actions.profile();
-      else actions.nav("login");
-    });
+  function railFocusables() {
+    return [...rail.querySelectorAll(".rail-btn:not([disabled])")].filter((button) => button.offsetParent !== null);
   }
+
+  function focusRail() {
+    const active = railButtons.get(activeId);
+    const target = (active && active.offsetParent !== null && active) || railFocusables()[0];
+    if (target) target.focus({ preventScroll: true });
+  }
+
+  rail.addEventListener("keydown", (event) => {
+    const buttons = railFocusables();
+    const index = buttons.indexOf(document.activeElement);
+    if (event.key === "Escape" || (event.key === "F6" && event.shiftKey)) {
+      event.preventDefault();
+      actions.focusPage();
+      return;
+    }
+    let next = -1;
+    if (event.key === "ArrowDown") next = index < 0 ? 0 : (index + 1) % buttons.length;
+    else if (event.key === "ArrowUp") next = index < 0 ? buttons.length - 1 : (index - 1 + buttons.length) % buttons.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = buttons.length - 1;
+    if (next < 0 || !buttons[next]) return;
+    event.preventDefault();
+    buttons[next].focus({ preventScroll: false });
+  });
 
   avatar.addEventListener("click", () => actions.profile());
 
   return {
     update,
+    setRailWidth(width) {
+      document.documentElement.style.setProperty("--rail-current-w", Math.round(width) + "px");
+    },
+    focusRail,
     get data() {
       return data;
     },

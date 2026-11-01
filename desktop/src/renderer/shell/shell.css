@@ -49,12 +49,6 @@ body.wall-fade .wall-layer {
 }
 
 /* ---------- 窗口骨架 ---------- */
-/* 0.7.2：钉住/取消钉住时轨道宽可插值，外壳栏与页面 view 同步 180ms 滑动 */
-@property --rail-current-w {
-  syntax: "<length>";
-  inherits: true;
-  initial-value: 56px;
-}
 #app {
   position: relative;
   z-index: 1;
@@ -62,13 +56,6 @@ body.wall-fade .wall-layer {
   display: grid;
   grid-template-columns: var(--rail-current-w, var(--sidebar-w-collapsed)) minmax(0, 1fr);
   grid-template-rows: var(--title-h) minmax(0, 1fr);
-  transition: grid-template-columns 180ms var(--ease);
-}
-body.perf #app {
-  transition: none;
-}
-body.rail-pinned {
-  --rail-current-w: var(--sidebar-w);
 }
 
 #titlebar {
@@ -145,127 +132,71 @@ body.rail-pinned {
   color: var(--on-accent);
 }
 
-/* ---------- 左侧导航 ---------- */
-/* 几何取自洛谷官方侧栏：56px 栏内收 8px，导航项 40×30、图标 20px、
-   相邻项 8px 间距（用上下各 4px 外边距实现），展开与收起共用同一行高。 */
+/* ---------- 左侧导航 ----------
+   单一实例：64px 图标轨、40×32 热区；显式固定后展开为 208px。
+   宽度由主进程 rail:layout 驱动，外壳与页面视图共享同一数值。 */
 #rail {
   grid-column: 1;
   grid-row: 2;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0;
-  padding: 12px 8px;
+  padding: 12px;
   background: color-mix(in srgb, var(--rail) var(--panel-alpha, 83%), transparent);
   -webkit-backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
   backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
   border-right: 1px solid var(--border);
   min-height: 0;
+  overflow: hidden;
 }
-
 #rail-top,
 #rail-bottom {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0;
   flex: 0 0 auto;
 }
-/* 侧栏可能比窗口高，但滚动条会挤掉 40px 热区的宽度，所以只保留滚动、隐藏条 */
 #rail-top {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
-/* 自定义链接多时能滚动可见，而不是被无声裁掉 */
+body.rail-pinned #rail-top {
+  scrollbar-gutter: stable;
+}
+body:not(.rail-pinned) #rail-top::-webkit-scrollbar {
+  width: 0;
+}
 #rail-top::-webkit-scrollbar {
   width: 6px;
 }
-#rail-top::-webkit-scrollbar-thumb,
-#rail-bottom::-webkit-scrollbar-thumb {
+#rail-top::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-3) 35%, transparent);
   border-radius: 999px;
   background-clip: padding-box;
 }
-#rail-top:hover::-webkit-scrollbar-thumb,
-#rail-bottom:hover::-webkit-scrollbar-thumb {
+#rail-top:hover::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-3) 60%, transparent);
   background-clip: padding-box;
+}
+#rail-head {
+  height: 36px;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
 }
 #rail-bottom {
   padding-top: 8px;
   margin-top: 8px;
   border-top: 1px solid var(--border);
 }
-
-/* 展开/折叠共用同一行头部：行高固定，悬停展开时导航项不会上下跳 */
-#rail-head {
-  height: 40px;
-  flex: 0 0 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px 4px;
+#rail-jump {
+  margin-top: 8px;
 }
-#rail-pin {
-  margin-left: auto;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border-radius: var(--r-sm);
-  color: var(--text-2);
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    background-color var(--dur-1) var(--ease),
-    color var(--dur-1) var(--ease),
-    opacity var(--dur-2) var(--ease);
-}
-#rail-pin svg {
-  width: 16px;
-  height: 16px;
-}
-#rail-pin:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-#rail-pin.on {
-  color: var(--accent);
-  background: var(--accent-soft);
-  opacity: 1;
-  pointer-events: auto;
-}
-body.rail-overlay #rail-pin {
-  opacity: 1;
-  pointer-events: auto;
-}
-body.rail-pinned #rail-pin {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* 折叠态：只留图标。头部行保留，所以悬停展开时行位置不动。
-   横向收成官方那种 40×30 的方形热区，纵向节拍由统一的 4px 外边距维持。 */
-body:not(.rail-pinned):not(.rail-overlay) .rail-btn {
-  width: 40px;
-  margin-left: auto;
-  margin-right: auto;
-  justify-content: center;
-  padding: 0;
-}
-body:not(.rail-pinned):not(.rail-overlay) .rail-label {
-  display: none;
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-jump {
-  display: none;
-}
-
 .rail-btn {
   width: 100%;
-  height: 30px;
+  height: 32px;
   margin: 4px 0;
   padding: 0 8px;
   border-radius: var(--r-sm);
@@ -276,6 +207,7 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump {
   flex: 0 0 auto;
   position: relative;
   text-align: left;
+  overflow: hidden;
   transition:
     background-color var(--dur-1) var(--ease),
     color var(--dur-1) var(--ease);
@@ -293,15 +225,14 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 官方侧栏没有分组标题；这里只在展开态用一行很小的弱化标签，
-   折叠态让位给导航项本身，不再画分隔线。 */
 .rail-group {
   display: flex;
   align-items: flex-end;
-  height: 22px;
-  padding: 4px 8px 0;
+  min-height: 26px;
+  padding: 7px 8px 3px;
   flex: 0 0 auto;
   overflow: hidden;
+  border-top: 1px solid transparent;
 }
 .rail-group-label {
   font-size: var(--fs-2xs);
@@ -310,94 +241,34 @@ body:not(.rail-pinned):not(.rail-overlay) #rail-jump {
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
-body:not(.rail-pinned):not(.rail-overlay) .rail-group {
-  height: 6px;
-  padding: 0;
-}
-body:not(.rail-pinned):not(.rail-overlay) .rail-group-label {
-  display: none;
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-top > .rail-group:first-child,
-body:not(.rail-pinned):not(.rail-overlay) #rail-bottom > .rail-group:first-child {
-  display: none;
-}
-
-#rail-user {
-  width: 100%;
-  height: 40px;
-  margin-top: 6px;
-  padding: 0 6px;
-  border-radius: var(--r-sm);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 0 0 auto;
-  text-align: left;
-  overflow: hidden;
-  transition: background-color var(--dur-1) var(--ease);
-}
-#rail-user:hover {
-  background: var(--hover);
-}
-#rail-user:active {
-  background: var(--pressed);
-}
-#rail-user:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-.rail-user-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text-2);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-}
-.rail-user-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.rail-user-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.rail-user-name {
-  font-size: var(--fs-sm);
-  line-height: var(--lh-sm);
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rail-user-sub {
-  font-size: var(--fs-2xs);
-  line-height: var(--lh-2xs);
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-body:not(.rail-pinned):not(.rail-overlay) #rail-user {
-  width: 32px;
-  height: 32px;
-  margin: 8px auto 0;
-  padding: 0;
+body:not(.rail-pinned) .rail-btn {
+  width: 40px;
+  margin-left: auto;
+  margin-right: auto;
   justify-content: center;
+  padding: 0;
 }
-body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
+body:not(.rail-pinned) .rail-label,
+body:not(.rail-pinned) .rail-group-label {
   display: none;
+}
+body:not(.rail-pinned) .rail-group {
+  height: 9px;
+  min-height: 9px;
+  margin: 4px 0;
+  padding: 8px 0 0;
+  border-top-color: var(--border);
+}
+body:not(.rail-pinned) #rail-top > .rail-group:first-child,
+body:not(.rail-pinned) #rail-bottom > .rail-group:first-child {
+  height: 3px;
+  min-height: 3px;
+  margin: 0;
+  padding: 0;
+  border-top-color: transparent;
 }
 .rail-btn:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
   color: var(--text);
 }
 .rail-btn:active {
@@ -405,54 +276,25 @@ body:not(.rail-pinned):not(.rail-overlay) .rail-user-text {
 }
 .rail-btn:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 var(--focus-w) var(--accent);
 }
-
-#rail-jump {
-  width: 100%;
-  height: var(--h-md);
-  margin: 8px 0;
-  padding: 0 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 48%, transparent);
-  flex: 0 0 auto;
-  transition:
-    border-color var(--dur-1) var(--ease),
-    box-shadow var(--dur-1) var(--ease);
+.rail-btn.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-#rail-jump:hover {
-  border-color: var(--border-strong);
+.rail-btn.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
 }
-#rail-jump:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-#rail-jump.bad {
-  border-color: var(--red);
-}
-.rj-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--text-3);
-  flex: 0 0 auto;
-}
-#rail-jump-input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  color: var(--text);
-  font-size: var(--fs-xs);
-  line-height: var(--lh-xs);
-  padding: 0;
-}
-#rail-jump-input::placeholder {
-  color: var(--text-3);
+.rail-pin.on {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* ---------- 内容区：高不透明度画布，正文不再直接压在壁纸上 ----------
@@ -2812,6 +2654,9 @@ html[data-theme="light"] #scrim {
 }
 #pal-input::placeholder {
   color: var(--text-3);
+}
+#pal-input[aria-invalid="true"] {
+  color: var(--red);
 }
 .pal-esc {
   font-size: var(--fs-2xs);

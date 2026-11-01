@@ -7,7 +7,7 @@ const { safeOpenExternal } = require("./external");
 
 const TITLE_H = 40;
 const RAIL_W = 208;
-const RAIL_COLLAPSED_W = 56;
+const RAIL_COLLAPSED_W = 64;
 const TOOLBAR_H = 44;
 
 function sanitizeBounds(saved) {

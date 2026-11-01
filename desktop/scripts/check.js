@@ -60,15 +60,11 @@ const required = [
   "src/main/smoke.js",
   "src/preload/shell.js",
   "src/preload/page.js",
-  "src/preload/rail.js",
   "src/preload/settings.js",
   "src/renderer/shell/index.html",
   "src/renderer/shell/shell.js",
   "src/renderer/shell/library.js",
   "src/renderer/shell/shell.css",
-  "src/renderer/rail/index.html",
-  "src/renderer/rail/rail.js",
-  "src/renderer/rail/rail.css",
   "src/renderer/settings/index.html",
   "src/renderer/settings/settings.js",
   "src/renderer/settings/settings.css",
@@ -93,7 +89,6 @@ try {
 /* 4. renderer HTML 的资源引用都存在 */
 for (const html of [
   "src/renderer/shell/index.html",
-  "src/renderer/rail/index.html",
   "src/renderer/settings/index.html",
 ]) {
   const source = read(html);
@@ -112,7 +107,7 @@ const mainHandlers = new Set(
   [...ipcSource.matchAll(/ipcMain\.(?:handle|on)\("([^"]+)"/g)].map((m) => m[1])
 );
 const preloadCalls = new Set();
-for (const file of ["src/preload/shell.js", "src/preload/rail.js", "src/preload/settings.js", "src/preload/page.js"]) {
+for (const file of ["src/preload/shell.js", "src/preload/settings.js", "src/preload/page.js"]) {
   const source = read(file);
   for (const m of source.matchAll(/ipcRenderer\.(?:invoke|send)\("([^"]+)"/g)) preloadCalls.add(m[1]);
 }
@@ -127,7 +122,7 @@ for (const file of walk(path.join(ROOT, "src", "main"), []).filter((f) => f.ends
   for (const m of source.matchAll(/webContents\.send\("([^"]+)"/g)) mainSends.add(m[1]);
 }
 const preloadListeners = new Set();
-for (const file of ["src/preload/shell.js", "src/preload/rail.js", "src/preload/settings.js", "src/preload/page.js"]) {
+for (const file of ["src/preload/shell.js", "src/preload/settings.js", "src/preload/page.js"]) {
   const source = read(file);
   for (const m of source.matchAll(/on\("([^"]+)"/g)) preloadListeners.add(m[1]);
 }
@@ -229,8 +224,11 @@ for (const [name, content, needle] of [
 }
 
 const shellHtml = read("src/renderer/shell/index.html");
-if (/rail-jump-input/.test(shellHtml) && /id="library"/.test(shellHtml)) ok("外壳包含题号跳转与原生列表容器");
-else fail("外壳缺少题号跳转或列表容器");
+if (/id="rail-jump"/.test(shellHtml) && !/rail-jump-input/.test(shellHtml) && /id="library"/.test(shellHtml)) {
+  ok("外壳包含题号跳转按钮与原生列表容器");
+} else {
+  fail("外壳缺少题号跳转按钮或仍保留侧栏内联输入框");
+}
 const settingsHtml = read("src/renderer/settings/index.html");
 if (/data-sec="wallpaper"/.test(settingsHtml) && /data-sec="rail"/.test(settingsHtml) && /id="wp-we-list"/.test(settingsHtml)) {
   ok("设置包含壁纸与侧边栏分区");
@@ -513,38 +511,151 @@ for (const [name, needle] of [
   else fail("shell.css/base.css 缺少" + name);
 }
 
-/* ---------- 折叠侧栏 / 固定 / 不高亮 / 性能模式契约 ---------- */
+/* ---------- 单侧栏 / 固定宽度 / active / 键盘 / 性能模式契约 ---------- */
 
 const windowSource = read("src/main/window.js");
-if (/RAIL_COLLAPSED_W = 56/.test(windowSource)) ok("折叠侧栏宽度 56px");
-else fail("window.js 缺少 RAIL_COLLAPSED_W = 56");
+if (/const RAIL_W = 208;/.test(windowSource) && /const RAIL_COLLAPSED_W = 64;/.test(windowSource)) {
+  ok("侧栏固定/折叠宽度 208px/64px");
+} else {
+  fail("window.js 侧栏宽度不是固定 208px、折叠 64px");
+}
+
+const shellPreloadSource = read("src/preload/shell.js");
+const shellJsSource = read("src/renderer/shell/shell.js");
+const chromeSource = read("src/renderer/shell/chrome.js");
+const overlaysSource = read("src/renderer/shell/overlays.js");
+const singleRailRemoved =
+  !fs.existsSync(path.join(ROOT, "src", "preload", "rail.js")) &&
+  !fs.existsSync(path.join(ROOT, "src", "renderer", "rail", "index.html")) &&
+  !fs.existsSync(path.join(ROOT, "src", "renderer", "rail", "rail.js")) &&
+  !fs.existsSync(path.join(ROOT, "src", "renderer", "rail", "rail.css")) &&
+  !/ensureRailOverlay|railDrawer|railHover|renderer\/rail|preload[^\n]*rail\.js/.test(viewsSource) &&
+  !/app:railHover|rail:focus|lgRail/.test(shellPreloadSource);
+if (singleRailRemoved) {
+  ok("单侧栏 DOM：旧 rail WebContentsView/preload/浮层通道已移除");
+} else {
+  fail("旧 rail WebContentsView、preload 或浮层通道仍有残留");
+}
+
+const railDomCount = (shellHtml.match(/id="rail"/g) || []).length;
+if (
+  railDomCount === 1 &&
+  /id="rail-top"/.test(shellHtml) &&
+  /id="rail-bottom"/.test(shellHtml) &&
+  !/rail-user|rail-jump-input/.test(shellHtml)
+) {
+  ok("外壳仅保留一份侧栏 DOM，且无账户卡/内联跳转输入框");
+} else {
+  fail("外壳侧栏 DOM 不是唯一实例，或仍有旧账户卡/内联跳转输入框");
+}
 
 if (
-  /ensureRailOverlay/.test(viewsSource) &&
-  /setRailHover\(/.test(viewsSource) &&
-  /setRailPinned\(/.test(viewsSource) &&
-  /railWidth\(\)/.test(viewsSource)
+  /setRailPinned\(pinned\)/.test(viewsSource) &&
+  /railWidth\(\)/.test(viewsSource) &&
+  /applyRailWidth\(width\)/.test(viewsSource) &&
+  /preload:\s*path\.join\(PRELOAD,\s*"page\.js"\)/.test(viewsSource)
 ) {
-  ok("侧栏浮层/悬停/固定/宽度切换在主进程存在");
+  ok("主进程侧栏固定与唯一页面 preload 契约");
 } else {
-  fail("views.js 缺少侧栏浮层或固定逻辑");
+  fail("views.js 缺少侧栏固定逻辑或仍创建独立 rail preload");
 }
-if (/RAIL_W/.test(read("src/main/window.js")) && /RAIL_W/.test(viewsSource)) {
-  ok("侧栏固定宽度 RAIL_W 在主进程贯通");
+
+const railLayoutSenders = [];
+for (const file of walk(path.join(ROOT, "src", "main"), []).filter((f) => f.endsWith(".js"))) {
+  if (/webContents\.send\("rail:layout"/.test(fs.readFileSync(file, "utf8"))) railLayoutSenders.push(path.relative(ROOT, file).replace(/\\/g, "/"));
+}
+if (
+  railLayoutSenders.length === 1 &&
+  railLayoutSenders[0] === "src/main/views.js" &&
+  /const rect = \{ x: railW, y, width, height \}/.test(viewsSource) &&
+  /onRailLayout: \(callback\) => on\("rail:layout", callback\)/.test(shellPreloadSource) &&
+  /window\.lg\.onRailLayout/.test(shellJsSource) &&
+  /grid-template-columns: var\(--rail-current-w/.test(shellCss) &&
+  !/transition:\s*grid-template-columns/.test(shellCss)
+) {
+  ok("rail:layout 是唯一宽度源，外壳与页面 View 共用主进程宽度");
 } else {
-  fail("侧栏固定宽度 RAIL_W 未贯通");
+  fail("rail:layout 宽度源不唯一，或外壳仍有独立 CSS 宽度补间");
 }
-if (!/rail-btn\.active/.test(shellCss) && !/activeId/.test(read("src/renderer/shell/chrome.js"))) {
-  ok("侧栏项目全部不高亮（无 .active / activeId）");
+
+if (
+  /function applyActive\(id\)/.test(chromeSource) &&
+  /button\.dataset\.kind !== "action"/.test(chromeSource) &&
+  /setAttribute\("aria-current", "page"\)/.test(chromeSource) &&
+  /\.rail-btn\.active/.test(shellCss) &&
+  /applyActive\(next\.page\.railId\)/.test(chromeSource) &&
+  /railId: "home"/.test(viewsSource) &&
+  /railId: this\.library/.test(viewsSource) &&
+  /entry\.railId !== undefined/.test(viewsSource)
+) {
+  ok("active/aria-current 由 page.railId 唯一驱动，动作项不高亮");
 } else {
-  fail("侧栏仍存在项目高亮逻辑");
+  fail("active/aria-current 路由契约不完整");
 }
-const chromeSource = read("src/renderer/shell/chrome.js");
-if (/pinOff/.test(chromeSource) && /pinOff/.test(read("src/renderer/rail/rail.js"))) {
-  ok("侧栏钉子图标（线条 pin/pinOff）存在");
+
+if (
+  /let railButtons = new Map\(\)/.test(chromeSource) &&
+  /railButtons = new Map\([\s\S]*?\.rail-btn\[data-id\]/.test(chromeSource) &&
+  /let btn = railButtons\.get\(item\.id\)/.test(chromeSource) &&
+  /railTop\.scrollTop = scrollTop/.test(chromeSource) &&
+  /focus\(\{ preventScroll: true \}\)/.test(chromeSource) &&
+  /applyActive\(activeId\)/.test(chromeSource)
+) {
+  ok("侧栏按 id keyed 复用，刷新保持滚动位置与焦点");
 } else {
-  fail("侧栏缺少 pin/pinOff 线条图标");
+  fail("侧栏未使用 keyed DOM 更新或会丢失滚动/焦点");
 }
+
+if (
+  /pinOff/.test(chromeSource) &&
+  /setAttribute\("aria-pressed"/.test(chromeSource) &&
+  /actions\.setRailPinned\(next\)/.test(chromeSource) &&
+  /event\.key\.toLowerCase\(\) === "b"[\s\S]*?setRailPinned\(!pinned\)/.test(shellJsSource) &&
+  /key === "b"\) command = "railPin"/.test(viewsSource)
+) {
+  ok("Ctrl+B 在按钮、外壳和页面 WebContents 三处贯通");
+} else {
+  fail("Ctrl+B 固定/收起链路不完整");
+}
+
+if (
+  /event\.key === "F6"[\s\S]*?chrome\.focusRail\(\)/.test(shellJsSource) &&
+  /input\.key === "F6"\) command = input\.shift \? "focusPage" : "focusRail"/.test(viewsSource) &&
+  /event\.key === "Escape"[\s\S]*?actions\.focusPage\(\)/.test(chromeSource) &&
+  /function focusRail\(\)/.test(chromeSource)
+) {
+  ok("F6 聚焦侧栏、Esc 返回内容页的键盘链路");
+} else {
+  fail("F6/Esc 焦点链路不完整");
+}
+
+if (
+  /key === "l"\) command = "jump"/.test(viewsSource) &&
+  /name === "palette" \|\| name === "switcher" \|\| name === "jump"/.test(read("src/main/index.js")) &&
+  /name === "jump"\) overlays\.openJump\(\)/.test(shellJsSource) &&
+  /function openJump\(\)/.test(overlaysSource) &&
+  /input\.focus\(\)/.test(overlaysSource) &&
+  /jump\.addEventListener\("click", \(\) => actions\.openJump\(\)\)/.test(chromeSource)
+) {
+  ok("Ctrl+L 与侧栏题号跳转按钮共用全局面板");
+} else {
+  fail("Ctrl+L 全局面板链路不完整");
+}
+
+if (
+  /order: RAIL_ORDER\.slice\(\)/.test(configSource) &&
+  /hidden: \[\]/.test(configSource) &&
+  /custom: \[\]/.test(configSource) &&
+  /cfg\.rail\.order/.test(sectionsSource) &&
+  /cfg\.rail\.hidden/.test(sectionsSource) &&
+  /cfg\.rail\.custom/.test(sectionsSource) &&
+  /actions\.custom\(\{ id: current\.id, url: current\.url, label: current\.label \}\)/.test(chromeSource)
+) {
+  ok("侧栏 order/hidden/custom 配置与稳定自定义 id 契约保留");
+} else {
+  fail("侧栏 order/hidden/custom 配置契约缺失");
+}
+
 if (/pinned:\s*false/.test(configSource) && /performanceMode:\s*false/.test(configSource)) {
   ok("侧栏默认折叠、性能模式默认关闭");
 } else {
@@ -560,10 +671,10 @@ if (/id="perf-mode"/.test(settingsHtml) && /setGeneral\(\{ performanceMode/.test
 } else {
   fail("设置页缺少性能模式开关");
 }
-if (/--sidebar-w-collapsed: 56px/.test(tokensSrc) && /--rail-current-w/.test(shellCss)) {
-  ok("折叠/展开侧栏宽度令牌已接入布局");
+if (/--sidebar-w-collapsed: 64px/.test(tokensSrc) && /--sidebar-w: 208px/.test(tokensSrc) && /--rail-current-w/.test(shellCss)) {
+  ok("64/208px 侧栏宽度令牌已接入统一布局");
 } else {
-  fail("tokens.css/shell.css 缺少折叠侧栏令牌");
+  fail("tokens.css/shell.css 缺少 64/208px 侧栏宽度契约");
 }
 
 for (const file of ["src/renderer/shell/shell.css", "src/renderer/settings/settings.css", "src/renderer/shared/base.css"]) {
@@ -663,17 +774,37 @@ for (const [name, needle] of [
 if (/lib-diff-menu/.test(read("src/renderer/shell/shell.css"))) ok("题库难度下拉有样式");
 else fail("题库难度下拉缺少样式");
 const chromeRailSrc = read("src/renderer/shell/chrome.js");
-if (/rail-group/.test(chromeRailSrc) && /rail-group-label/.test(chromeRailSrc) && /rail-user/.test(read("src/renderer/shell/index.html"))) {
-  ok("侧栏分组标题与账户卡");
+if (
+  /rail-group/.test(chromeRailSrc) &&
+  /rail-group-label/.test(chromeRailSrc) &&
+  /\.rail-group/.test(read("src/renderer/shell/shell.css")) &&
+  /#rail-bottom \{[\s\S]*?flex: 0 0 auto;/.test(read("src/renderer/shell/shell.css")) &&
+  /#rail-top \{[\s\S]*?overflow-y: auto;/.test(read("src/renderer/shell/shell.css"))
+) {
+  ok("侧栏分组标签与固定底部工具区");
 } else {
-  fail("侧栏分组/账户卡缺失");
+  fail("侧栏分组/固定底部工具区契约缺失");
 }
-if (/hoverTimer = setTimeout/.test(chromeRailSrc) && /}, 70\);/.test(chromeRailSrc)) ok("侧栏悬停意图延迟");
-else fail("侧栏悬停意图延迟缺失");
-if (/railUser\.addEventListener\("click"/.test(chromeRailSrc) && /actions\.railHover\(false\)/.test(chromeRailSrc)) ok("侧栏账户卡点击前收起浮层");
-else fail("侧栏账户卡未收起浮层");
-if (/\.rail-group/.test(read("src/renderer/shell/shell.css")) && /rail-user-avatar/.test(read("src/renderer/shell/shell.css"))) ok("侧栏分组/账户卡样式");
-else fail("侧栏分组/账户卡样式缺失");
+if (
+  !/rail-user/.test(chromeRailSrc) &&
+  !/rail-user/.test(read("src/renderer/shell/index.html")) &&
+  /id="tb-avatar"/.test(read("src/renderer/shell/index.html")) &&
+  /avatar\.addEventListener\("click", \(\) => actions\.profile\(\)\)/.test(chromeRailSrc)
+) {
+  ok("账户入口仅保留标题栏头像");
+} else {
+  fail("侧栏仍重复账户卡或标题栏头像入口缺失");
+}
+if (
+  /id="rail-pin"/.test(read("src/renderer/shell/index.html")) &&
+  /id="rail-jump"/.test(read("src/renderer/shell/index.html")) &&
+  /\.rail-pin\.on/.test(read("src/renderer/shell/shell.css")) &&
+  /#rail-jump \{\s*margin-top: 8px;/.test(read("src/renderer/shell/shell.css"))
+) {
+  ok("固定按钮和题号跳转入口始终存在");
+} else {
+  fail("固定按钮或题号跳转入口缺失");
+}
 
 
 if (/"r"\)\) command = "reload"/.test(viewsSource) && /"closepage"/.test(viewsSource) && /"ArrowLeft"\) command = "back"/.test(viewsSource)) ok("页面内 F5/Ctrl+R/Alt+方向键/Ctrl+W 浏览器基本键齐全");
@@ -742,23 +873,29 @@ for (const selector of [".side", ".lfe-side", ".list", ".lfe-list", ".box", ".pa
   }
 }
 
-/* R64：侧栏几何按官方 64px 栏等比缩到 56px */
+/* R64：侧栏几何对齐官方 64px 图标栏 */
 const railCss = read("src/renderer/shell/shell.css");
 if (
-  /#rail \{[\s\S]*?padding: 12px 8px;/.test(railCss) &&
-  /\.rail-btn \{[\s\S]*?height: 30px;[\s\S]*?margin: 4px 0;/.test(railCss) &&
-  /body:not\(\.rail-pinned\):not\(\.rail-overlay\) \.rail-btn \{[\s\S]*?width: 40px;/.test(railCss) &&
-  /body:not\(\.rail-pinned\):not\(\.rail-overlay\) #rail-user \{[\s\S]*?width: 32px;[\s\S]*?height: 32px;/.test(railCss) &&
-  /body:not\(\.rail-pinned\):not\(\.rail-overlay\) #rail-jump \{\s*display: none;/.test(railCss)
+  /#rail \{[\s\S]*?padding: 12px;/.test(railCss) &&
+  /\.rail-btn \{[\s\S]*?height: 32px;[\s\S]*?margin: 4px 0;/.test(railCss) &&
+  /body:not\(\.rail-pinned\) \.rail-btn \{[\s\S]*?width: 40px;[\s\S]*?justify-content: center;/.test(railCss) &&
+  /body:not\(\.rail-pinned\) \.rail-label,[\s\S]*?display: none;/.test(railCss) &&
+  /body:not\(\.rail-pinned\) \.rail-group \{[\s\S]*?border-top-color: var\(--border\);/.test(railCss)
 ) {
-  ok("侧栏按官方 40×30 热区/32px 头像/收起隐藏跳转框");
+  ok("侧栏 64px 图标轨、40×32 热区与折叠分组分隔");
 } else {
-  fail("侧栏几何没有对齐官方实现");
+  fail("侧栏几何未对齐 64px 图标轨设计");
 }
-if (!/box-shadow: 8px 0 24px/.test(read("src/renderer/rail/rail.css"))) {
-  ok("侧栏悬停展开不再浮出投影（同一栏变宽）");
+if (
+  !/\.rail-overlay/.test(railCss) &&
+  !/#rail-user/.test(railCss) &&
+  /\.rail-btn\.active::before/.test(railCss) &&
+  /width: 2px;/.test(railCss) &&
+  /background: color-mix\(in srgb, var\(--accent\) 10%, transparent\)/.test(railCss)
+) {
+  ok("侧栏无旧浮层/账户卡，active 使用 2px accent + 10% 背景");
 } else {
-  fail("rail.css 仍有浮层投影");
+  fail("侧栏仍有旧浮层/账户卡，或 active 视觉契约缺失");
 }
 
 const viewsSrc3 = read("src/main/views.js");
@@ -914,23 +1051,16 @@ if (/--blur-lg:/.test(tokens69) && /--blur-sm:/.test(tokens69) && /--focus-w:/.t
   fail("tokens 缺少 blur/focus 档位");
 }
 
-/* ---------- R70 同层透出 · 主页融合 · 侧栏抽屉 ---------- */
+/* ---------- R70 同层透出 · 主页融合 · 单侧栏布局 ---------- */
 const views70 = read("src/main/views.js");
 const skin70 = read("src/renderer/skin/luogu-skin.css");
-const railCss70 = read("src/renderer/rail/rail.css");
 const shellCss70 = read("src/renderer/shell/shell.css");
 const shellHtml70 = read("src/renderer/shell/index.html");
-const railHtml70 = read("src/renderer/rail/index.html");
 const luogu70 = read("src/main/luogu.js");
 const homeJs70 = read("src/renderer/shell/home.js");
 const shellJs70 = read("src/renderer/shell/shell.js");
 
 for (const [name, re, src] of [
-  ["抽屉宽度补间", /animateRailDrawer\(open, onDone\)/, views70],
-  ["抽屉补间作废 token", /railDrawerToken/, views70],
-  ["钉住布局补间", /animateRailLayout\(fromW, toW\)/, views70],
-  ["layout 作废补间", /railLayoutToken/, views70],
-  ["浮层宽度跟随补间", /Math\.max\(RAIL_COLLAPSED_W, Math\.min\(RAIL_W, this\.railDrawerW/, views70],
   ["官方主页抓取管线", /async fetchOfficialHome\(\)/, luogu70],
   ["比赛日历数据", /buildContests\(contests\)/, luogu70],
   ["refresh 容错挂载", /next\.official = await this\.fetchOfficialHome\(\)/, luogu70],
@@ -943,29 +1073,23 @@ for (const [name, re, src] of [
   if (re.test(src)) ok("R70 " + name);
   else fail("R70 缺少 " + name);
 }
-if (!/rail-mark/.test(shellHtml70) && !/rail-mark/.test(railHtml70)) ok("R70 侧栏 luogu 标志已删（两处）");
+if (!/rail-mark/.test(shellHtml70)) ok("R70 侧栏 luogu 标志已删");
 else fail("R70 rail-mark 仍有残留");
 if (!/lg-card-alpha/.test(skin70) && /lg-raise/.test(skin70) && /lg-code-alpha/.test(skin70)) ok("R70 皮肤孤岛收编为 raise/code 档位");
 else fail("R70 皮肤仍有 --lg-card-alpha 或缺 raise/code");
 if (!/cardAlpha <= 30/.test(views70) && /--lg-raise:\$\{t\.raiseAlpha\}%/.test(views70)) ok("R70 skinVars 发射 raise/code 档位");
 else fail("R70 skinVars 未接入新档位");
 for (const [name, re] of [
-  ["浮层固定宽供裁切", /width: var\(--sidebar-w\)/],
-  ["浮层近实心底", /var\(--rail\) 96%, transparent/],
-  ["内容 90ms 淡入", /opacity 90ms var\(--ease\)/],
-]) {
-  if (re.test(railCss70)) ok("R70 浮层 " + name);
-  else fail("R70 浮层缺少 " + name);
-}
-for (const [name, re] of [
-  ["轨道宽 @property 注册", /@property --rail-current-w/],
-  ["外壳 grid 宽度过渡", /transition: grid-template-columns 180ms var\(--ease\)/],
-  ["性能模式关闭过渡", /body\.perf #app \{\s*\n\s*transition: none/],
-  ["钉子右对齐", /#rail-pin \{\s*\n\s*margin-left: auto/],
+  ["轨道宽统一变量", /grid-template-columns: var\(--rail-current-w/],
+  ["顶部导航独立滚动", /#rail-top \{[\s\S]*?overflow-y: auto;/],
 ]) {
   if (re.test(shellCss70)) ok("R70 外壳 " + name);
   else fail("R70 外壳缺少 " + name);
 }
+if (!/transition:\s*grid-template-columns/.test(shellCss70)) ok("R70 外壳宽度无独立 CSS 补间");
+else fail("R70 外壳仍有独立 CSS 宽度补间");
+if (!/\.rail-overlay/.test(shellCss70)) ok("R70 旧侧栏浮层选择器已移除");
+else fail("R70 旧侧栏浮层选择器仍有残留");
 if (!/92%, transparent/.test(skin70) && !/95%, transparent/.test(skin70) && !/84%, transparent/.test(skin70)) ok("R70 皮肤孤岛百分比清零");
 else fail("R70 皮肤仍有写死百分比孤岛");
 
@@ -1014,22 +1138,22 @@ if (readmeFront.indexOf("为 Windows 打造的洛谷客户端，v" + (JSON.parse
 else fail("R74 README 门面版本未同步");
 if (/overAllowedItems/.test(smoke74) && /div\.right/.test(smoke74)) ok("R74 审计 over 显式白名单（锚定 parent，明细落盘）");
 else fail("R74 缺 over 白名单");
-if ((read("src/main/views.js").match(/will-navigate/g) || []).length >= 2) ok("R74 rail 浮层导航防护（page+overlay）");
-else fail("R74 缺 rail 浮层导航防护");
+if (/wc\.on\("will-navigate"/.test(read("src/main/views.js")) && /wc\.setWindowOpenHandler/.test(read("src/main/views.js"))) ok("R74 单页面宿主导航防护（will-navigate + window-open）");
+else fail("R74 页面宿主缺导航防护");
 if (idx72.indexOf(String.raw`luogu\.com\.cn(:\d+)?(\/|$)`) !== -1) ok("R74 请求 handler 洛谷源正则尾边界");
 else fail("R74 缺正则尾边界");
 
 /* ---------- R76 量化路径兑现（AT 题号/行为探针/parity 首批/harness 剥离） ---------- */
 const sections76 = read("src/main/sections.js");
-const chrome76 = read("src/renderer/shell/chrome.js");
+const overlays76 = read("src/renderer/shell/overlays.js");
 const page76x = read("src/preload/page.js");
 const parity76 = fs.readFileSync(path.join(ROOT, "..", "docs", "PARITY.md"), "utf8");
 if (/function canonicalPid/.test(sections76) && /AT_/.test(sections76) && /toLowerCase/.test(sections76)) ok("R76 canonicalPid 单源（AT_ 小写规范形）");
 else fail("R76 缺 canonicalPid 单源");
 if (/canonicalPid/.test(views70) && /canonicalPid/.test(ipcSource) && (views70.match(/canonicalPid/g) || []).length >= 3) ok("R76 views/ipc 接入 canonicalPid（openProblem/palette/submit/草稿）");
 else fail("R76 views/ipc 未接入 canonicalPid");
-if (chrome76.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1 && page76x.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1) ok("R76 渲染层正则接受下划线题号（原文交主进程规范化）");
-else fail("R76 渲染层正则未更新");
+if (page76x.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1 && overlays76.indexOf(String.raw`[A-Za-z0-9_]*\d[A-Za-z0-9_]*`) !== -1) ok("R76 题号入口正则接受下划线题号（页面转交 + 全局面板）");
+else fail("R76 题号入口正则未更新");
 if (/LG_SMOKE_FIND === "1"/.test(smoke74) && /SMOKE_FIND /.test(smoke74)) ok("R76 FIND 行为探针（Ctrl+F/缩放 HUD/Esc 真实键鼠链）");
 else fail("R76 缺 FIND 行为探针");
 if (/atOk/.test(smoke74)) ok("R76 PALETTE 探针含 AT_ 规范化断言");

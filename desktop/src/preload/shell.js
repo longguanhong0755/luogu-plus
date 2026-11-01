@@ -12,7 +12,6 @@ contextBridge.exposeInMainWorld("lg", {
   setAppearance: (patch) => ipcRenderer.invoke("app:setAppearance", patch),
   setRail: (patch) => ipcRenderer.invoke("app:setRail", patch),
   setRailPinned: (pinned) => ipcRenderer.invoke("app:railPin", pinned),
-  railHover: (payload) => ipcRenderer.invoke("app:railHover", payload),
   setGeneral: (patch) => ipcRenderer.invoke("app:setGeneral", patch),
   setNotify: (patch) => ipcRenderer.invoke("app:setNotify", patch),
   pickWallpaper: () => ipcRenderer.invoke("app:pickWallpaper"),
@@ -46,6 +45,7 @@ contextBridge.exposeInMainWorld("lg", {
   command: (name) => ipcRenderer.invoke("app:command", name),
   onState: (callback) => on("app:state", callback),
   onCommand: (callback) => on("app:command", callback),
+  onRailLayout: (callback) => on("rail:layout", callback),
   onToast: (callback) => on("app:toast", callback),
   onWindowFocus: (callback) => on("app:window-focus", callback),
 });

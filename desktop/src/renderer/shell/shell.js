@@ -169,6 +169,7 @@ async function boot() {
     palette: (query) => window.lg.palette(query),
     listPages: () => window.lg.switcher(),
     switchTo: (key) => window.lg.switchTo(key),
+    openProblem: (pid) => window.lg.openProblem(pid),
     run: runItem,
   });
 
@@ -179,9 +180,9 @@ async function boot() {
     view: (action) => window.lg.viewAction(action),
     problem: (payload) => window.lg.problemAction(payload),
     ide: (on) => window.lg.setIde(on),
-    custom: (url, label) => window.lg.openCustom({ url, label }),
-    openProblem: (pid) => window.lg.openProblem(pid),
-    railHover: (payload) => window.lg.railHover(payload),
+    custom: (payload) => window.lg.openCustom(payload),
+    openJump: () => overlays.openJump(),
+    focusPage: () => window.lg.command("focusPage"),
     setRailPinned: (pinned) => window.lg.setRailPinned(pinned),
   });
 
@@ -301,16 +302,15 @@ async function boot() {
     .addEventListener("change", () => syncWallpaper());
 
   window.lg.onState(apply);
+  window.lg.onRailLayout((payload) => {
+    const width = Number(payload && payload.width);
+    if (Number.isFinite(width) && width > 0) chrome.setRailWidth(width);
+  });
   window.lg.onCommand((name) => {
     if (name === "palette") overlays.openPalette();
     else if (name === "switcher") overlays.openSwitcher();
-    else if (name === "jump") {
-      const input = document.getElementById("rail-jump-input");
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    }
+    else if (name === "jump") overlays.openJump();
+    else if (name === "focusRail") chrome.focusRail();
   });
   window.lg.onToast(toast);
 
@@ -327,20 +327,15 @@ async function boot() {
       window.lg.openSettings();
     } else if (ctrl && event.key.toLowerCase() === "l") {
       event.preventDefault();
-      const pinned = !!(stateBox.data && stateBox.data.rail && stateBox.data.rail.pinned);
-      if (pinned) {
-        const input = document.getElementById("rail-jump-input");
-        if (input) {
-          input.focus();
-          input.select();
-        }
-      } else {
-        window.lg.railHover({ open: true, focus: "jump" });
-      }
+      overlays.openJump();
     } else if (ctrl && event.key.toLowerCase() === "b") {
       event.preventDefault();
       const pinned = !!(stateBox.data && stateBox.data.rail && stateBox.data.rail.pinned);
       window.lg.setRailPinned(!pinned);
+    } else if (event.key === "F6") {
+      event.preventDefault();
+      if (event.shiftKey) window.lg.command("focusPage");
+      else chrome.focusRail();
     } else if (event.key === "F11") {
       event.preventDefault();
       window.lg.command("fullscreen");

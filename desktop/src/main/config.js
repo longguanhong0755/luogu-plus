@@ -32,7 +32,7 @@ const DEFAULTS = {
     order: RAIL_ORDER.slice(),
     hidden: [],
     custom: [], // [{ id, label, url }]
-    pinned: false, // true = 常驻展开；false = 默认折叠，悬停浮出
+    pinned: false, // true = 常驻展开；false = 默认 64px 图标栏
   },
   general: {
     closeAction: "tray", // tray | quit

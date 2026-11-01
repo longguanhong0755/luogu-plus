@@ -15,6 +15,8 @@ function publicWallpaper(wallpaper) {
 
 function state(ctx) {
   const cfg = ctx.cfg.get();
+  const rail = resolveRail(cfg);
+  rail.width = ctx.views.railWidth();
   let bounds = { width: 1280, height: 820 };
   try {
     if (ctx.win && !ctx.win.isDestroyed()) bounds = ctx.win.getContentBounds();
@@ -26,7 +28,7 @@ function state(ctx) {
     appearance: cfg.appearance,
     general: cfg.general,
     notify: cfg.notify,
-    rail: resolveRail(cfg),
+    rail,
     window: { width: bounds.width, height: bounds.height },
     theme: Object.assign({}, ctx.theme, { wallpaper: publicWallpaper(ctx.wallpaper) }),
     user: ctx.luogu.user,
@@ -44,8 +46,6 @@ function broadcastState(ctx) {
   for (const win of targets) {
     if (win && !win.isDestroyed()) win.webContents.send("app:state", payload);
   }
-  const rail = ctx.views && ctx.views.railWebContents ? ctx.views.railWebContents() : null;
-  if (rail && !rail.isDestroyed()) rail.send("app:state", payload);
 }
 
 const ACTIONS = [
@@ -105,13 +105,6 @@ function registerIpc(ctx) {
   ipcMain.handle("app:railPin", (_event, pinned) => {
     ctx.views.setRailPinned(!!pinned);
     return ctx.cfg.get().rail;
-  });
-
-  ipcMain.handle("app:railHover", (_event, payload) => {
-    const open = typeof payload === "object" && payload ? !!payload.open : !!payload;
-    const focus = typeof payload === "object" && payload ? String(payload.focus || "") : "";
-    const force = typeof payload === "object" && payload ? !!payload.force : false;
-    ctx.views.setRailHover(open, focus, force);
   });
 
   ipcMain.handle("app:resetRail", () => {
@@ -200,7 +193,6 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:nav", (_event, target) => {
-    ctx.views.setRailHover(false);
     if (target === "home") ctx.views.showHome();
     else if (target === "login") ctx.views.openLogin();
     else if (target === "profile") ctx.views.openProfile(ctx.luogu.user.uid);
@@ -228,7 +220,6 @@ function registerIpc(ctx) {
   ipcMain.handle("app:libraryTags", async () => ctx.luogu.fetchTags());
 
   ipcMain.handle("app:openDetail", (_event, payload) => {
-    ctx.views.hideRailOverlay();
     const url = String((payload && payload.url) || "");
     const title = String((payload && payload.title) || "");
     const key = payload && payload.key ? String(payload.key) : "";
@@ -236,17 +227,14 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:openCustom", (_event, payload) => {
-    ctx.views.hideRailOverlay();
-    ctx.views.openCustom(payload && payload.url, payload && payload.label);
+    ctx.views.openCustom(payload && payload.url, payload && payload.label, payload && payload.id);
   });
 
   ipcMain.handle("app:openWebFallback", (_event, kind) => {
-    ctx.views.hideRailOverlay();
     ctx.views.openWebFallback(String(kind || ""));
   });
 
   ipcMain.handle("app:openProblem", (_event, pid) => {
-    ctx.views.hideRailOverlay();
     ctx.views.openProblem(pid);
   });
 
@@ -417,7 +405,6 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:openSettings", () => {
-    ctx.views.hideRailOverlay();
     ctx.openSettings();
   });
 

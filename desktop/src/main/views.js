@@ -6,8 +6,8 @@
    玻璃化：页面内注入一个与窗口同坐标的壁纸复刻层，卡片/输入框按材质半透明。 */
 const fs = require("node:fs");
 const path = require("node:path");
-const { WebContentsView, screen, Menu, clipboard } = require("electron");
-const { PRELOAD, SKIN_DIR, RENDERER } = require("./paths");
+const { WebContentsView, nativeTheme, Menu, clipboard } = require("electron");
+const { PRELOAD, SKIN_DIR } = require("./paths");
 const { TITLE_H, RAIL_W, RAIL_COLLAPSED_W, TOOLBAR_H } = require("./window");
 const { safeOpenExternal } = require("./external");
 const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
@@ -82,10 +82,9 @@ class ViewManager {
     this.ideSplit = 0.5;
     this.overlayOpen = false;
     this.railPinned = !!(ctx.cfg && ctx.cfg.get().rail && ctx.cfg.get().rail.pinned);
-    this.railOverlay = null;
-    this.railOverlayAttached = false;
-    this.railHoverOpen = false;
-    this.railHideTimer = null;
+    this.railCurrentW = this.railPinned ? RAIL_W : RAIL_COLLAPSED_W;
+    this.railAnimToken = 0;
+    this.railAnimTimer = null;
     this.skinSource = "";
     this.skinMtime = 0;
     this.clock = 0;
@@ -97,198 +96,63 @@ class ViewManager {
     this.win = win;
   }
 
-  /* ---------- 侧栏折叠 / 悬停浮层 ----------
-     折叠时页面 view 从 56px 开始；悬停展开的 208px 侧栏画在独立的
-     WebContentsView 里，盖在页面 view 之上，不改变页面宽度、不触发回流。
-     点钉子后进入常驻展开：view 才真正让到 208px。 */
+  /* ---------- 侧栏宽度（单一状态源） ----------
+     外壳 DOM 与所有页面 WebContentsView 都消费同一个 railCurrentW。
+     悬停不展开；只有显式固定/收起会触发一次 160ms 宽度补间。 */
 
   railWidth() {
+    return this.railCurrentW;
+  }
+
+  railTargetWidth() {
     return this.railPinned ? RAIL_W : RAIL_COLLAPSED_W;
   }
 
-  railWebContents() {
-    if (!this.railOverlay || this.railOverlay.webContents.isDestroyed()) return null;
-    return this.railOverlay.webContents;
-  }
-
-  ensureRailOverlay() {
-    if (this.railOverlay && !this.railOverlay.webContents.isDestroyed()) return this.railOverlay;
-    const view = new WebContentsView({
-      webPreferences: {
-        preload: path.join(PRELOAD, "rail.js"),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        spellcheck: false,
-        // 浮层只在悬停时出现，隐藏时也不能被节流，否则第一次悬停会慢半拍
-        backgroundThrottling: false,
-      },
-    });
-    view.setBackgroundColor("#00000000");
-    view.setVisible(false);
-    // 浮层是纯本地页（持有 lgRail 特权桥），永不导航；拖入链接/文件一律拒绝
-    view.webContents.on("will-navigate", (event) => {
-      event.preventDefault();
-    });
-    view.webContents.loadFile(path.join(RENDERER, "rail", "index.html")).catch((err) => {
-      console.error("[rail] load failed:", err.message);
-    });
-    this.railOverlay = view;
-    return view;
-  }
-
-  layoutRailOverlay() {
-    if (!this.railOverlay || this.railOverlay.webContents.isDestroyed()) return;
-    if (!this.win || this.win.isDestroyed()) return;
-    const bounds = this.win.getContentBounds();
-    this.railOverlay.setBounds({
-      x: 0,
-      y: TITLE_H,
-      width: Math.max(RAIL_COLLAPSED_W, Math.min(RAIL_W, this.railDrawerW || RAIL_W)),
-      height: Math.max(0, bounds.height - TITLE_H),
-    });
-  }
-
-  setRailHover(open, focus = "", force = false) {
-    if (open) {
-      if (this.railPinned || !this.win || this.win.isDestroyed()) return;
-      clearTimeout(this.railHideTimer);
-      this.railHideTimer = null;
-      this.railSeq = (this.railSeq || 0) + 1; // 作废还在等待淡出的 hide
-      this.railHoverOpen = true;
-      const view = this.ensureRailOverlay();
-      const wc = view.webContents;
-      const reveal = () => {
-        if (!this.railHoverOpen || this.railPinned || wc.isDestroyed()) return;
-        if (!this.win || this.win.isDestroyed()) return;
-        // 每次都重新挂到最上层：之后新建的页面 view 不能盖住浮层
-        if (this.railOverlayAttached) this.win.contentView.removeChildView(view);
-        this.win.contentView.addChildView(view);
-        this.railOverlayAttached = true;
-        // 抽屉从当前宽度起步（首次 56，折返悬停从半开宽度反向），再滑向 208
-        this.railDrawerW = Math.min(RAIL_W, Math.max(RAIL_COLLAPSED_W, this.railDrawerW || RAIL_COLLAPSED_W));
-        this.layoutRailOverlay();
-        view.setVisible(true);
-        // 内容快速淡入（几何由主进程宽度补间驱动）
-        wc.executeJavaScript("document.documentElement.classList.add('rail-revealed')", true).catch(() => {});
-        this.animateRailDrawer(true);
-        if (this.ctx.broadcastState) this.ctx.broadcastState();
-        if (focus) wc.send("rail:focus", focus);
-      };
-      if (wc.isLoadingMainFrame()) wc.once("dom-ready", reveal);
-      else reveal();
-      return;
-    }
-    if (!this.railHoverOpen) return;
-    // 鼠标从外壳窄条移进浮层时，外壳会先收到 mouseleave。用真实光标位置
-    // 判断它是否仍在 208px 的浮层区域内，避免第二/第三次悬停被误收起。
-    if (!force && this.cursorInRail()) return;
-    clearTimeout(this.railHideTimer);
-    // 给鼠标从外壳窄条移进浮层留出交接时间
-    this.railHideTimer = setTimeout(() => this.hideRailOverlay(), 220);
-  }
-
-  cursorInRail() {
-    if (!this.win || this.win.isDestroyed()) return false;
-    try {
-      const point = screen.getCursorScreenPoint();
-      const b = this.win.getContentBounds();
-      return (
-        point.x >= b.x &&
-        point.x < b.x + RAIL_W &&
-        point.y >= b.y + TITLE_H &&
-        point.y < b.y + b.height
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  hideRailOverlay() {
-    clearTimeout(this.railHideTimer);
-    this.railHideTimer = null;
-    this.railHoverOpen = false;
-    if (!this.railOverlay || this.railOverlay.webContents.isDestroyed()) return;
-    const hadFocus = this.railOverlay.webContents.isFocused();
-    const view = this.railOverlay;
-    const seq = (this.railSeq = (this.railSeq || 0) + 1);
-    const wc = view.webContents;
-    try {
-      // 内容先快速淡出(90ms)；几何由宽度补间收回，补间完成才把视图藏起 ——
-      // 开/关时序对称，替换掉 executeJavaScript 往返+固定 130ms 的腰斩链路
-      wc.executeJavaScript("document.documentElement.classList.remove('rail-revealed')", true).catch(() => {});
-    } catch {
-      // 页面可能还没加载好，直接收
-    }
-    this.animateRailDrawer(false, () => {
-      if (seq !== this.railSeq || view.webContents.isDestroyed()) return;
-      view.setVisible(false);
-      if (hadFocus && this.win && !this.win.isDestroyed() && this.win.isFocused()) this.win.webContents.focus();
-    });
-  }
-
-  /* 0.7.2 抽屉化：打开 56→208 / 关闭 208→56 的宽度补间。
-     token 作废旧补间——折返悬停从当前宽度反向，动画天然连续；
-     性能模式瞬切。关闭在补间完成后才 setVisible(false)，与打开对称。 */
-  animateRailDrawer(open, onDone) {
-    const view = this.railOverlay;
-    if (!view || view.webContents.isDestroyed()) return;
-    if (this.ctx.cfg && this.ctx.cfg.get().general.performanceMode) {
-      this.railDrawerW = open ? RAIL_W : RAIL_COLLAPSED_W;
-      this.layoutRailOverlay();
-      if (!open) {
-        view.setVisible(false);
-        if (onDone) onDone();
-      }
-      return;
-    }
-    const token = (this.railDrawerToken = (this.railDrawerToken || 0) + 1);
-    const from = Math.min(RAIL_W, Math.max(RAIL_COLLAPSED_W, this.railDrawerW || (open ? RAIL_COLLAPSED_W : RAIL_W)));
-    const to = open ? RAIL_W : RAIL_COLLAPSED_W;
-    const dur = open ? 170 : 150;
-    const start = Date.now();
-    const easeOut = (t) => 1 - (1 - t) * (1 - t);
-    const step = () => {
-      if (token !== this.railDrawerToken || view.webContents.isDestroyed()) return;
-      const t = Math.min(1, (Date.now() - start) / dur);
-      this.railDrawerW = Math.round(from + (to - from) * easeOut(t));
-      this.layoutRailOverlay();
-      if (t < 1) {
-        this.railDrawerTimer = setTimeout(step, 16);
-      } else {
-        this.railDrawerTimer = null;
-        if (!open && onDone) onDone();
-      }
-    };
-    step();
-  }
-
-  /* 0.7.2 钉住/取消钉住：外壳 grid（CSS 过渡）与页面 view（主进程补间）
-     同步 180ms 滑动；layout()/resize 作废补间并直接落定。 */
-  animateRailLayout(fromW, toW) {
-    const entry = this.currentEntry();
-    if (!entry) return;
-    const view = entry.view;
+  layoutRailEntry(entry, railW) {
+    if (!entry || !this.win || this.win.isDestroyed()) return;
+    if (entry.view.webContents.isDestroyed()) return;
     const bounds = this.win.getContentBounds();
     const y = TITLE_H + TOOLBAR_H;
     const height = Math.max(240, bounds.height - TITLE_H - TOOLBAR_H);
-    const ideOn = this.ideOn && entry.kind === "problem";
-    const token = (this.railLayoutToken = (this.railLayoutToken || 0) + 1);
+    let width = Math.max(320, bounds.width - railW);
+    if (this.ideOn && entry.kind === "problem") {
+      width = Math.max(320, Math.floor(width * (1 - this.ideSplit)));
+    }
+    const rect = { x: railW, y, width, height };
+    const serialized = JSON.stringify(rect);
+    if (entry.lastRect === serialized) return;
+    entry.lastRect = serialized;
+    entry.view.setBounds(rect);
+    this.scheduleSkin(entry);
+  }
+
+  applyRailWidth(width) {
+    this.railCurrentW = Math.max(RAIL_COLLAPSED_W, Math.min(RAIL_W, Math.round(Number(width) || 0)));
+    if (this.win && !this.win.isDestroyed()) {
+      this.win.webContents.send("rail:layout", { width: this.railCurrentW });
+    }
+    if (this.overlayOpen || this.library) return;
+    const entry = this.currentEntry();
+    if (entry) this.layoutRailEntry(entry, this.railCurrentW);
+  }
+
+  animateRailLayout(fromW, toW) {
+    if (!this.win || this.win.isDestroyed()) return;
+    clearTimeout(this.railAnimTimer);
+    const token = (this.railAnimToken = (this.railAnimToken || 0) + 1);
     const start = Date.now();
-    const dur = 180;
-    const easeOut = (t) => 1 - (1 - t) * (1 - t);
+    const dur = 160;
+    const easeOut = (t) => 1 - Math.pow(1 - t, 3);
     const step = () => {
-      if (token !== this.railLayoutToken) return;
-      if (!this.win || this.win.isDestroyed() || view.webContents.isDestroyed()) return;
+      if (token !== this.railAnimToken || !this.win || this.win.isDestroyed()) return;
       const t = Math.min(1, (Date.now() - start) / dur);
-      const w = Math.round(fromW + (toW - fromW) * easeOut(t));
-      let width = Math.max(320, bounds.width - w);
-      if (ideOn) width = Math.max(320, Math.floor(width * (1 - this.ideSplit)));
-      view.setBounds({ x: w, y, width, height });
+      this.applyRailWidth(fromW + (toW - fromW) * easeOut(t));
       if (t < 1) {
-        setTimeout(step, 12);
+        this.railAnimTimer = setTimeout(step, 16);
       } else {
-        this.layout();
+        this.railAnimTimer = null;
+        this.applyRailWidth(toW);
+        this.emit();
       }
     };
     step();
@@ -296,18 +160,24 @@ class ViewManager {
 
   setRailPinned(pinned) {
     const next = !!pinned;
-    const prevW = this.railWidth();
+    if (this.railPinned === next) {
+      this.emit();
+      return;
+    }
+    const fromW = this.railWidth();
     if (this.ctx.cfg) this.ctx.cfg.setRail({ pinned: next });
     this.railPinned = next;
-    if (next) this.hideRailOverlay();
-    const entry = this.currentEntry();
-    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
-    if (entry && !this.overlayOpen && !this.library && !perf) {
-      this.animateRailLayout(prevW, this.railWidth());
-    } else {
-      this.layout();
-    }
     this.emit();
+    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
+    const reduced = !!(nativeTheme && nativeTheme.shouldUseReducedMotion);
+    if (perf || reduced || fromW === this.railTargetWidth()) {
+      this.railAnimToken = (this.railAnimToken || 0) + 1;
+      clearTimeout(this.railAnimTimer);
+      this.railAnimTimer = null;
+      this.layout();
+    } else {
+      this.animateRailLayout(fromW, this.railTargetWidth());
+    }
   }
 
   /* ---------- 入口 ---------- */
@@ -326,7 +196,6 @@ class ViewManager {
 
   showLibrary(kind) {
     if (!LIBRARY_IDS.has(kind)) return;
-    this.hideRailOverlay();
     this.library = kind;
     this.returnLib = null;
     this.currentKey = null;
@@ -400,7 +269,7 @@ class ViewManager {
     this.showEntry(entry);
   }
 
-  openDetail(rawUrl, title, key) {
+  openDetail(rawUrl, title, key, railId) {
     let url = String(rawUrl || "");
     if (!url) return;
     if (isOfflineUrl(url)) {
@@ -426,6 +295,7 @@ class ViewManager {
       title: title || "",
       url,
       section: sectionOfUrl(url),
+      railId,
     });
     if (entry.view.webContents.getURL() !== url) {
       entry.view.webContents.loadURL(url);
@@ -435,9 +305,9 @@ class ViewManager {
     this.showEntry(entry);
   }
 
-  openCustom(url, label) {
+  openCustom(url, label, id) {
     if (!/^https?:\/\//i.test(String(url || ""))) return;
-    if (isLuoguUrl(url)) this.openDetail(url, label || "自定义页面");
+    if (isLuoguUrl(url)) this.openDetail(url, label || "自定义页面", "", String(id || ""));
     else safeOpenExternal(url);
   }
 
@@ -450,6 +320,7 @@ class ViewManager {
       title: "登录洛谷",
       url: "https://www.luogu.com.cn/auth/login",
       section: "home",
+      railId: "",
     });
     // 复用登录页时页面可能已经跳走（上次登录成功重定向回首页）：
     // 不在登录页就重新加载，否则用户看到的是旧页面、登录按钮像坏了
@@ -477,13 +348,13 @@ class ViewManager {
       title: "个人主页",
       url: "https://www.luogu.com.cn/user/" + id,
       section: "home",
+      railId: "",
     });
     this.library = null;
     this.showEntry(entry);
   }
 
   showHome() {
-    this.hideRailOverlay();
     this.currentKey = null;
     this.library = null;
     this.returnLib = null;
@@ -725,9 +596,13 @@ class ViewManager {
   setOverlay(open) {
     this.overlayOpen = !!open;
     if (this.overlayOpen) {
-      this.hideRailOverlay();
       this.hideAll();
-    } else this.restoreCurrent();
+    } else {
+      this.restoreCurrent();
+      const wc = this.currentWebContents();
+      if (wc && !wc.isDestroyed()) wc.focus();
+      else if (this.win && !this.win.isDestroyed()) this.win.webContents.focus();
+    }
   }
 
   switchTo(key) {
@@ -775,6 +650,7 @@ class ViewManager {
         home: false,
         library: this.library,
         section: this.library,
+        railId: this.library,
         key: "library:" + this.library,
         kind: "library",
         title: (NAV[this.library] || {}).label || this.library,
@@ -794,6 +670,7 @@ class ViewManager {
         home: true,
         library: null,
         section: "home",
+        railId: "home",
         key: null,
         kind: "home",
         title: "主页",
@@ -816,10 +693,13 @@ class ViewManager {
     } catch {
       /* ignore */
     }
+    const liveSection = sectionOfUrl(wc.getURL()) || entry.section || "";
+    const railId = entry.railId !== undefined ? entry.railId : NAV[liveSection] ? liveSection : "";
     return {
       home: false,
       library: null,
-      section: entry.section || sectionOfUrl(wc.getURL()),
+      section: liveSection,
+      railId,
       key: entry.key,
       kind: entry.kind,
       title: entry.title,
@@ -836,11 +716,12 @@ class ViewManager {
 
   /* ---------- 视图生命周期 ---------- */
 
-  ensureEntry({ key, kind, title, url, pid, section }) {
+  ensureEntry({ key, kind, title, url, pid, section, railId }) {
     const existing = this.entries.get(key);
     if (existing) {
       existing.lastUsed = ++this.clock;
       if (title) existing.title = title;
+      if (railId !== undefined) existing.railId = String(railId || "");
       return existing;
     }
     const t = this.ctx.theme;
@@ -875,6 +756,7 @@ class ViewManager {
       title: title || "",
       pid: pid || "",
       section: section || "",
+      railId: railId === undefined ? undefined : String(railId || ""),
       view,
       lastUsed: ++this.clock,
       skinKey: null,
@@ -1038,11 +920,13 @@ class ViewManager {
       let command = "";
       if (ctrl && !input.shift && key === "k") command = "palette";
       else if (ctrl && !input.shift && key === "l") command = "jump";
+      else if (ctrl && !input.shift && key === "b") command = "railPin";
       else if (ctrl && input.key === "Tab") command = "switcher";
       else if (ctrl && input.shift && key === "t") command = "reopen";
       else if (ctrl && (input.key === "," || input.key === "，")) command = "settings";
       else if (input.key === "F11") command = "fullscreen";
       else if (input.key === "F12") command = "devtools";
+      else if (input.key === "F6") command = input.shift ? "focusPage" : "focusRail";
       // 浏览器基本键：刷新 / 后退 / 前进 / 关页面（与浏览器同键位）
       else if (input.key === "F5" || (ctrl && !input.shift && key === "r")) command = "reload";
       else if (input.alt && input.key === "ArrowLeft") command = "back";
@@ -1159,7 +1043,6 @@ class ViewManager {
 
   showEntry(entry) {
     if (!this.win || this.win.isDestroyed()) return;
-    this.hideRailOverlay();
     this.currentKey = entry.key;
     this.library = null;
     this.overlayOpen = false;
@@ -1216,29 +1099,17 @@ class ViewManager {
 
   layout() {
     if (!this.win || this.win.isDestroyed()) return;
-    this.railLayoutToken = (this.railLayoutToken || 0) + 1; // 作废钉住补间
-    if (this.railHoverOpen) this.layoutRailOverlay();
+    this.railAnimToken = (this.railAnimToken || 0) + 1;
+    clearTimeout(this.railAnimTimer);
+    this.railAnimTimer = null;
+    this.railCurrentW = this.railTargetWidth();
+    this.win.webContents.send("rail:layout", { width: this.railCurrentW });
     const entry = this.currentEntry();
     if (!entry || this.overlayOpen || this.library) {
       this.hideAll();
       return;
     }
-    const bounds = this.win.getContentBounds();
-    const railW = this.railWidth();
-    const x = railW;
-    const y = TITLE_H + TOOLBAR_H;
-    let width = Math.max(320, bounds.width - railW);
-    const height = Math.max(240, bounds.height - TITLE_H - TOOLBAR_H);
-    if (this.ideOn && entry.kind === "problem") {
-      width = Math.max(320, Math.floor(width * (1 - this.ideSplit)));
-    }
-    const rect = { x, y, width, height };
-    const serialized = JSON.stringify(rect);
-    if (entry.lastRect !== serialized) {
-      entry.lastRect = serialized;
-      entry.view.setBounds(rect);
-      this.scheduleSkin(entry);
-    }
+    this.layoutRailEntry(entry, this.railCurrentW);
   }
 
   scheduleSkin(entry) {

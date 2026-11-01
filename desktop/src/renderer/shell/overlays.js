@@ -27,6 +27,8 @@ export function initOverlays(actions) {
   const input = document.getElementById("pal-input");
   const palList = document.getElementById("pal-list");
   const swList = document.getElementById("sw-list");
+  const palFoot = palette.querySelector(".pal-foot");
+  const palFootDefault = palFoot ? palFoot.textContent : "";
 
   let mode = "";
   let rows = [];
@@ -65,6 +67,13 @@ export function initOverlays(actions) {
     palette.hidden = false;
     switcher.hidden = true;
     input.value = "";
+    input.placeholder = "输入题号、题名或功能…";
+    input.setAttribute("aria-label", "搜索题号、题名或功能");
+    input.setAttribute("aria-expanded", "true");
+    input.removeAttribute("aria-invalid");
+    palette.setAttribute("aria-label", "命令面板");
+    palList.hidden = false;
+    if (palFoot) palFoot.textContent = palFootDefault;
     selected = 0;
     rows = [];
     palList.textContent = "";
@@ -72,6 +81,26 @@ export function initOverlays(actions) {
     actions.overlay(true);
     input.focus();
     runQuery("");
+  }
+
+  function openJump() {
+    lastFocus = document.activeElement;
+    mode = "jump";
+    reveal();
+    palette.hidden = false;
+    switcher.hidden = true;
+    input.value = "";
+    input.placeholder = "输入题号，例如 P1001";
+    input.setAttribute("aria-label", "输入题号跳转");
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-invalid");
+    palette.setAttribute("aria-label", "题号跳转");
+    palList.hidden = true;
+    palList.textContent = "";
+    if (palFoot) palFoot.textContent = "输入完整题号，例如 P1001 · ↵ 跳转 · Esc 关闭";
+    actions.overlay(true);
+    input.focus();
+    input.select();
   }
 
   function openSwitcher() {
@@ -113,7 +142,8 @@ export function initOverlays(actions) {
       overlay.hidden = true;
       palette.hidden = true;
       switcher.hidden = true;
-      if (lastFocus && typeof lastFocus.focus === "function") lastFocus.focus();
+      input.removeAttribute("aria-invalid");
+      if (lastFocus && lastFocus !== document.body && typeof lastFocus.focus === "function") lastFocus.focus();
       lastFocus = null;
     }, 160);
   }
@@ -251,11 +281,27 @@ export function initOverlays(actions) {
   }
 
   input.addEventListener("input", () => {
+    if (mode === "jump") {
+      input.removeAttribute("aria-invalid");
+      return;
+    }
     selected = 0;
     runQuery(input.value);
   });
 
   input.addEventListener("keydown", (event) => {
+    if (mode === "jump" && event.key === "Enter") {
+      event.preventDefault();
+      const raw = input.value.trim();
+      if (!/^[A-Za-z]{1,4}[A-Za-z0-9_]*\d[A-Za-z0-9_]*$/.test(raw)) {
+        input.setAttribute("aria-invalid", "true");
+        input.select();
+        return;
+      }
+      close();
+      actions.openProblem(raw);
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       if (rows.length) {
@@ -311,5 +357,5 @@ export function initOverlays(actions) {
 
   scrim.addEventListener("click", close);
 
-  return { openPalette, openSwitcher, close, isOpen: () => !overlay.hidden };
+  return { openPalette, openJump, openSwitcher, close, isOpen: () => !overlay.hidden };
 }

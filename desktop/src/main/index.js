@@ -353,9 +353,19 @@ function bootstrap() {
 
     ctx.command = (name) => {
       if (!ctx.win || ctx.win.isDestroyed()) return;
-      if (name === "palette" || name === "switcher" || name === "jump") {
+      if (name === "palette" || name === "switcher" || name === "jump" || name === "focusRail") {
         ctx.showWindow();
         ctx.win.webContents.send("app:command", name);
+        return;
+      }
+      if (name === "railPin") {
+        ctx.views.setRailPinned(!ctx.cfg.get().rail.pinned);
+        return;
+      }
+      if (name === "focusPage") {
+        const wc = ctx.views.currentWebContents();
+        if (wc && !wc.isDestroyed()) wc.focus();
+        else ctx.win.webContents.focus();
         return;
       }
       if (name === "settings") {
@@ -434,17 +444,13 @@ function bootstrap() {
     ctx.win.on("unmaximize", relayout);
     ctx.win.on("enter-full-screen", relayout);
     ctx.win.on("leave-full-screen", relayout);
-    // 窗口失焦/最小化时悬停浮层没有存在意义，立即收起
     const syncWindowFocus = (focused) => {
       if (!ctx.win || ctx.win.isDestroyed()) return;
       ctx.win.webContents.send("app:window-focus", !!focused);
       if (ctx.views) ctx.views.setWindowActive(!!focused);
     };
     ctx.win.on("focus", () => syncWindowFocus(true));
-    ctx.win.on("blur", () => {
-      ctx.views.hideRailOverlay();
-      syncWindowFocus(false);
-    });
+    ctx.win.on("blur", () => syncWindowFocus(false));
     ctx.win.on("hide", () => syncWindowFocus(false));
     ctx.win.on("minimize", () => syncWindowFocus(false));
     ctx.win.on("restore", () => syncWindowFocus(ctx.win.isFocused()));

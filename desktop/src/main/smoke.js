@@ -1149,6 +1149,554 @@ async function loginFlow(ctx, wait, outDir) {
   }
 }
 
+async function runRailSmoke(ctx, wait, shot) {
+  const shell = (expression) => ctx.win.webContents.executeJavaScript(expression);
+  const waitFor = async (probe, timeout = 2200, interval = 30) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      try {
+        if (await probe()) return true;
+      } catch {}
+      await wait(interval);
+    }
+    return false;
+  };
+  const approx = (actual, expected, tolerance = 1) =>
+    Number.isFinite(Number(actual)) && Math.abs(Number(actual) - expected) <= tolerance;
+  const results = [];
+  const addCase = (name, details, checks) => {
+    const ok = Object.values(checks).length > 0 && Object.values(checks).every(Boolean);
+    const entry = { name, ok, checks, details };
+    results.push(entry);
+    console.log("SMOKE_RAIL_CASE " + JSON.stringify(entry));
+    return ok;
+  };
+  const originalRail = JSON.parse(JSON.stringify(ctx.cfg.get().rail));
+  const originalPerformance = !!ctx.cfg.get().general.performanceMode;
+  const originalBounds = ctx.win.getContentBounds();
+  let focusCleanup = () => {};
+
+  try {
+    ctx.views.showHome();
+    ctx.views.setRailPinned(false);
+    await wait(260);
+
+    const userData = path.resolve(app.getPath("userData"));
+    const forbiddenProfiles = [
+      path.resolve(app.getPath("appData"), "LuoguLab"),
+      path.resolve(app.getPath("appData"), "Luogu Desktop"),
+    ];
+    addCase(
+      "isolated-user-data",
+      { userData, smoke: process.env.LG_SMOKE, forbiddenProfiles },
+      {
+        smokeMode: process.env.LG_SMOKE === "1",
+        notProductionProfile: !forbiddenProfiles.includes(userData),
+        profilePresent: fs.existsSync(userData),
+      }
+    );
+
+    const singleDom = await shell(`(() => ({
+      railCount: document.querySelectorAll("#rail").length,
+      oldOverlayCount: document.querySelectorAll("#rail-overlay, .rail-overlay").length,
+      railTopCount: document.querySelectorAll("#rail-top").length,
+      railBottomCount: document.querySelectorAll("#rail-bottom").length
+    }))()`);
+    addCase(
+      "single-render",
+      Object.assign({}, singleDom, {
+        railOverlayApi: ctx.views.railOverlay === undefined,
+        railWebContentsApi: ctx.views.railWebContents === undefined,
+      }),
+      {
+        oneRail: singleDom.railCount === 1,
+        oneTop: singleDom.railTopCount === 1,
+        oneBottom: singleDom.railBottomCount === 1,
+        noOverlayDom: singleDom.oldOverlayCount === 0,
+        noOverlayApi: ctx.views.railOverlay === undefined && ctx.views.railWebContents === undefined,
+      }
+    );
+
+    ctx.views.openProblem("P1001");
+    await waitFor(() => !!ctx.views.currentEntry(), 2200);
+    await wait(350);
+    const pageEntry = ctx.views.currentEntry();
+    const collapsedDom = await shell(`(() => {
+      const rail = document.getElementById("rail");
+      const pin = document.getElementById("rail-pin");
+      const btn = document.querySelector("#rail-top .rail-btn");
+      const br = btn ? btn.getBoundingClientRect() : null;
+      return {
+        railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
+        pinPressed: pin ? pin.getAttribute("aria-pressed") : null,
+        pinVisible: !!pin && getComputedStyle(pin).display !== "none",
+        labelsVisible: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
+        btnW: br ? Math.round(br.width) : -1,
+        btnH: br ? Math.round(br.height) : -1
+      };
+    })()`);
+    const collapsedState = await shell(`window.lg.getState()`);
+    const collapsedBounds = pageEntry ? pageEntry.view.getBounds() : null;
+    addCase(
+      "collapsed-geometry",
+      { collapsedDom, collapsedState: collapsedState.rail, collapsedBounds, mainRailW: ctx.views.railWidth() },
+      {
+        railWidth: approx(collapsedDom.railW, 64),
+        mainWidth: approx(ctx.views.railWidth(), 64),
+        stateWidth: approx(collapsedState && collapsedState.rail && collapsedState.rail.width, 64),
+        pinReleased: collapsedDom.pinPressed === "false",
+        pinVisible: collapsedDom.pinVisible,
+        labelsHidden: collapsedDom.labelsVisible === 0,
+        navHitWidth: approx(collapsedDom.btnW, 40),
+        navHitHeight: collapsedDom.btnH >= 30,
+        pageViewX: !!collapsedBounds && approx(collapsedBounds.x, collapsedDom.railW),
+      }
+    );
+
+    ctx.win.webContents.sendInputEvent({ type: "mouseMove", x: 1000, y: 120, movementX: 0, movementY: 0 });
+    await wait(60);
+    ctx.win.webContents.sendInputEvent({ type: "mouseMove", x: 30, y: 120, movementX: -970, movementY: 0 });
+    await wait(280);
+    const hoverDom = await shell(`(() => {
+      const rail = document.getElementById("rail");
+      const active = document.activeElement;
+      return {
+        railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
+        labelsVisible: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
+        activeRailId: active && active.classList && active.classList.contains("rail-btn") ? active.dataset.id || "pin" : ""
+      };
+    })()`);
+    const hoverBounds = pageEntry ? pageEntry.view.getBounds() : null;
+    addCase(
+      "hover-does-not-expand-or-focus",
+      { hoverDom, mainRailW: ctx.views.railWidth(), hoverBounds },
+      {
+        widthStable: approx(hoverDom.railW, 64) && approx(ctx.views.railWidth(), 64),
+        labelsHidden: hoverDom.labelsVisible === 0,
+        focusStayedOutsideRail: hoverDom.activeRailId === "",
+        pageViewX: !!hoverBounds && approx(hoverBounds.x, hoverDom.railW),
+      }
+    );
+    ctx.win.webContents.sendInputEvent({ type: "mouseMove", x: 1000, y: 120, movementX: 970, movementY: 0 });
+    await wait(60);
+
+    await shell(`document.getElementById("rail-pin").click(); true`);
+    await waitFor(() => ctx.cfg.get().rail.pinned === true && approx(ctx.views.railWidth(), 208), 2500);
+    await wait(260);
+    const pinnedDom = await shell(`(() => {
+      const rail = document.getElementById("rail");
+      const pin = document.getElementById("rail-pin");
+      return {
+        railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
+        bodyPinned: document.body.classList.contains("rail-pinned"),
+        pinPressed: pin ? pin.getAttribute("aria-pressed") : null,
+        pinTitle: pin ? pin.title : "",
+        pinLabel: pin ? ((pin.querySelector(".rail-label") || {}).textContent || "") : "",
+        labels: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
+        groups: [...document.querySelectorAll("#rail-top .rail-group-label")].filter((el) => getComputedStyle(el).display !== "none").length
+      };
+    })()`);
+    const pinnedState = await shell(`window.lg.getState()`);
+    const pinnedBounds = pageEntry ? pageEntry.view.getBounds() : null;
+    let persistedRail = null;
+    try {
+      persistedRail = JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "config.json"), "utf8")).rail;
+    } catch {}
+    addCase(
+      "pin-sync-and-persistence",
+      { pinnedDom, pinnedState: pinnedState.rail, pinnedBounds, mainRailW: ctx.views.railWidth(), persistedPinned: persistedRail && persistedRail.pinned },
+      {
+        configPinned: ctx.cfg.get().rail.pinned === true,
+        persistedPinned: !!(persistedRail && persistedRail.pinned === true),
+        bodyPinned: pinnedDom.bodyPinned,
+        ariaPressed: pinnedDom.pinPressed === "true",
+        pinTitle: /收起侧栏/.test(pinnedDom.pinTitle),
+        pinLabel: pinnedDom.pinLabel === "收起侧栏",
+        railWidth: approx(pinnedDom.railW, 208),
+        mainWidth: approx(ctx.views.railWidth(), 208),
+        stateWidth: approx(pinnedState && pinnedState.rail && pinnedState.rail.width, 208),
+        labelsVisible: pinnedDom.labels > 0,
+        groupsVisible: pinnedDom.groups > 0,
+        pageViewX: !!pinnedBounds && approx(pinnedBounds.x, pinnedDom.railW),
+      }
+    );
+    await shot("rail-pinned");
+
+    const pageWc = ctx.views.currentWebContents();
+    const pressPageKey = (keyCode, modifiers = []) => {
+      if (!pageWc || pageWc.isDestroyed()) return;
+      pageWc.focus();
+      pageWc.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+      pageWc.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+    };
+    pressPageKey("b", ["control"]);
+    await waitFor(() => ctx.cfg.get().rail.pinned === false && approx(ctx.views.railWidth(), 64), 2500);
+    await wait(220);
+    const ctrlBDom = await shell(`(() => {
+      const rail = document.getElementById("rail");
+      const pin = document.getElementById("rail-pin");
+      return {
+        railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
+        pinPressed: pin ? pin.getAttribute("aria-pressed") : null,
+        bodyPinned: document.body.classList.contains("rail-pinned")
+      };
+    })()`);
+    const ctrlBBounds = pageEntry ? pageEntry.view.getBounds() : null;
+    addCase(
+      "ctrl-b-from-page",
+      { ctrlBDom, ctrlBBounds, pinned: ctx.cfg.get().rail.pinned, mainRailW: ctx.views.railWidth() },
+      {
+        configUnpinned: ctx.cfg.get().rail.pinned === false,
+        ariaReleased: ctrlBDom.pinPressed === "false",
+        bodyUnpinned: !ctrlBDom.bodyPinned,
+        railWidth: approx(ctrlBDom.railW, 64),
+        mainWidth: approx(ctx.views.railWidth(), 64),
+        pageViewX: !!ctrlBBounds && approx(ctrlBBounds.x, ctrlBDom.railW),
+      }
+    );
+
+    const focusTrail = [];
+    const onShellFocus = () => focusTrail.push("shell");
+    const onPageFocus = () => focusTrail.push("page");
+    ctx.win.webContents.on("focus", onShellFocus);
+    if (pageWc && !pageWc.isDestroyed()) pageWc.on("focus", onPageFocus);
+    focusCleanup = () => {
+      ctx.win.webContents.removeListener("focus", onShellFocus);
+      if (pageWc && !pageWc.isDestroyed()) pageWc.removeListener("focus", onPageFocus);
+    };
+    focusTrail.length = 0;
+    pageWc.focus();
+    await wait(60);
+    pressPageKey("F6");
+    const railFocused = await waitFor(
+      () => shell(`!!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("rail-btn"))`),
+      1800
+    );
+    const firstFocusId = await shell(`document.activeElement && (document.activeElement.dataset.id || "pin")`);
+    ctx.win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Down", modifiers: [] });
+    ctx.win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Down", modifiers: [] });
+    await wait(80);
+    const secondFocusId = await shell(`document.activeElement && (document.activeElement.dataset.id || "pin")`);
+    ctx.win.webContents.sendInputEvent({ type: "keyDown", keyCode: "End", modifiers: [] });
+    ctx.win.webContents.sendInputEvent({ type: "keyUp", keyCode: "End", modifiers: [] });
+    await wait(80);
+    const endFocusId = await shell(`document.activeElement && (document.activeElement.dataset.id || "pin")`);
+    ctx.win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape", modifiers: [] });
+    ctx.win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape", modifiers: [] });
+    await wait(160);
+    addCase(
+      "keyboard-rail-focus",
+      { railFocused, firstFocusId, secondFocusId, endFocusId },
+      {
+        focusedFromPage: railFocused,
+        arrowMoved: secondFocusId !== firstFocusId,
+        endMovedToLast: endFocusId === "jump",
+      }
+    );
+    focusTrail.length = 0;
+    pressPageKey("l", ["control"]);
+    const jumpOpened = await waitFor(
+      () =>
+        shell(`(() => {
+          const overlay = document.getElementById("overlay");
+          const palette = document.getElementById("palette");
+          return !!(overlay && !overlay.hidden && palette && !palette.hidden && document.activeElement && document.activeElement.id === "pal-input");
+        })()`),
+      2500
+    );
+    const jumpDom = await shell(`(() => {
+      const overlay = document.getElementById("overlay");
+      const palette = document.getElementById("palette");
+      const input = document.getElementById("pal-input");
+      const list = document.getElementById("pal-list");
+      return {
+        opened: !!overlay && !overlay.hidden,
+        paletteVisible: !!palette && !palette.hidden,
+        inputFocused: !!input && document.activeElement === input,
+        inputLabel: input ? input.getAttribute("aria-label") : "",
+        listHidden: !!list && list.hidden,
+        railW: Math.round(document.getElementById("rail").getBoundingClientRect().width)
+      };
+    })()`);
+    addCase(
+      "ctrl-l-jump-focus",
+      { jumpOpened, jumpDom, overlayOpen: ctx.views.overlayOpen },
+      {
+        opened: jumpOpened && jumpDom.opened && jumpDom.paletteVisible,
+        focused: jumpDom.inputFocused,
+        jumpMode: jumpDom.inputLabel === "输入题号跳转" && jumpDom.listHidden,
+        railStayedCollapsed: approx(jumpDom.railW, 64),
+        mainOverlayOpen: ctx.views.overlayOpen === true,
+      }
+    );
+
+    await shell(`document.getElementById("pal-input").value = "P1001"; true`);
+    ctx.win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape", modifiers: [] });
+    ctx.win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape", modifiers: [] });
+    const jumpClosed = await waitFor(() => shell(`document.getElementById("overlay").hidden`), 2500);
+    await wait(260);
+    const overlayHidden = await shell(`document.getElementById("overlay").hidden`);
+    const focusLast = focusTrail.length ? focusTrail[focusTrail.length - 1] : "";
+    const pageStillCurrent = !!pageEntry && ctx.views.currentEntry() === pageEntry;
+    addCase(
+      "escape-close-restore-page-focus",
+      { jumpClosed, overlayHidden, focusTrail, focusLast, overlayOpen: ctx.views.overlayOpen, pageStillCurrent },
+      {
+        closed: jumpClosed && overlayHidden,
+        overlayReleased: ctx.views.overlayOpen === false,
+        pageFocused: focusTrail.includes("page"),
+        focusEndsOnPage: focusLast === "page",
+        pageStillCurrent,
+      }
+    );
+    focusCleanup();
+    focusCleanup = () => {};
+
+    const activeProbe = async (route, expected) => {
+      let activated = false;
+      try {
+        await route();
+        activated = true;
+      } catch {}
+      await waitFor(() => ((ctx.views.currentInfo() || {}).railId || "") === expected, 2200);
+      await wait(100);
+      const info = ctx.views.currentInfo() || {};
+      const dom = await shell(`(() => {
+        const buttons = [...document.querySelectorAll('#rail .rail-btn[data-id]')];
+        const current = buttons.filter((b) => b.getAttribute("aria-current") === "page");
+        const active = buttons.filter((b) => b.classList.contains("active"));
+        const settings = buttons.find((b) => b.dataset.kind === "action" && b.dataset.id === "settings");
+        return {
+          expectedIds: current.map((b) => b.dataset.id),
+          activeIds: active.map((b) => b.dataset.id),
+          currentCount: current.length,
+          activeCount: active.length,
+          sameNode: current.length === 1 && active.length === 1 && current[0] === active[0],
+          settingsCurrent: !!settings && (settings.hasAttribute("aria-current") || settings.classList.contains("active"))
+        };
+      })()`);
+      addCase(
+        "active-" + expected,
+        { expected, info, dom, activated },
+        {
+          activated,
+          stateRailId: info.railId === expected,
+          uniqueCurrent: dom.currentCount === 1 && dom.expectedIds[0] === expected,
+          uniqueActive: dom.activeCount === 1 && dom.activeIds[0] === expected,
+          sameElement: dom.sameNode,
+          actionNotActive: !dom.settingsCurrent,
+        }
+      );
+    };
+
+    await activeProbe(() => ctx.views.showHome(), "home");
+    for (const kind of ["problems", "training", "contest", "record", "discuss", "article"]) {
+      await activeProbe(() => ctx.views.showLibrary(kind), kind);
+    }
+    await activeProbe(() => ctx.views.openProblem("P1001"), "problems");
+    await activeProbe(() => ctx.views.openWeb("chat"), "chat");
+    await activeProbe(() => ctx.views.openWeb("notification"), "notification");
+
+    ctx.win.setContentSize(1000, 640);
+    await wait(320);
+    const customItems = Array.from({ length: 8 }, (_, index) => ({
+      id: "smoke-" + (index + 1),
+      label: "测试链接 " + (index + 1),
+      url: "https://www.luogu.com.cn/article",
+    }));
+    ctx.cfg.setRail({ custom: customItems, pinned: false });
+    ctx.views.setRailPinned(false);
+    ctx.broadcastState();
+    await waitFor(() => shell(`document.querySelectorAll('#rail-top .rail-btn[data-id^="custom:"]').length === 8`), 2500);
+    await shell(`(() => {
+      const top = document.getElementById("rail-top");
+      top.scrollTop = Math.floor((top.scrollHeight - top.clientHeight) / 2);
+      window.__lgRailProbeNode = document.querySelector('[data-id="custom:smoke-4"]');
+      window.__lgRailScrollBefore = top.scrollTop;
+      return true;
+    })()`);
+    const beforeKeyed = await shell(`(() => {
+      const top = document.getElementById("rail-top");
+      return { scrollTop: top.scrollTop, overflow: top.scrollHeight - top.clientHeight, customCount: document.querySelectorAll('#rail-top .rail-btn[data-id^="custom:"]').length };
+    })()`);
+    const savedScrollTop = await shell(`window.__lgRailScrollBefore`);
+    ctx.cfg.setRail({ custom: customItems.map((item) => Object.assign({}, item, { label: item.label + "改" })), pinned: false });
+    ctx.broadcastState();
+    await wait(360);
+    const afterKeyed = await shell(`(() => {
+      const top = document.getElementById("rail-top");
+      const node = document.querySelector('[data-id="custom:smoke-4"]');
+      return {
+        scrollTop: top.scrollTop,
+        sameNode: !!node && node === window.__lgRailProbeNode && node.isConnected,
+        customCount: document.querySelectorAll('#rail-top .rail-btn[data-id^="custom:"]').length,
+        labelUpdated: !!node && /改$/.test(((node.querySelector(".rail-label") || {}).textContent || ""))
+      };
+    })()`);
+    addCase(
+      "keyed-dom-scroll-preservation",
+      { before: beforeKeyed, after: afterKeyed, savedScrollTop },
+      {
+        overflowCreated: beforeKeyed.overflow > 0,
+        scrollWasSet: beforeKeyed.scrollTop > 0,
+        savedScrollMatches: Math.abs(savedScrollTop - beforeKeyed.scrollTop) <= 1,
+        scrollPreserved: Math.abs(afterKeyed.scrollTop - beforeKeyed.scrollTop) <= 1,
+        nodeReused: afterKeyed.sameNode,
+        configApplied: afterKeyed.labelUpdated,
+        allEightRendered: beforeKeyed.customCount === 8 && afterKeyed.customCount === 8,
+      }
+    );
+    await shell(`document.getElementById("rail-top").scrollTop = document.getElementById("rail-top").scrollHeight; true`);
+    await wait(80);
+    const reachable = await shell(`(() => {
+      const top = document.getElementById("rail-top");
+      const last = document.querySelector('[data-id="custom:smoke-8"]');
+      const tr = top.getBoundingClientRect();
+      const lr = last ? last.getBoundingClientRect() : null;
+      return {
+        customCount: document.querySelectorAll('#rail-top .rail-btn[data-id^="custom:"]').length,
+        lastExists: !!last,
+        lastTop: lr ? Math.round(lr.top) : -1,
+        lastBottom: lr ? Math.round(lr.bottom) : -1,
+        scrollTop: Math.round(top.scrollTop),
+        maxScroll: Math.round(top.scrollHeight - top.clientHeight),
+        scrollTopEdge: Math.round(tr.top),
+        scrollBottomEdge: Math.round(tr.bottom)
+      };
+    })()`);
+    const customOpened = await shell(`document.querySelector('[data-id="custom:smoke-8"]').click(); true`);
+    await waitFor(() => ((ctx.views.currentInfo() || {}).railId || "") === "custom:smoke-8", 2500);
+    await wait(160);
+    const customActive = await shell(`(() => {
+      const current = [...document.querySelectorAll('#rail .rail-btn[aria-current="page"]')];
+      const active = [...document.querySelectorAll('#rail .rail-btn.active')];
+      return {
+        currentIds: current.map((b) => b.dataset.id),
+        activeIds: active.map((b) => b.dataset.id),
+        sameNode: current.length === 1 && active.length === 1 && current[0] === active[0]
+      };
+    })()`);
+    addCase(
+      "eight-custom-items-reachable",
+      { reachable, customOpened, currentInfo: ctx.views.currentInfo(), customActive },
+      {
+        allEightRendered: reachable.customCount === 8 && reachable.lastExists,
+        overflowed: reachable.maxScroll > 0 && reachable.scrollTop > 0,
+        lastItemInViewport:
+          reachable.lastTop >= reachable.scrollTopEdge &&
+          reachable.lastBottom <= reachable.scrollBottomEdge &&
+          reachable.lastBottom > reachable.lastTop,
+        clickDispatched: customOpened === true,
+        customRouteOpened: ((ctx.views.currentInfo() || {}).railId || "") === "custom:smoke-8",
+        customActiveUnique:
+          customActive.currentIds.length === 1 &&
+          customActive.activeIds.length === 1 &&
+          customActive.currentIds[0] === "custom:smoke-8" &&
+          customActive.activeIds[0] === "custom:smoke-8" &&
+          customActive.sameNode,
+      }
+    );
+
+    ctx.views.setRailPinned(false);
+    await wait(240);
+    const rapidTrail = [];
+    for (let index = 0; index < 20; index++) {
+      await shell(`document.getElementById("rail-pin").click(); true`);
+      rapidTrail.push(await shell(`document.getElementById("rail").getBoundingClientRect().width`));
+      await wait(25);
+    }
+    await wait(420);
+    const rapidFirst = await shell(`(() => {
+      const rail = document.getElementById("rail");
+      const pin = document.getElementById("rail-pin");
+      return {
+        railW: Math.round(rail.getBoundingClientRect().width),
+        pinPressed: pin.getAttribute("aria-pressed"),
+        bodyPinned: document.body.classList.contains("rail-pinned")
+      };
+    })()`);
+    const rapidSecond = await shell(`Math.round(document.getElementById("rail").getBoundingClientRect().width)`);
+    const rapidBounds = ctx.views.currentEntry() ? ctx.views.currentEntry().view.getBounds() : null;
+    addCase(
+      "rapid-pin-stability",
+      {
+        clicks: 20,
+        trail: rapidTrail,
+        first: rapidFirst,
+        secondWidth: rapidSecond,
+        mainRailW: ctx.views.railWidth(),
+        animTimer: ctx.views.railAnimTimer,
+        pinned: ctx.cfg.get().rail.pinned,
+        bounds: rapidBounds,
+      },
+      {
+        clickCount: rapidTrail.length === 20,
+        sampledWidthsInRange: rapidTrail.every((width) => Number.isFinite(Number(width)) && Number(width) >= 64 && Number(width) <= 208),
+        evenClicksEndCollapsed: ctx.cfg.get().rail.pinned === false,
+        ariaReleased: rapidFirst.pinPressed === "false",
+        bodyUnpinned: !rapidFirst.bodyPinned,
+        widthStable: approx(rapidFirst.railW, 64) && approx(rapidSecond, 64) && approx(ctx.views.railWidth(), 64),
+        noResidualTimer: ctx.views.railAnimTimer === null,
+        pageViewX: !!rapidBounds && approx(rapidBounds.x, rapidFirst.railW),
+      }
+    );
+
+    ctx.cfg.setGeneral({ performanceMode: true });
+    await ctx.refreshAppearance({ reschedule: false });
+    ctx.views.setRailPinned(false);
+    await wait(220);
+    ctx.views.setRailPinned(true);
+    const perfPinnedImmediate = ctx.views.railWidth();
+    const perfPinnedTimer = ctx.views.railAnimTimer;
+    await waitFor(() => shell(`Math.round(document.getElementById("rail").getBoundingClientRect().width) === 208`), 1200);
+    const perfPinnedDom = await shell(`Math.round(document.getElementById("rail").getBoundingClientRect().width)`);
+    ctx.views.setRailPinned(false);
+    const perfCollapsedImmediate = ctx.views.railWidth();
+    const perfCollapsedTimer = ctx.views.railAnimTimer;
+    await waitFor(() => shell(`Math.round(document.getElementById("rail").getBoundingClientRect().width) === 64`), 1200);
+    const perfCollapsedDom = await shell(`Math.round(document.getElementById("rail").getBoundingClientRect().width)`);
+    addCase(
+      "performance-mode-no-tween",
+      {
+        perfPinnedImmediate,
+        perfPinnedTimer,
+        perfPinnedDom,
+        perfCollapsedImmediate,
+        perfCollapsedTimer,
+        perfCollapsedDom,
+      },
+      {
+        pinnedImmediate: approx(perfPinnedImmediate, 208),
+        pinnedNoTimer: perfPinnedTimer === null,
+        pinnedDom: approx(perfPinnedDom, 208),
+        collapsedImmediate: approx(perfCollapsedImmediate, 64),
+        collapsedNoTimer: perfCollapsedTimer === null,
+        collapsedDom: approx(perfCollapsedDom, 64),
+      }
+    );
+  } finally {
+    focusCleanup();
+    try {
+      ctx.cfg.setRail(originalRail);
+      ctx.cfg.setGeneral({ performanceMode: originalPerformance });
+      await ctx.refreshAppearance({ reschedule: false });
+      ctx.views.setRailPinned(!!originalRail.pinned);
+      ctx.win.setContentSize(originalBounds.width, originalBounds.height);
+      ctx.views.showHome();
+      ctx.broadcastState();
+      await wait(260);
+    } catch (err) {
+      console.log("SMOKE_FAIL 侧栏探针恢复失败: " + err.message);
+    }
+  }
+
+  const failed = results.filter((entry) => !entry.ok);
+  console.log("SMOKE_RAIL_SUMMARY " + JSON.stringify({ total: results.length, passed: results.length - failed.length, failed: failed.map((entry) => entry.name) }));
+  if (!results.length || failed.length) {
+    console.log("SMOKE_FAIL 侧栏行为探针: " + (failed.map((entry) => entry.name).join(", ") || "no-cases"));
+  }
+}
+
 async function runSmoke(ctx) {
   const out = process.env.LG_SMOKE_OUT || path.join(app.getPath("userData"), "smoke.png");
   const outDir = path.dirname(out);
@@ -1274,159 +1822,8 @@ async function runSmoke(ctx) {
 
       }
 
-      if (process.env.LG_SMOKE_RAIL === "1") {
-        const collapsedRail = await ctx.win.webContents.executeJavaScript(`(() => {
-          const rail = document.getElementById("rail");
-          const labels = [...document.querySelectorAll(".rail-group-label")];
-          const text = document.querySelector(".rail-user-text");
-          const btn = document.querySelector("#rail-top .rail-btn");
-          const br = btn ? btn.getBoundingClientRect() : null;
-          const ir = btn && btn.querySelector("svg") ? btn.querySelector("svg").getBoundingClientRect() : null;
-          const ur = document.getElementById("rail-user") ? document.getElementById("rail-user").getBoundingClientRect() : null;
-          const jr = document.getElementById("rail-jump") ? document.getElementById("rail-jump") : null;
-          return {
-            groupsHidden: labels.length > 0 && labels.every((el) => getComputedStyle(el).display === "none"),
-            userTextHidden: !!text && getComputedStyle(text).display === "none",
-            userLast: !!rail.lastElementChild && rail.lastElementChild.id === "rail-user",
-            userLabel: ((document.getElementById("rail-user") || {}).innerText || "").replace(/\\s+/g, " ").trim(),
-            btnW: br ? Math.round(br.width) : 0,
-            btnH: br ? Math.round(br.height) : 0,
-            iconW: ir ? Math.round(ir.width) : 0,
-            userW: ur ? Math.round(ur.width) : 0,
-            userH: ur ? Math.round(ur.height) : 0,
-            jumpHidden: !!jr && getComputedStyle(jr).display === "none",
-            railPad: getComputedStyle(rail).padding,
-          };
-        })()`);
-        console.log("SMOKE_RAIL_COLLAPSED " + JSON.stringify(collapsedRail));
-        if (
-          !collapsedRail.groupsHidden ||
-          !collapsedRail.userTextHidden ||
-          !collapsedRail.userLast ||
-          collapsedRail.btnW !== 40 ||
-          collapsedRail.btnH !== 30 ||
-          collapsedRail.iconW !== 20 ||
-          collapsedRail.userW !== 32 ||
-          collapsedRail.userH !== 32 ||
-          !collapsedRail.jumpHidden
-        ) {
-          console.log("SMOKE_FAIL 侧栏折叠态分组/账户卡/官方几何");
-        }
-        ctx.views.setRailHover(true, "jump");
-        await wait(60);
-        // 0.7.2 抽屉补间：60ms 时宽度应仍在滑动途中（≥208 说明瞬跳，补间缺失）
-        const drawerMid = ctx.views.railOverlay ? ctx.views.railOverlay.getBounds().width : -1;
-        await wait(740);
-        const railWc = ctx.views.railWebContents();
-        if (railWc) {
-          const railView = ctx.views.railOverlay;
-          const visible = !!(railView && railView.getVisible());
-          const openBounds = railView ? railView.getBounds() : null;
-          if (drawerMid >= 208) console.log("SMOKE_FAIL 侧栏抽屉补间缺失（60ms 已全宽瞬跳）");
-          if (openBounds && (openBounds.width !== 208 || openBounds.y !== 40)) {
-            console.log("SMOKE_FAIL 侧栏抽屉终态几何（应 y=40 宽 208）");
-          }
-          console.log("SMOKE_RAIL_VISIBLE " + JSON.stringify({ visible, bounds: openBounds, drawerMid }));
-          // 透明 view 在不可见/失焦的冒烟窗口里 capturePage 可能得到空图；
-          // 有图才落盘，视觉验收以固定态窗口截图 + DOM 断言为准。
-          if (visible) {
-            if (railView) railView.setBackgroundColor("#16181d");
-            await wait(160);
-            const image = await railWc.capturePage(undefined, { stayHidden: true });
-            if (image && !image.isEmpty()) {
-              const file = path.join(outDir, "smoke-rail-overlay.png");
-              fs.writeFileSync(file, image.toPNG());
-              console.log("SMOKE_SHOT rail-overlay " + file);
-            }
-            if (railView) railView.setBackgroundColor("#00000000");
-          }
-          const metrics = await railWc.executeJavaScript(`(() => {
-            const rail = document.getElementById("rail");
-            const labels = [...document.querySelectorAll(".rail-label")].filter((el) => getComputedStyle(el).display !== "none");
-            const pin = document.getElementById("rail-pin");
-            const btn = document.querySelector("#rail-top .rail-btn");
-            const br = btn ? btn.getBoundingClientRect() : null;
-            const jump = document.getElementById("rail-jump");
-            return {
-              railW: Math.round(rail.getBoundingClientRect().width),
-              labels: labels.length,
-              groups: [...document.querySelectorAll(".rail-group-label")].map((el) => el.textContent.trim()),
-              user: ((document.getElementById("rail-user") || {}).innerText || "").replace(/\\s+/g, " ").trim(),
-              userLast: !!rail.lastElementChild && rail.lastElementChild.id === "rail-user",
-              pinVisible: !!pin && getComputedStyle(pin).opacity !== "0",
-              pinned: document.body.classList.contains("rail-pinned"),
-              jumpFocused: document.activeElement === document.getElementById("rail-jump-input"),
-              btnW: br ? Math.round(br.width) : 0,
-              btnH: br ? Math.round(br.height) : 0,
-              jumpVisible: !!jump && getComputedStyle(jump).display !== "none",
-              shadow: getComputedStyle(rail).boxShadow,
-            };
-          })()`);
-          console.log("SMOKE_RAIL " + JSON.stringify(metrics));
-          if (
-            !metrics.groups.includes("浏览") ||
-            !metrics.groups.includes("社区") ||
-            !metrics.groups.includes("工具") ||
-            !metrics.userLast ||
-            !/未登录|个人主页/.test(metrics.user) ||
-            metrics.btnW < 188 ||
-            metrics.btnW > 193 ||
-            metrics.btnH !== 30 ||
-            !metrics.jumpVisible ||
-            metrics.shadow !== "none"
-          ) {
-            console.log("SMOKE_FAIL 侧栏分组/账户卡/展开几何");
-          }
-        }
-        ctx.views.setRailPinned(true);
-        await wait(600);
-        const pinnedShot = await shot("rail-pinned");
-        const pinnedMetrics = await ctx.win.webContents.executeJavaScript(`(() => {
-          const rail = document.getElementById("rail");
-          const pin = document.getElementById("rail-pin");
-          return {
-            railW: Math.round(rail.getBoundingClientRect().width),
-            pinned: document.body.classList.contains("rail-pinned"),
-            pinVisible: !!pin && getComputedStyle(pin).opacity !== "0",
-            labels: [...document.querySelectorAll(".rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
-            groups: [...document.querySelectorAll(".rail-group-label")].filter((el) => getComputedStyle(el).display !== "none").length,
-            userLast: !!rail.lastElementChild && rail.lastElementChild.id === "rail-user",
-          };
-        })()`);
-        console.log("SMOKE_RAIL_PINNED " + JSON.stringify(Object.assign({ shot: pinnedShot }, pinnedMetrics)));
-        ctx.views.setRailPinned(false);
-        await wait(400);
-
-        // 浮层里的导航与钉子必须真的能点（不是只有 DOM 形状对）
-        ctx.views.setRailHover(true);
-        await wait(500);
-        const railWc2 = ctx.views.railWebContents();
-        if (railWc2) {
-          await railWc2.executeJavaScript(`document.querySelector('.rail-btn[data-id="home"]').click()`);
-          await wait(500);
-          console.log(
-            "SMOKE_RAIL_NAV " +
-              JSON.stringify({
-                home: !!ctx.views.currentInfo().home,
-                overlay: !!(ctx.views.railOverlay && ctx.views.railOverlay.getVisible()),
-              })
-          );
-          ctx.views.setRailHover(true);
-          await wait(500);
-          await railWc2.executeJavaScript(`document.getElementById("rail-pin").click()`);
-          await wait(600);
-          console.log(
-            "SMOKE_RAIL_PIN_CLICK " +
-              JSON.stringify({
-                pinned: !!ctx.cfg.get().rail.pinned,
-                railW: Math.round(await ctx.win.webContents.executeJavaScript(`document.getElementById("rail").getBoundingClientRect().width`)),
-                overlay: !!(ctx.views.railOverlay && ctx.views.railOverlay.getVisible()),
-              })
-          );
-          ctx.views.setRailPinned(false);
-          await wait(400);
-        }
-      }
+      // 核心侧栏路径默认必跑；LG_SMOKE_RAIL 不再作为开关。
+      await runRailSmoke(ctx, wait, shot);
 
       if (process.env.LG_SMOKE_LIB === "1") {
         const libKinds = String(process.env.LG_SMOKE_LIB_ONLY || "problems,contest,article,discuss,training,record")
@@ -1835,7 +2232,7 @@ async function runSmoke(ctx) {
               " bounds=" +
               JSON.stringify(entry.view.getBounds())
           );
-          // 折叠/固定侧栏时页面视图让位：56 → 208 → 56（真实题面在场）
+          // 折叠/固定侧栏时页面视图让位：64 → 208 → 64（真实题面在场）
           try {
             const collapsed = entry.view.getBounds();
             ctx.views.setRailPinned(true);
@@ -1845,7 +2242,7 @@ async function runSmoke(ctx) {
             await wait(400);
             const restored = entry.view.getBounds();
             const railBoundsOk =
-              collapsed.x === 56 && pinned.x === 208 && restored.x === 56;
+              collapsed.x === 64 && pinned.x === 208 && restored.x === 64;
             console.log(
               "SMOKE_RAIL_BOUNDS " +
                 JSON.stringify({
@@ -2469,12 +2866,6 @@ async function runSmoke(ctx) {
             sec.hiddenOpen = await hiddenWc.executeJavaScript(`window.open(${JSON.stringify(atk)}) === null`).catch(() => null);
           }
         }
-        const railView = ctx.views.railOverlay;
-        if (railView && !railView.webContents.isDestroyed()) {
-          await railView.webContents.executeJavaScript(`location.href = ${JSON.stringify(atk)}; "sent"`).catch(() => null);
-          await wait(500);
-          sec.railUrl = String(railView.webContents.getURL() || "").slice(0, 40);
-        }
         // 注：fullscreen 权限向量曾试图经 requestFullscreen 断言，实测 Electron 39
         // 的 HTML5 全屏不经过权限处理器（requestFullscreen 直接 resolve），
         // 该向量按事实撤下（权限 handler 保留为纵深防御，判源已改 requestingUrl）。
@@ -2499,7 +2890,6 @@ async function runSmoke(ctx) {
           (sec.hiddenOpen === true || sec.hiddenOpen === "skipped") &&
           sec.shellUrl.indexOf("file:") === 0 &&
           String(sec.pageUrl || "").indexOf("luogu.com.cn") !== -1 &&
-          (sec.railUrl === undefined || sec.railUrl.indexOf("file:") === 0) &&
           sec.settingsOpen === true;
         console.log("SMOKE_SEC " + JSON.stringify({ ...sec, ok: secOk }));
         if (!secOk) console.log("SMOKE_FAIL 安全注入未被全拒");
@@ -2631,29 +3021,6 @@ async function runSmoke(ctx) {
           console.log("SMOKE_SETTINGS_METRICS " + JSON.stringify(settingsMetrics));
         }
 
-        if (process.env.LG_SMOKE_RAIL === "1") {
-          const before = ctx.cfg.get().rail.order.slice();
-          await ctx.settingsWin.webContents.executeJavaScript(
-            `document.querySelectorAll('#rail-list .rail-mini')[1] && document.querySelectorAll('#rail-list .rail-mini')[1].click()`
-          );
-          await wait(350);
-          await ctx.settingsWin.webContents.executeJavaScript(
-            `document.querySelector('#rail-list .rail-eye') && document.querySelector('#rail-list .rail-eye').click()`
-          );
-          await wait(350);
-          await ctx.settingsWin.webContents.executeJavaScript(
-            `(() => { const f = document.getElementById('rail-add'); document.getElementById('rail-add-label').value = 'GitHub'; document.getElementById('rail-add-url').value = 'https://github.com'; f.requestSubmit(); })()`
-          );
-          await wait(450);
-          const railState = ctx.cfg.get().rail;
-          const railDom = await ctx.win.webContents.executeJavaScript(
-            `[...document.querySelectorAll('#rail-top .rail-btn')].map((b) => ({ id: b.dataset.id, title: b.title }))`
-          );
-          console.log("SMOKE_RAIL " + JSON.stringify({ before, order: railState.order, hidden: railState.hidden, custom: railState.custom, dom: railDom }));
-          await shot("settings-rail-after", ctx.settingsWin);
-          ctx.cfg.resetRail();
-          ctx.broadcastState();
-        }
       }
     } catch (err) {
       console.error("SMOKE_FAIL " + (err && err.stack ? err.stack : err.message));

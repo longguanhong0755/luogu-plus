@@ -13,8 +13,8 @@
   签到失败会写明原因；比赛开始前按设置的提前量弹系统通知。
 - **4.0 视觉重构**：GitHub Primer / Linear / VS Code / Windows 11 Fluent 的尺寸与状态规则；
   40px 标题栏、44px 工具条、1080px 内容列，13/14px 阅读字号，2px 焦点环。
-- **侧栏默认为 56px 图标栏**：鼠标移入展开 208px 浮层（页面不回流），展开态右上角的
-  钉子可常驻；所有页面一律不高亮，当前页只由标题栏标题表达。
+- **侧栏默认为 64px 图标栏**：悬停只显示原生提示，不改变布局；用钉子或 `Ctrl+B`
+  可固定展开到 208px。当前栏目有唯一高亮，图标栏与页面视图共享同一宽度状态。
 - **壁纸透出可调**：设置 → 外观 →「壁纸透出」0–100，拉到 100 时内容面完全透明，
   壁纸原样透出；中间档位按可读下限兜底，不会出现文字压不住背景。
 - **广告拦截可关**：设置 → 通用 →「拦截广告」，默认关闭，开启后当场生效
@@ -36,9 +36,8 @@ desktop/   当前应用（Electron 39）
   src/main/      主进程，按领域拆分：
                  index / config / theme / wallpaper / sections /
                  views / passkey-guard / luogu / tray / notify / ipc / smoke
-  src/preload/   shell / rail / settings / page 隔离桥
+  src/preload/   shell / settings / page 隔离桥
   src/renderer/  shell（标题栏/折叠侧栏/主页/原生列表/命令面板/IDE）
-                 rail（悬停展开的 208px 侧栏浮层）
                  settings（七分区设置窗）
                  skin（洛谷页面皮肤 + 页面壁纸复刻层）
 legacy/    3.17.0 旧版 LuoguLab 完整归档（git 历史保留，可作参考/回退）
@@ -78,7 +77,7 @@ LG_SMOKE_FIND=1 npm run smoke            # R76：Ctrl+F 查找条/缩放 HUD 行
 LG_SMOKE_SEC=1 npm run smoke             # R77：安全注入探针（window.open/跨源导航断言全拒）
 LG_SMOKE_AUDIT=1 npm run smoke           # 深色/浅色对比度审计 → ../.lg-dev/audit-dark.json
 LG_SMOKE_THEME=light npm run smoke       # 以浅色模式跑同一套
-LG_SMOKE_RAIL=1 npm run smoke            # 折叠→悬停展开→固定→导航/钉子点击端到端
+LG_SMOKE_RAIL=1 npm run smoke            # 64↔208 固定切换、active、键盘与页面视图同步
 LG_SMOKE_PERF=1 npm run smoke            # 性能模式：模糊归零 + 失焦冻结/聚焦恢复
 LG_SMOKE_FOLDER=<dir> / LG_SMOKE_WE=<dir> npm run smoke   # 壁纸文件夹 / Wallpaper Engine
 LG_SMOKE_CAPTCHA_MANUAL=1 npm run smoke   # 验证码不自动识别，等人工写答案文件（默认自动 ddddocr）
@@ -129,7 +128,8 @@ LG_SMOKE_PALETTE=1 npm run smoke          # R61：命令面板题目/页面/恢�
   可读下限：外壳 58 / 纱层 50 / 卡片 55。
 - **对比度**：正文 ≥ 4.5:1，焦点环 2px 强调色；主按钮文字按 `--accent-fill` 计算，
   自定义强调色另有 `--accent-text` 保证文字可读。
-- **快捷键**：`Ctrl+K` 面板 · `Ctrl+L` 题号跳转 · `Ctrl+Tab` 切换器 · `Ctrl+,` 设置 ·
+- **快捷键**：`Ctrl+K` 面板 · `Ctrl+L` 题号跳转 · `Ctrl+B` 固定/收起侧栏 · `F6` 聚焦侧栏 ·
+  `Shift+F6` 返回页面 · `Ctrl+Tab` 切换器 · `Ctrl+,` 设置 ·
   `F5`/`Ctrl+R` 刷新 · `Alt+←/→` 后退/前进 · `Ctrl+W` 关页面 ·
   `Ctrl+Shift+T` 恢复关闭 · `Ctrl+F` 页内查找 · `Ctrl+=`/`Ctrl+-`/`Ctrl+0` 阅读缩放 ·
   `F11` 全屏 · `F12` 开发者工具（自动临时卸下通行密钥守卫）。
