@@ -5,9 +5,10 @@
    Wallpaper Engine 的 scene/web 壁纸无法在本应用内运行，退化为其预览图并标注。 */
 const fs = require("node:fs");
 const path = require("node:path");
-const { app, net } = require("electron");
+const crypto = require("node:crypto");
+const { app, net, nativeImage, screen } = require("electron");
 const { execFileSync } = require("node:child_process");
-const { pathToFileURL } = require("node:url");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 const { hexToRgba } = require("./theme");
 
 const IMAGE_EXT = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".avif"]);
@@ -50,6 +51,37 @@ function toUrl(file) {
   return "";
 }
 
+function displayBudget() {
+  let area = { width: 1920, height: 1080 };
+  let scaleFactor = 1;
+  try {
+    const display = screen.getPrimaryDisplay();
+    area = display.workArea || display.size || area;
+    scaleFactor = Math.max(1, Math.min(2, Number(display.scaleFactor) || 1));
+  } catch {
+    /* ready 前使用保守默认值 */
+  }
+  return {
+    maxWidth: Math.max(960, Math.min(2560, Math.round(area.width * scaleFactor))),
+    maxHeight: Math.max(640, Math.min(1600, Math.round(area.height * scaleFactor))),
+  };
+}
+
+function pruneDisplayCache(dir, keep) {
+  try {
+    const files = fs.readdirSync(dir)
+      .filter((name) => /^[a-f0-9]+\.jpg$/i.test(name))
+      .map((name) => {
+        const file = path.join(dir, name);
+        return { file, mtime: fs.statSync(file).mtimeMs };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+    for (const item of files.slice(keep)) fs.rmSync(item.file, { force: true });
+  } catch {
+    /* 缓存清理失败不影响壁纸显示 */
+  }
+}
+
 function displayImage(url, maxWidth, maxHeight) {
   if (!url || !/^file:/i.test(url)) return url;
   let file = "";
@@ -60,12 +92,15 @@ function displayImage(url, maxWidth, maxHeight) {
   }
   const ext = extOf(file);
   if (!new Set([".jpg", ".jpeg", ".png", ".webp"]).has(ext)) return url;
+  const limitW = Number(maxWidth);
+  const limitH = Number(maxHeight);
+  if (!Number.isFinite(limitW) || !Number.isFinite(limitH) || limitW < 1 || limitH < 1) return url;
   try {
     const stat = fs.statSync(file);
     const image = nativeImage.createFromPath(file);
     const size = image.getSize();
     if (!size.width || !size.height) return url;
-    const scale = Math.min(1, maxWidth / size.width, maxHeight / size.height);
+    const scale = Math.min(1, limitW / size.width, limitH / size.height);
     if (scale >= 0.98) return url;
     const width = Math.max(1, Math.round(size.width * scale));
     const height = Math.max(1, Math.round(size.height * scale));
@@ -75,6 +110,7 @@ function displayImage(url, maxWidth, maxHeight) {
     if (!fs.existsSync(cache)) {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(cache, image.resize({ width, height, quality: "good" }).toJPEG(84));
+      pruneDisplayCache(dir, 24);
     }
     return toUrl(cache);
   } catch {
@@ -255,6 +291,7 @@ function pickIndex(cfg, count) {
 
 async function resolve(cfg, theme) {
   const a = cfg.appearance;
+  const budget = displayBudget();
   const base = {
     kind: a.wallpaper,
     url: "",
@@ -271,7 +308,7 @@ async function resolve(cfg, theme) {
 
   if (a.wallpaper === "desktop") {
     const file = desktopWallpaperPath();
-    const url = toUrl(file);
+    const url = displayImage(toUrl(file), budget.maxWidth, budget.maxHeight);
     return Object.assign(base, {
       url,
       backdrop: url ? cssUrl(url) : builtinBackdrop(theme),
@@ -281,7 +318,7 @@ async function resolve(cfg, theme) {
   }
 
   if (a.wallpaper === "daily") {
-    const url = displayImage(await dailyImage(), maxWidth, maxHeight);
+    const url = displayImage(await dailyImage(), budget.maxWidth, budget.maxHeight);
     return Object.assign(base, {
       url,
       backdrop: url ? cssUrl(url) : builtinBackdrop(theme),
@@ -293,7 +330,8 @@ async function resolve(cfg, theme) {
   if (a.wallpaper === "custom") {
     const file = a.wallpaperFile;
     const video = isVideo(file);
-    const url = toUrl(file);
+    const rawUrl = toUrl(file);
+    const url = video ? rawUrl : displayImage(rawUrl, budget.maxWidth, budget.maxHeight);
     return Object.assign(base, {
       url,
       video,
@@ -308,7 +346,8 @@ async function resolve(cfg, theme) {
     const index = pickIndex(cfg, files.length);
     const file = files[index] || "";
     const video = isVideo(file);
-    const url = toUrl(file);
+    const rawUrl = toUrl(file);
+    const url = video ? rawUrl : displayImage(rawUrl, budget.maxWidth, budget.maxHeight);
     return Object.assign(base, {
       url,
       video,
@@ -331,9 +370,11 @@ async function resolve(cfg, theme) {
         items,
       });
     }
-    const url = toUrl(chosen.playable ? chosen.media : chosen.preview);
     const video = chosen.playable && isVideo(chosen.media);
-    const poster = chosen.previewUrl;
+    const rawUrl = toUrl(chosen.playable ? chosen.media : chosen.preview);
+    const url = video ? rawUrl : displayImage(rawUrl, budget.maxWidth, budget.maxHeight);
+    const rawPoster = chosen.previewUrl || toUrl(chosen.preview);
+    const poster = displayImage(rawPoster, budget.maxWidth, budget.maxHeight);
     return Object.assign(base, {
       url,
       video,

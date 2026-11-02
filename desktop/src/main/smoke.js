@@ -1223,11 +1223,19 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       const name = (window.lg.getState().user || {}).name || "";
       const text = daily ? daily.innerText : "";
       const fortune = document.querySelector(".home-fortune");
+      const refresh = document.querySelector(".home-refresh");
+      const meta = document.querySelector(".home-meta");
       return {
         greetingCount: document.querySelectorAll(".home-greeting").length,
         dateCount: document.querySelectorAll(".home-date").length,
         countdownCount: document.querySelectorAll(".home-countdown").length,
         fortuneCount: document.querySelectorAll(".home-fortune").length,
+        refreshCount: document.querySelectorAll(".home-refresh").length,
+        mainCount: document.querySelectorAll(".home-daily-main").length,
+        greetingRowCount: document.querySelectorAll(".home-greeting-row").length,
+        legacySideCount: document.querySelectorAll(".home-daily-side").length,
+        refreshInHeading: !!refresh && !!refresh.closest(".home-greeting-row"),
+        countdownsInMeta: document.querySelectorAll(".home-countdown").length > 0 && !!meta && !!meta.querySelector(".home-countdowns"),
         nameCount: name ? text.split(name).length - 1 : 0,
         legacyCard: !!document.querySelector(".welcome-card"),
         fortuneContaminated: !!fortune && /(距|还剩|星期)/.test(fortune.innerText || "")
@@ -1239,8 +1247,11 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       {
         singleGreeting: homeDaily.greetingCount === 1,
         singleDate: homeDaily.dateCount === 1,
+        singleMain: homeDaily.mainCount === 1 && homeDaily.greetingRowCount === 1,
+        stableRefresh: homeDaily.refreshCount === 1 && homeDaily.refreshInHeading,
+        countdownsInHeader: homeDaily.countdownCount > 0 && homeDaily.countdownsInMeta,
+        noLegacySide: homeDaily.legacySideCount === 0,
         noLegacyCard: homeDaily.legacyCard === false,
-        countdownsInHeader: homeDaily.countdownCount > 0,
         structuredFortune: homeDaily.fortuneContaminated === false,
       }
     );
@@ -1346,6 +1357,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       return {
         railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
         bodyPinned: document.body.classList.contains("rail-pinned"),
+        visualWide: document.body.classList.contains("rail-visual-wide"),
         pinPressed: pin ? pin.getAttribute("aria-pressed") : null,
         pinTitle: pin ? pin.title : "",
         pinLabel: pin ? ((pin.querySelector(".rail-label") || {}).textContent || "") : "",
@@ -1366,6 +1378,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         configPinned: ctx.cfg.get().rail.pinned === true,
         persistedPinned: !!(persistedRail && persistedRail.pinned === true),
         bodyPinned: pinnedDom.bodyPinned,
+        visualWide: pinnedDom.visualWide,
         ariaPressed: pinnedDom.pinPressed === "true",
         pinTitle: /收起侧栏/.test(pinnedDom.pinTitle),
         pinLabel: pinnedDom.pinLabel === "收起侧栏",
@@ -3501,6 +3514,22 @@ async function runSmoke(ctx) {
     } catch (err) {
       console.error("SMOKE_FAIL " + (err && err.stack ? err.stack : err.message));
     }
+    try {
+      const appMetrics = app.getAppMetrics().map((item) => ({
+        pid: item.pid,
+        type: item.type,
+        privateMB: Math.round(((item.memory && item.memory.privateBytes) || 0) / 1024 * 10) / 10,
+        workingSetMB: Math.round(((item.memory && item.memory.workingSetSize) || 0) / 1024 * 10) / 10,
+      }));
+      console.log("SMOKE_PROCESS_METRICS " + JSON.stringify({
+        processCount: appMetrics.length,
+        totalPrivateMB: Math.round(appMetrics.reduce((sum, item) => sum + item.privateMB, 0) * 10) / 10,
+        totalWorkingSetMB: Math.round(appMetrics.reduce((sum, item) => sum + item.workingSetMB, 0) * 10) / 10,
+        processes: appMetrics,
+      }));
+    } catch (err) {
+      console.log("SMOKE_PROCESS_METRICS_ERROR " + err.message);
+    }
     writeManifest();
     app.quitting = true;
     app.quit();
@@ -4163,6 +4192,16 @@ function seedDemo(ctx) {
         { name: "NOIP 2026", days: 27 },
       ],
       fortune: { result: "大吉", good: "刷题", bad: "摆烂" },
+      sections: {
+        announcement: { text: "本站公告与站内动态会同步显示在这里。", links: [] },
+        tasks: { text: "完成每日一题，继续巩固最近学习的算法。" },
+        discussions: {
+          items: [
+            { title: "如何规划本月的训练计划？", author: "示例用户", replies: 12, url: "https://www.luogu.com.cn/discuss/1" },
+            { title: "赛后复盘应该记录哪些内容？", author: "洛谷用户", replies: 8, url: "https://www.luogu.com.cn/discuss/2" },
+          ],
+        },
+      },
     },
     recent: [
       { pid: "P1001", title: "A+B Problem", status: 12, statusText: "AC", score: 100, time: Date.now() - 2 * 60 * 1000 },

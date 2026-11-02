@@ -736,8 +736,8 @@ if (
 if (
   /panelExpand|panelCollapse/.test(chromeSource) &&
   /setAttribute\("aria-pressed"/.test(chromeSource) &&
-  /actions\.setRailPinned\(next\)/.test(chromeSource) &&
-  /event\.key\.toLowerCase\(\) === "b"[\s\S]*?setRailPinned\(!pinned\)/.test(shellJsSource) &&
+  /actions\.toggleRailPinned\(\)/.test(chromeSource) &&
+  /event\.key\.toLowerCase\(\) === "b"[\s\S]*?toggleRailPinned\(\)/.test(shellJsSource) &&
   /key === "b"\) command = "railPin"/.test(viewsSource)
 ) {
   ok("Ctrl+B 在按钮、外壳和页面 WebContents 三处贯通");
@@ -759,8 +759,9 @@ if (
 if (
   /key === "l"\) command = "jump"/.test(viewsSource) &&
   /name === "palette" \|\| name === "switcher" \|\| name === "jump"/.test(read("src/main/index.js")) &&
-  /name === "jump"\) overlays\.openJump\(\)/.test(shellJsSource) &&
-  /function openJump\(\)/.test(overlaysSource) &&
+  /name === "jump"\) overlays\.openJump\(fromPage\)/.test(shellJsSource) &&
+  /function openJump\(options = \{\}\)/.test(overlaysSource) &&
+  /function rememberFocus\(options = \{\}\)/.test(overlaysSource) &&
   /input\.focus\(\)/.test(overlaysSource) &&
   /titleJump\.addEventListener\("click", \(\) => actions\.openJump\(\)\)/.test(chromeSource)
 ) {
@@ -1004,9 +1005,9 @@ const railCss = read("src/renderer/shell/shell.css");
 if (
   /#rail \{[\s\S]*?padding: 12px;/.test(railCss) &&
   /\.rail-btn \{[\s\S]*?height: 32px;[\s\S]*?margin: 4px 0;/.test(railCss) &&
-  /body:not\(\.rail-pinned\) \.rail-btn \{[\s\S]*?width: 40px;[\s\S]*?justify-content: center;/.test(railCss) &&
-  /body:not\(\.rail-pinned\) \.rail-label,[\s\S]*?display: none;/.test(railCss) &&
-  /body:not\(\.rail-pinned\) \.rail-group \{[\s\S]*?border-top-color: var\(--border\);/.test(railCss)
+  /body:not\(\.rail-visual-wide\) \.rail-btn \{[\s\S]*?width: 40px;[\s\S]*?justify-content: center;/.test(railCss) &&
+  /body:not\(\.rail-visual-wide\) \.rail-label,[\s\S]*?display: none;/.test(railCss) &&
+  /body:not\(\.rail-visual-wide\) \.rail-group \{[\s\S]*?border-top-color: var\(--border\);/.test(railCss)
 ) {
   ok("侧栏 64px 图标轨、40×32 热区与折叠分组分隔");
 } else {
@@ -1017,9 +1018,10 @@ if (
   !/#rail-user/.test(railCss) &&
   /\.rail-btn\.active::before/.test(railCss) &&
   /width: 2px;/.test(railCss) &&
-  /background: color-mix\(in srgb, var\(--accent\) 7%, transparent\)/.test(railCss)
+  /background: color-mix\(in srgb, var\(--accent\) 10%, transparent\)/.test(railCss) &&
+  /\.rail-btn\.active \{\s*color: var\(--text\);[\s\S]*?color: var\(--accent-text\);/.test(railCss)
 ) {
-  ok("侧栏无旧浮层/账户卡，active 使用 2px accent + 7% 背景");
+  ok("侧栏无旧浮层/账户卡，active 使用 2px accent + 10% 背景与 accent 文字");
 } else {
   fail("侧栏仍有旧浮层/账户卡，或 active 视觉契约缺失");
 }
@@ -1555,7 +1557,7 @@ if (hotCalls.join(",") === "win,settings,win,settings,skin") ok("热加载命令
 else fail("热加载命令执行链错误");
 
 /* ---------- R90 稳定性、可读性与资源占用 ---------- */
-if (/MAX_PROBLEMS = 3/.test(viewsSource) && /MAX_DETAILS = 5/.test(viewsSource) && /MAX_TOTAL_ENTRIES = 8/.test(viewsSource) && /evictTotal\(MAX_TOTAL_ENTRIES/.test(viewsSource) && /setAudioMuted\(true\)/.test(viewsSource)) {
+if (/MAX_PROBLEMS = 2/.test(viewsSource) && /MAX_DETAILS = 4/.test(viewsSource) && /MAX_TOTAL_ENTRIES = 6/.test(viewsSource) && /evictTotal\(MAX_TOTAL_ENTRIES/.test(viewsSource) && /setAudioMuted\(true\)/.test(viewsSource)) {
   ok("R90 隐藏页面有总数上限、后台节流与静音回收");
 } else {
   fail("R90 页面 View 内存回收契约缺失");
@@ -1565,10 +1567,26 @@ if (/wall-motion/.test(shellCss) && /wall-paused/.test(shellCss) && /lg-wall-pan
 } else {
   fail("R90 壁纸仍在 JS rAF 中逐帧重算");
 }
-if (/function displayImage/.test(read("src/main/wallpaper.js")) && /nativeImage/.test(read("src/main/wallpaper.js")) && /display-cache/.test(read("src/main/wallpaper.js"))) {
-  ok("R90 高分辨率静态壁纸按窗口尺寸缓存缩放");
+const wallpaperSource = read("src/main/wallpaper.js");
+if (
+  /function displayImage/.test(wallpaperSource) &&
+  /nativeImage/.test(wallpaperSource) &&
+  /fileURLToPath/.test(wallpaperSource) &&
+  /crypto\.createHash/.test(wallpaperSource) &&
+  /displayBudget\(\)/.test(wallpaperSource) &&
+  /display-cache/.test(wallpaperSource) &&
+  /const url = displayImage\(toUrl\(file\), budget\.maxWidth, budget\.maxHeight\)/.test(wallpaperSource) &&
+  /displayImage\(rawUrl, budget\.maxWidth, budget\.maxHeight\)/.test(wallpaperSource)
+) {
+  ok("R90 所有静态壁纸按显示预算缓存缩放");
 } else {
-  fail("R90 壁纸缺少显示尺寸缓存");
+  fail("R90 壁纸显示尺寸缓存链路不完整");
+}
+const luoguSourceMemory = read("src/main/luogu.js");
+if (/backgroundThrottling: true/.test(luoguSourceMemory) && /scheduleWindowIdle\(\)/.test(luoguSourceMemory) && /trimMap\(this\.libCache, 30\)/.test(luoguSourceMemory) && /trimMap\(this\.userSearchCache, 20\)/.test(luoguSourceMemory)) {
+  ok("R91 隐藏数据窗空闲回收且在内存缓存有容量上限");
+} else {
+  fail("R91 隐藏数据窗或内存缓存缺少回收上限");
 }
 if (/BackForwardCache/.test(read("src/main/index.js")) && !/--lg-wall-image:\$\{backdrop\}/.test(viewsSource)) {
   ok("R90 页面不复制壁纸且关闭整页 BFCache");

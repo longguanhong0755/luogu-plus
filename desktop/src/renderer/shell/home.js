@@ -48,7 +48,8 @@ function normalizeFortune(value) {
 function buildDailyHeader(home, user, features, actions, offline, showOfficial) {
   const now = new Date();
   const head = el("header", "home-daily");
-  const copy = el("div", "home-daily-copy");
+  const main = el("div", "home-daily-main");
+  const heading = el("div", "home-greeting-row");
   const greeting = el("h1", "home-greeting");
   const name = String((user && user.name) || "").trim();
   if (user && user.loggedIn && name) {
@@ -57,7 +58,14 @@ function buildDailyHeader(home, user, features, actions, offline, showOfficial) 
   } else {
     greeting.appendChild(document.createTextNode("欢迎来到洛谷"));
   }
-  copy.appendChild(greeting);
+
+  const refresh = el("button", "home-refresh");
+  refresh.type = "button";
+  refresh.title = "刷新";
+  refresh.setAttribute("aria-label", "刷新");
+  refresh.innerHTML = icon("refresh");
+  refresh.addEventListener("click", () => actions.refresh());
+  heading.append(greeting, refresh);
 
   const meta = el("div", "home-meta");
   const date = el("time", "home-date");
@@ -84,15 +92,7 @@ function buildDailyHeader(home, user, features, actions, offline, showOfficial) 
     chip.title = "当前没有网络：浏览缓存数据可用，提交会进入离线队列。";
     meta.appendChild(chip);
   }
-  copy.appendChild(meta);
 
-  if (home.quote) {
-    const quote = el("div", "home-quote", "每日寄语：" + home.quote);
-    quote.title = String(home.quote);
-    copy.appendChild(quote);
-  }
-
-  const side = el("div", "home-daily-side");
   const countdowns = showOfficial && Array.isArray(official.countdowns) ? official.countdowns.slice(0, 3) : [];
   if (countdowns.length) {
     const list = el("div", "home-countdowns");
@@ -101,21 +101,21 @@ function buildDailyHeader(home, user, features, actions, offline, showOfficial) 
       const chip = el("span", "home-countdown");
       chip.appendChild(el("span", "home-countdown-name", "距 " + item.name));
       const days = Number(item.days);
+      chip.title = `距 ${item.name}${days <= 0 ? "今天" : ` 还剩 ${days} 天`}`;
       chip.appendChild(el("strong", "home-countdown-days nums", days <= 0 ? "今天" : String(days)));
       if (days > 0) chip.appendChild(el("span", "home-countdown-unit", "天"));
       list.appendChild(chip);
     }
-    if (list.childElementCount) side.appendChild(list);
+    if (list.childElementCount) meta.appendChild(list);
   }
-  const refresh = el("button", "home-refresh");
-  refresh.type = "button";
-  refresh.title = "刷新";
-  refresh.setAttribute("aria-label", "刷新");
-  refresh.innerHTML = icon("refresh");
-  refresh.addEventListener("click", () => actions.refresh());
-  if (side.childElementCount) side.appendChild(refresh);
-  else meta.appendChild(refresh);
-  head.append(copy, side);
+
+  main.append(heading, meta);
+  if (home.quote) {
+    const quote = el("div", "home-quote", "每日寄语：" + home.quote);
+    quote.title = String(home.quote);
+    main.appendChild(quote);
+  }
+  head.appendChild(main);
   return head;
 }
 
@@ -282,11 +282,14 @@ function buildContest(home, actions) {
     card.appendChild(row);
   }
   if (live) {
+    const footer = el("div", "contest-live");
+    footer.appendChild(el("span", "contest-live-name", live.name || "比赛"));
     const count = el("span", "cc-count");
-    card.appendChild(count);
+    footer.appendChild(count);
+    card.appendChild(footer);
     const target = live.end;
     const tick = () => {
-      count.textContent = (live.name || "比赛") + " · 剩余 " + formatClock(target - Date.now());
+      count.textContent = "剩余 " + formatClock(target - Date.now());
     };
     tick();
     countdownTimer = setInterval(tick, 1000);
@@ -376,7 +379,7 @@ function buildStatGrid(home) {
   today.setHours(0, 0, 0, 0);
   const start = new Date(today);
   start.setDate(today.getDate() - today.getDay() - 19 * 7);
-  let monthDays = 0;
+  let activeDays = 0;
   let total = 0;
   for (let i = 0; i < 140; i++) {
     const day = new Date(start);
@@ -385,13 +388,13 @@ function buildStatGrid(home) {
     const key = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
     const count = counts.get(key) || 0;
     total += count;
-    if (count > 0 && day.getMonth() === today.getMonth()) monthDays++;
+    if (count > 0) activeDays++;
   }
 
   const grid = el("div", "stats-grid");
   const stats = [
     [home.streak || 0, "连续签到"],
-    [monthDays, "本月打卡"],
+    [activeDays, "活跃天数"],
     [total, "近 20 周提交"],
   ];
   for (const [value, label] of stats) {
@@ -407,7 +410,7 @@ function buildStatGrid(home) {
    交代托盘退出/快捷键/离线三件事，关闭即置位不再出现。 */
 function buildFirstRun(actions) {
   const card = el("div", "firstrun-card card");
-  card.appendChild(cardHead("初次使用", "home"));
+  card.appendChild(cardHead("初次使用", "info"));
   const lines = el("div", "firstrun-lines");
   const tips = [
     ["关闭窗口默认收进托盘，退出请右键托盘图标选「退出」。", "info"],
@@ -453,31 +456,17 @@ function buildAnnouncement(home, actions) {
     card.appendChild(list);
     return card;
   }
-  const text = String(section.text || "欢迎使用洛谷桌面版。公告、通知与站内动态会继续在这里同步。")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 140);
+  const text = String(section.text || "").replace(/\s+/g, " ").trim().slice(0, 180);
+  if (!text) return null;
   card.appendChild(el("div", "welcome-line", text));
   return card;
 }
-function buildTasks(actions) {
+function buildTasks(home) {
+  const text = String(sectionData(home, "tasks").text || "").replace(/\s+/g, " ").trim().slice(0, 180);
+  if (!text) return null;
   const card = el("div", "tasks-card card");
-  card.appendChild(cardHead("任务计划", "calendarCheck"));
-  const list = el("div", "task-links");
-  const items = [
-    ["每日练习", "打开题库", () => actions.nav("problems")],
-    ["专项训练", "进入训练", () => actions.nav("training")],
-    ["检查记录", "查看提交", () => actions.nav("record")],
-  ];
-  for (const [title, label, run] of items) {
-    const row = el("button", "task-row");
-    row.type = "button";
-    row.appendChild(el("span", "task-title", title));
-    row.appendChild(el("span", "task-action", label));
-    row.addEventListener("click", run);
-    list.appendChild(row);
-  }
-  card.appendChild(list);
+  card.appendChild(cardHead("任务计划", "list"));
+  card.appendChild(el("div", "welcome-line", text));
   return card;
 }
 
@@ -506,20 +495,17 @@ function buildCommunity(home, actions) {
   const card = el("div", "community-card card");
   const section = sectionData(home, "discussions");
   const items = Array.isArray(section.items) ? section.items.slice(0, 4) : [];
-  card.appendChild(cardHead("最近讨论", "discuss", items.length ? "站内动态" : ""));
-  if (!items.length) {
-    card.appendChild(el("div", "empty-line", "暂无讨论数据，打开讨论区查看最新内容。"));
-  } else {
-    for (const item of items) {
-      const row = el("button", "community-row");
-      row.type = "button";
-      row.appendChild(el("span", "community-title", String(item.title || "未命名讨论").slice(0, 80)));
-      const meta = [item.author, item.replies ? item.replies + " 回复" : ""].filter(Boolean).join(" · ");
-      if (meta) row.appendChild(el("span", "community-meta", meta));
-      if (item.url) row.addEventListener("click", () => actions.openDetail({ url: item.url, title: item.title || "讨论" }));
-      else row.addEventListener("click", () => actions.nav("discuss"));
-      card.appendChild(row);
-    }
+  if (!items.length) return null;
+  card.appendChild(cardHead("最近讨论", "discuss", "站内动态"));
+  for (const item of items) {
+    const row = el("button", "community-row");
+    row.type = "button";
+    row.appendChild(el("span", "community-title", String(item.title || "未命名讨论").slice(0, 80)));
+    const meta = [item.author, item.replies ? item.replies + " 回复" : ""].filter(Boolean).join(" · ");
+    if (meta) row.appendChild(el("span", "community-meta", meta));
+    if (item.url) row.addEventListener("click", () => actions.openDetail({ url: item.url, title: item.title || "讨论" }));
+    else row.addEventListener("click", () => actions.nav("discuss"));
+    card.appendChild(row);
   }
   const more = el("button", "sign-btn", "打开讨论区");
   more.type = "button";
@@ -639,9 +625,12 @@ export function renderHome(state, actions) {
     if (sections.homeHeat !== false) main.appendChild(buildHeat(home));
     if (sections.homeRecent !== false) main.appendChild(buildRecent(home, actions, offline));
   } else {
-    grid.classList.add("single");
+    grid.classList.add("guest");
   }
-  if (sections.homeAnnouncement !== false) main.appendChild(buildAnnouncement(home, actions));
+  if (sections.homeAnnouncement !== false) {
+    const announcementCard = buildAnnouncement(home, actions);
+    if (announcementCard) main.appendChild(announcementCard);
+  }
 
   if (sections.homeFirstRun !== false && state.general && state.general.firstRunSeen === false) {
     side.appendChild(buildFirstRun(actions));
@@ -650,8 +639,14 @@ export function renderHome(state, actions) {
     const contestCard = buildContest(home, actions);
     if (contestCard) side.appendChild(contestCard);
   }
-  if (sections.homeTasks !== false) side.appendChild(buildTasks(actions));
-  if (sections.homeCommunity !== false) side.appendChild(buildCommunity(home, actions));
+  if (sections.homeTasks !== false) {
+    const tasksCard = buildTasks(home);
+    if (tasksCard) side.appendChild(tasksCard);
+  }
+  if (sections.homeCommunity !== false) {
+    const communityCard = buildCommunity(home, actions);
+    if (communityCard) side.appendChild(communityCard);
+  }
   if (sections.homeLinks !== false) side.appendChild(buildLinks(actions));
   side.appendChild(buildSign(state, actions));
   if (features.supportPrompt) side.appendChild(buildSupport(actions));

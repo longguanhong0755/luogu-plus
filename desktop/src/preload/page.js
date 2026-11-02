@@ -13,8 +13,6 @@ function argValue(prefix) {
 }
 
 const bootBg = argValue("--lg-boot-bg=");
-let motionOn = argValue("--lg-motion=") === "1";
-let zoomOn = argValue("--lg-zoom=") === "1";
 const adBlockOn = argValue("--lg-adblock=") === "1";
 const bootMode = argValue("--lg-boot-mode=");
 const bootAccent = argValue("--lg-boot-accent=");
@@ -82,83 +80,6 @@ try {
 } catch {
   /* 某些页面会冻结 navigator，失败时退回 Chromium 默认行为 */
 }
-
-/* ---------- 壁纸运动相位 ----------
-   只在确实需要动画时跑 rAF；滚动/隐藏/失焦时冻结，
-   性能模式（lg:motion 全 false）直接停表，不再每帧写 CSS 变量。 */
-let frameRaf = 0;
-let frameLast = 0;
-let scrolling = false;
-let scrollTimer = null;
-
-function stopMotion(reset) {
-  if (frameRaf) cancelAnimationFrame(frameRaf);
-  frameRaf = 0;
-  if (!reset) return;
-  const style = document.documentElement.style;
-  style.setProperty("--lg-pan-x", "0px");
-  style.setProperty("--lg-pan-y", "0px");
-  style.setProperty("--lg-zoom", "1");
-}
-
-function tickMotion(now) {
-  frameRaf = 0;
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if ((!motionOn && !zoomOn) || reduced || document.hidden || scrolling) {
-    stopMotion((!motionOn && !zoomOn) || reduced);
-    return;
-  }
-  if (now && frameLast && now - frameLast < 33) {
-    frameRaf = requestAnimationFrame(tickMotion);
-    return;
-  }
-  frameLast = now || 0;
-  const style = document.documentElement.style;
-  const t = Date.now();
-  if (motionOn) {
-    style.setProperty("--lg-pan-x", (Math.sin(t / 11000) * 6).toFixed(2) + "px");
-    style.setProperty("--lg-pan-y", (Math.cos(t / 15000) * 4).toFixed(2) + "px");
-  } else {
-    style.setProperty("--lg-pan-x", "0px");
-    style.setProperty("--lg-pan-y", "0px");
-  }
-  style.setProperty("--lg-zoom", zoomOn ? (1.055 + Math.sin(t / 19000) * 0.012).toFixed(4) : "1");
-  frameRaf = requestAnimationFrame(tickMotion);
-}
-
-function syncMotion() {
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if ((motionOn || zoomOn) && !reduced && !document.hidden && !scrolling) {
-    if (!frameRaf) {
-      frameLast = 0;
-      frameRaf = requestAnimationFrame(tickMotion);
-    }
-  } else {
-    stopMotion((!motionOn && !zoomOn) || reduced);
-  }
-}
-
-document.addEventListener(
-  "scroll",
-  () => {
-    scrolling = true;
-    syncMotion();
-    clearTimeout(scrollTimer);
-    scrollTimer = setTimeout(() => {
-      scrolling = false;
-      syncMotion();
-    }, 140);
-  },
-  true
-);
-document.addEventListener("visibilitychange", syncMotion);
-requestAnimationFrame(() => syncMotion());
-
-ipcRenderer.on("lg:motion", (_event, payload) => {
-  motionOn = !!(payload && payload.motion);
-  zoomOn = !!(payload && payload.zoom);
-  syncMotion();
-});
 
 /* ---------- 应用轻提示 ----------
    页面视图盖在外壳之上，外壳的 toast 会被挡住；主进程把同一份 toast

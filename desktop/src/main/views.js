@@ -14,9 +14,9 @@ const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
 const { canonicalPid } = require("./sections");
 const { SOURCE: PASSKEY_GUARD } = require("./passkey-guard");
 
-const MAX_PROBLEMS = 3;
-const MAX_DETAILS = 5;
-const MAX_TOTAL_ENTRIES = 8;
+const MAX_PROBLEMS = 2;
+const MAX_DETAILS = 4;
+const MAX_TOTAL_ENTRIES = 6;
 
 function acceleratorMatches(input, accelerator) {
   const parts = String(accelerator || "").split("+");
@@ -112,7 +112,7 @@ class ViewManager {
 
   /* ---------- 侧栏宽度（单一状态源） ----------
      外壳 DOM 与所有页面 WebContentsView 都消费同一个 railCurrentW。
-     悬停不展开；只有显式固定/收起会触发一次 140ms 宽度补间。 */
+     悬停不展开；只有显式固定/收起会触发一次 160ms 宽度补间。 */
 
   railWidth() {
     return this.railCurrentW;
@@ -155,9 +155,9 @@ class ViewManager {
     clearTimeout(this.railAnimTimer);
     const token = (this.railAnimToken = (this.railAnimToken || 0) + 1);
     const start = performance.now();
-    const dur = 140;
+    const dur = 160;
     const bounds = this.win.getContentBounds();
-    const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+    const easeOut = (t) => 1 - Math.pow(1 - t, 4);
     const step = () => {
       if (token !== this.railAnimToken || !this.win || this.win.isDestroyed()) return;
       const t = Math.min(1, (performance.now() - start) / dur);
@@ -623,14 +623,8 @@ class ViewManager {
 
   setOverlay(open) {
     this.overlayOpen = !!open;
-    if (this.overlayOpen) {
-      this.hideAll();
-    } else {
-      this.restoreCurrent();
-      const wc = this.currentWebContents();
-      if (wc && !wc.isDestroyed()) wc.focus();
-      else if (this.win && !this.win.isDestroyed()) this.win.webContents.focus();
-    }
+    if (this.overlayOpen) this.hideAll();
+    else this.restoreCurrent();
   }
 
   switchTo(key) {
@@ -969,6 +963,7 @@ class ViewManager {
       else if (ctrl && !input.shift && input.key === "-") command = "zoomout";
       else if (ctrl && !input.shift && input.key === "0") command = "zoomreset";
       if (!command) return;
+      if (command === "railPin" && input.isAutoRepeat) return;
       event.preventDefault();
       // 查找/缩放是页面级能力，直接操作当前页面视图，不走全局命令路由
       if (command === "find") {
@@ -1054,25 +1049,6 @@ class ViewManager {
     });
   }
 
-  sendMotion(entry, active) {
-    if (!entry || !entry.view || entry.view.webContents.isDestroyed()) return;
-    const wall = this.ctx.wallpaper || {};
-    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
-    try {
-      entry.view.webContents.send("lg:motion", {
-        motion: !!(active && !perf && wall.motion),
-        zoom: !!(active && !perf && wall.zoom),
-      });
-    } catch {
-      /* 页面正在销毁 */
-    }
-  }
-
-  setWindowActive(active) {
-    const current = this.currentEntry();
-    for (const entry of this.entries.values()) this.sendMotion(entry, !!active && entry === current);
-  }
-
   showEntry(entry) {
     if (!this.win || this.win.isDestroyed()) return;
     this.currentKey = entry.key;
@@ -1085,7 +1061,6 @@ class ViewManager {
           other.view.webContents.setAudioMuted(true);
           other.view.webContents.setBackgroundThrottling(true);
         }
-        this.sendMotion(other, false);
       }
     }
     if (!entry.attached) {
@@ -1101,7 +1076,6 @@ class ViewManager {
     }
     this.layout();
     this.injectSkin(entry);
-    this.sendMotion(entry, true);
     entry.view.webContents.focus();
     this.emit();
   }
@@ -1113,7 +1087,6 @@ class ViewManager {
         entry.view.webContents.setAudioMuted(true);
         entry.view.webContents.setBackgroundThrottling(true);
       }
-      this.sendMotion(entry, false);
     }
   }
 
@@ -1129,6 +1102,7 @@ class ViewManager {
       entry.attached = true;
     }
     entry.view.setVisible(true);
+    if (!entry.view.webContents.isDestroyed()) entry.view.webContents.setAudioMuted(false);
     this.layout();
     this.injectSkin(entry);
   }
@@ -1245,7 +1219,6 @@ class ViewManager {
     if (!this.win || this.win.isDestroyed()) return;
     for (const entry of this.entries.values()) {
       entry.view.setBackgroundColor(this.ctx.theme.colors.bg);
-      this.sendMotion(entry, entry === this.currentEntry());
       this.injectSkin(entry);
     }
     this.layout();

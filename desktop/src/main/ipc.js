@@ -105,7 +105,9 @@ function registerIpc(ctx) {
   });
 
   ipcMain.handle("app:railPin", (_event, pinned) => {
-    ctx.views.setRailPinned(!!pinned);
+    // 无参数表示 toggle：快速点击时由主进程基于最新状态取反，避免 renderer 旧状态丢操作。
+    if (typeof pinned === "boolean") ctx.views.setRailPinned(pinned);
+    else ctx.views.setRailPinned(!ctx.views.railPinned);
     return ctx.cfg.get().rail;
   });
 

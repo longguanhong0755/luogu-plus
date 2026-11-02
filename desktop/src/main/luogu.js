@@ -201,11 +201,20 @@ function plainExcerpt(value, limit = 120) {
     .slice(0, limit);
 }
 
+function trimMap(map, limit) {
+  while (map.size > limit) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
+}
+
 class LuoguService {
   constructor(ctx) {
     this.ctx = ctx;
     this.win = null;
     this.loadPromise = null;
+    this.winIdleTimer = null;
     this.user = { loggedIn: false, uid: null, name: "", avatar: "" };
     this.home = {
       quote: quoteFor(new Date()),
@@ -428,6 +437,10 @@ class LuoguService {
   /* ---------- 隐藏窗口 ---------- */
 
   ensureWindow() {
+    if (this.winIdleTimer) {
+      clearTimeout(this.winIdleTimer);
+      this.winIdleTimer = null;
+    }
     if (this.win && !this.win.isDestroyed()) return this.win;
     this.win = new BrowserWindow({
       show: false,
@@ -440,7 +453,7 @@ class LuoguService {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
-        backgroundThrottling: false,
+        backgroundThrottling: true,
       },
     });
     this.win.loadURL("https://www.luogu.com.cn/");
@@ -495,7 +508,20 @@ class LuoguService {
     } catch (err) {
       console.error("[luogu] exec:", err.message);
       return null;
+    } finally {
+      this.scheduleWindowIdle();
     }
+  }
+
+  scheduleWindowIdle() {
+    if (this.winIdleTimer) clearTimeout(this.winIdleTimer);
+    this.winIdleTimer = setTimeout(() => {
+      this.winIdleTimer = null;
+      if (!this.win || this.win.isDestroyed()) return;
+      this.win.destroy();
+      this.win = null;
+      this.loadPromise = null;
+    }, 60000);
   }
 
   reloadHidden() {
@@ -771,6 +797,7 @@ class LuoguService {
     if (!data || !data.ok) return { ok: false, users: [], reason: "network" };
     if (store) store.set("userSearchGuard", { date: today, used: guard.used + 1, last: Date.now() }, 0);
     this.userSearchCache.set(cacheKey, { users, at: Date.now() });
+    trimMap(this.userSearchCache, 20);
     return { ok: true, users, remaining: 59 - guard.used };
   }
 
@@ -859,6 +886,7 @@ class LuoguService {
         hasMore: !countKnown && full,
       });
       this.libCache.set(cacheKey, { at: Date.now(), payload });
+      trimMap(this.libCache, 30);
       this.saveLib(cacheKey, payload);
       return payload;
     }
@@ -1202,12 +1230,19 @@ class LuoguService {
         if (m) countdowns.push({ name: m[1].trim(), days: Number(m[2]) });
       }
       const punch = root.querySelector(".lg-punch");
-      const punchText = punch ? text(punch) : "";
-      const fortuneResult = (punchText.match(/(大吉|中吉|小吉|末吉|大凶|凶|吉)/) || [])[1] || "";
-      const fortuneGood = (punchText.match(/宜\s*[:：]?\s*([^忌·,，。;；]{1,18})/) || [])[1] || "";
-      const fortuneBad = (punchText.match(/忌\s*[:：]?\s*([^宜·,，。;；]{1,18})/) || [])[1] || "";
+      const resultNode = punch && punch.querySelector(".lg-punch-result, [class*='punch-result']");
+      const resultText = text(resultNode);
+      const fortuneResult = (resultText.match(/(大吉|中吉|小吉|末吉|大凶|凶|吉)/) || [])[1] || "";
+      const adviceNodes = punch ? Array.from(punch.querySelectorAll(".am-u-sm-6")) : [];
+      const advice = adviceNodes.map(text).filter(Boolean);
+      const part = (prefix) => {
+        const row = advice.find((item) => item.startsWith(prefix));
+        return row ? row.slice(prefix.length).replace(/^[\s:：]+/, "").replace(/[§·,，。;；\s]+$/g, "").slice(0, 18) : "";
+      };
+      const fortuneGood = part("宜");
+      const fortuneBad = part("忌");
       const fortune = fortuneResult || fortuneGood || fortuneBad
-        ? { result: fortuneResult.trim(), good: fortuneGood.trim(), bad: fortuneBad.trim() }
+        ? { result: fortuneResult.trim(), good: fortuneGood, bad: fortuneBad }
         : null;
       const findSection = (wanted) => {
         const candidates = Array.from(root.querySelectorAll(".lg-article, .am-panel, .card, .section"));

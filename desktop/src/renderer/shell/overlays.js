@@ -48,6 +48,7 @@ export function initOverlays(actions) {
   let queryToken = 0;
   let featureState = {};
   let lastFocus = null;
+  let returnToPage = false;
   let closeTimer = null;
 
   function rowId(prefix, index) {
@@ -64,6 +65,12 @@ export function initOverlays(actions) {
     overlay.hidden = false;
   }
 
+  function rememberFocus(options = {}) {
+    if (!overlay.hidden) return;
+    lastFocus = document.activeElement;
+    returnToPage = !!options.fromPage;
+  }
+
   function loadingRow(text, kind = "pal") {
     const row = document.createElement("div");
     row.className = (kind === "sw" ? "sw-row" : "pal-row") + " empty";
@@ -71,8 +78,8 @@ export function initOverlays(actions) {
     return row;
   }
 
-  function openPalette() {
-    lastFocus = document.activeElement;
+  function openPalette(options = {}) {
+    rememberFocus(options);
     mode = "palette";
     reveal();
     palette.hidden = false;
@@ -96,8 +103,8 @@ export function initOverlays(actions) {
     runQuery("");
   }
 
-  function openJump() {
-    lastFocus = document.activeElement;
+  function openJump(options = {}) {
+    rememberFocus(options);
     mode = "jump";
     reveal();
     palette.hidden = false;
@@ -122,8 +129,8 @@ export function initOverlays(actions) {
     input.select();
   }
 
-  function openUserSearch() {
-    lastFocus = document.activeElement;
+  function openUserSearch(options = {}) {
+    rememberFocus(options);
     mode = "user";
     reveal();
     palette.hidden = true;
@@ -136,8 +143,8 @@ export function initOverlays(actions) {
     userInput.focus();
   }
 
-  function openSwitcher() {
-    lastFocus = document.activeElement;
+  function openSwitcher(options = {}) {
+    rememberFocus(options);
     mode = "switcher";
     reveal();
     switcher.hidden = false;
@@ -163,12 +170,13 @@ export function initOverlays(actions) {
       });
   }
 
-  function close() {
+  function close({ restoreFocus = true } = {}) {
     if (overlay.hidden) return;
     if (closeTimer) return;
     mode = "";
-    // 160ms 退场动画后再真正隐藏；期间页面视图已由主进程恢复
+    const focusTarget = lastFocus;
     overlay.classList.add("closing");
+    // 页面视图立即恢复，但焦点只由外壳在退场结束后恢复，避免主进程与 DOM 争抢。
     actions.overlay(false);
     closeTimer = setTimeout(() => {
       closeTimer = null;
@@ -179,8 +187,15 @@ export function initOverlays(actions) {
       userSearch.hidden = true;
       if (jumpOptions) jumpOptions.hidden = true;
       input.removeAttribute("aria-invalid");
-      if (lastFocus && lastFocus !== document.body && typeof lastFocus.focus === "function") lastFocus.focus();
+      if (restoreFocus) {
+        if (!returnToPage && focusTarget && focusTarget.isConnected && focusTarget !== document.body && typeof focusTarget.focus === "function") {
+          focusTarget.focus();
+        } else {
+          actions.focusPage();
+        }
+      }
       lastFocus = null;
+      returnToPage = false;
     }, 160);
   }
 

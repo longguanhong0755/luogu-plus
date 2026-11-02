@@ -186,6 +186,7 @@ async function boot() {
     searchUsers: (keyword) => window.lg.searchUsers(keyword),
     openUser: (uid) => window.lg.openUser(uid),
     openUrl: (url, title) => window.lg.openDetail({ url, title }),
+    focusPage: () => window.lg.command("focusPage"),
     run: runItem,
   });
 
@@ -200,7 +201,7 @@ async function boot() {
     openJump: () => overlays.openJump(),
     openUserSearch: () => overlays.openUserSearch(),
     focusPage: () => window.lg.command("focusPage"),
-    setRailPinned: (pinned) => window.lg.setRailPinned(pinned),
+    toggleRailPinned: () => window.lg.toggleRailPinned(),
   });
 
   function apply(state) {
@@ -305,10 +306,11 @@ async function boot() {
     if (Number.isFinite(width) && width > 0) chrome.setRailWidth(width);
   });
   window.lg.onCommand((name) => {
-    if (name === "palette") overlays.openPalette();
-    else if (name === "switcher") overlays.openSwitcher();
-    else if (name === "jump") overlays.openJump();
-    else if (name === "userSearch") overlays.openUserSearch();
+    const fromPage = { fromPage: true };
+    if (name === "palette") overlays.openPalette(fromPage);
+    else if (name === "switcher") overlays.openSwitcher(fromPage);
+    else if (name === "jump") overlays.openJump(fromPage);
+    else if (name === "userSearch") overlays.openUserSearch(fromPage);
     else if (name === "focusRail") chrome.focusRail();
   });
   window.lg.onToast(toast);
@@ -330,8 +332,7 @@ async function boot() {
       overlays.openJump();
     } else if (ctrl && event.key.toLowerCase() === "b") {
       event.preventDefault();
-      const pinned = !!(stateBox.data && stateBox.data.rail && stateBox.data.rail.pinned);
-      window.lg.setRailPinned(!pinned);
+      if (!event.repeat) window.lg.toggleRailPinned();
     } else if (ctrl && event.key.toLowerCase() === "u") {
       event.preventDefault();
       if (!(stateBox.data && stateBox.data.features && stateBox.data.features.userSearch === false)) overlays.openUserSearch();

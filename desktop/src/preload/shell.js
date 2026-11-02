@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("lg", {
   setAppearance: (patch) => ipcRenderer.invoke("app:setAppearance", patch),
   setRail: (patch) => ipcRenderer.invoke("app:setRail", patch),
   setRailPinned: (pinned) => ipcRenderer.invoke("app:railPin", pinned),
+  toggleRailPinned: () => ipcRenderer.invoke("app:railPin"),
   setGeneral: (patch) => ipcRenderer.invoke("app:setGeneral", patch),
   setFeatures: (patch) => ipcRenderer.invoke("app:setFeatures", patch),
   setNotify: (patch) => ipcRenderer.invoke("app:setNotify", patch),

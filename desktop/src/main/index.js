@@ -447,7 +447,14 @@ function bootstrap() {
       }, 900);
     };
 
-    const relayout = () => ctx.views.layout();
+    let relayoutTimer = null;
+    const relayout = () => {
+      if (relayoutTimer) return;
+      relayoutTimer = setTimeout(() => {
+        relayoutTimer = null;
+        if (ctx.win && !ctx.win.isDestroyed()) ctx.views.layout();
+      }, 16);
+    };
     ctx.win.on("resize", relayout);
     ctx.win.on("maximize", relayout);
     ctx.win.on("unmaximize", relayout);
@@ -456,7 +463,6 @@ function bootstrap() {
     const syncWindowFocus = (focused) => {
       if (!ctx.win || ctx.win.isDestroyed()) return;
       ctx.win.webContents.send("app:window-focus", !!focused);
-      if (ctx.views) ctx.views.setWindowActive(!!focused);
     };
     ctx.win.on("focus", () => syncWindowFocus(true));
     ctx.win.on("blur", () => syncWindowFocus(false));

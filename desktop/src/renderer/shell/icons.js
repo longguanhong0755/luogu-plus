@@ -1,29 +1,29 @@
 /* 应用图标集：24×24 线性图标，1.6px 视觉线宽（non-scaling-stroke 保证
    在 16/20/24 三种渲染尺寸下粗细一致），颜色跟随 currentColor。 */
 const S = (body) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" aria-hidden="true">${body}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 
 export const ICONS = {
   home: S('<path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/>'),
   library: S(
-    '<path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"/><path d="M8 7h7M8 11h7"/>'
+    '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
   ),
   training: S(
-    '<path d="M2 9.5 12 4l10 5.5L12 15z"/><path d="M6 11.5V17c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5"/>'
+    '<path d="M21.4 10.9a1 1 0 0 0 0-1.8L12.8 5.2a2 2 0 0 0-1.7 0L2.6 9.1a1 1 0 0 0 0 1.8l8.5 3.9a2 2 0 0 0 1.7 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/>'
   ),
   contest: S(
-    '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 5H5v2a3 3 0 0 0 3 3"/><path d="M16 5h3v2a3 3 0 0 1-3 3"/><path d="M12 13v4"/><path d="M8 20h8"/>'
+    '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.7V17c0 .6-.5 1-.9 1.2C7.9 18.8 7 20.2 7 22"/><path d="M14 14.7V17c0 .6.5 1 .9 1.2 1.2.6 2.1 2 2.1 3.8"/><path d="M18 2H6v7a6 6 0 0 0 12 0z"/>'
   ),
-  discuss: S('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
+  discuss: S('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>'),
   class: S(
     '<path d="M3 9.5 12 4l9 5.5-9 5.5z"/><path d="M7 11.6V17c0 1.5 2.2 2.7 5 2.7s5-1.2 5-2.7v-5.4"/><path d="M21 9.5V15"/>'
   ),
   article: S(
-    '<path d="M6 3.5h8l4 4V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><path d="M14 3.5V8h4"/><path d="M9 12h6M9 15.5h6M9 8.5h2"/>'
+    '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8M16 13H8M16 17H8"/>'
   ),
-  chat: S('<path d="M4 5h16v10H9l-5 4z"/><circle cx="9" cy="10" r="1"/><circle cx="13" cy="10" r="1"/><circle cx="17" cy="10" r="1"/>'),
+  chat: S('<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/><circle cx="9" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="13" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="17" cy="10" r=".8" fill="currentColor" stroke="none"/>'),
   bell: S(
-    '<path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9"/><path d="M10 18.5a2.2 2.2 0 0 0 4 0"/>'
+    '<path d="M10.3 21a2 2 0 0 0 3.4 0"/><path d="M21 18H3c2-2 2.5-4.5 2.5-7a6.5 6.5 0 0 1 13 0c0 2.5.5 5 2.5 7"/>'
   ),
   link: S('<path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7L11.6 6"/><path d="M14 10.5a4 4 0 0 0-5.7 0L5.5 13.3a4 4 0 0 0 5.7 5.7l1.2-1.2"/>'),
   dot: S('<circle cx="12" cy="12" r="3.2"/>'),

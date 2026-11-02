@@ -172,11 +172,18 @@ export function initChrome(actions) {
     if (users) users.title = "用户搜索（Ctrl+U）";
   }
 
+  function applyRailWidth(width) {
+    const rounded = Math.max(64, Math.min(208, Math.round(Number(width) || 64)));
+    document.documentElement.style.setProperty("--rail-current-w", rounded + "px");
+    // 只有真正留出文字空间后才显示标签，避免展开动画前半段出现裁剪和挤压。
+    document.body.classList.toggle("rail-visual-wide", rounded >= 176);
+  }
+
   function update(next) {
     data = next;
     const railWidth = Number(next.rail && next.rail.width);
     const width = Number.isFinite(railWidth) && railWidth > 0 ? railWidth : next.rail.pinned ? 208 : 64;
-    document.documentElement.style.setProperty("--rail-current-w", width + "px");
+    applyRailWidth(width);
     renderRail(next.rail);
     syncPin(next.rail.pinned);
     applyActive(next.page.railId);
@@ -290,9 +297,11 @@ export function initChrome(actions) {
   users.addEventListener("click", () => actions.openUserSearch());
 
   pin.addEventListener("click", () => {
-    const next = !(data && data.rail && data.rail.pinned);
+    const next = !pinState;
     syncPin(next);
-    actions.setRailPinned(next);
+    Promise.resolve(actions.toggleRailPinned()).then((rail) => {
+      if (rail && typeof rail.pinned === "boolean") syncPin(rail.pinned);
+    }).catch(() => {});
   });
 
   function railFocusables() {
@@ -327,9 +336,7 @@ export function initChrome(actions) {
 
   return {
     update,
-    setRailWidth(width) {
-      document.documentElement.style.setProperty("--rail-current-w", Math.round(width) + "px");
-    },
+    setRailWidth: applyRailWidth,
     focusRail,
     get data() {
       return data;
