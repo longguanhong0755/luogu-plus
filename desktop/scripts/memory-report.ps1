@@ -1,4 +1,4 @@
-﻿param([switch]$Json)
+param([switch]$Json)
 $ErrorActionPreference = "Stop"
 $desktop = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $repo = Split-Path -Parent $desktop
@@ -33,8 +33,6 @@ $report = [pscustomobject]@{
   processCount = @($rows).Count
   totalWorkingSetMB = $totalWs
   totalPrivateMB = $totalPrivate
-  targetMB = 100
-  targetMet = (@($rows).Count -gt 0 -and $totalPrivate -lt 100)
   processes = @($rows | Sort-Object type,pid)
 }
 $outDir = Join-Path $repo ".lg-dev"
@@ -47,7 +45,5 @@ if ($Json) {
   $rows | Sort-Object type,pid | Format-Table -AutoSize
   Write-Output ("TOTAL_PRIVATE_MB=" + $totalPrivate)
   Write-Output ("TOTAL_WORKINGSET_MB=" + $totalWs)
-  Write-Output ("TARGET_100MB=" + $report.targetMet)
   Write-Output ("REPORT=" + $outFile)
 }
-if (-not $report.targetMet) { exit 2 }

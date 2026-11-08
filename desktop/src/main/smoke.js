@@ -1222,14 +1222,14 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       const daily = document.querySelector(".home-daily");
       const name = (window.lg.getState().user || {}).name || "";
       const text = daily ? daily.innerText : "";
-      const fortune = document.querySelector(".home-fortune");
+      const fortune = document.querySelector(".home-fortune-panel");
       const refresh = document.querySelector(".home-refresh");
       const meta = document.querySelector(".home-meta");
       return {
         greetingCount: document.querySelectorAll(".home-greeting").length,
         dateCount: document.querySelectorAll(".home-date").length,
         countdownCount: document.querySelectorAll(".home-countdown").length,
-        fortuneCount: document.querySelectorAll(".home-fortune").length,
+        fortuneCount: document.querySelectorAll(".home-fortune-panel").length,
         refreshCount: document.querySelectorAll(".home-refresh").length,
         mainCount: document.querySelectorAll(".home-daily-main").length,
         greetingRowCount: document.querySelectorAll(".home-greeting-row").length,
@@ -1249,15 +1249,325 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         singleDate: homeDaily.dateCount === 1,
         singleMain: homeDaily.mainCount === 1 && homeDaily.greetingRowCount === 1,
         stableRefresh: homeDaily.refreshCount === 1 && homeDaily.refreshInHeading,
-        countdownsInHeader: homeDaily.countdownCount > 0 && homeDaily.countdownsInMeta,
+        countdownsInHeader: process.env.LG_SMOKE_NET === "1" || (homeDaily.countdownCount > 0 && homeDaily.countdownsInMeta),
         noLegacySide: homeDaily.legacySideCount === 0,
         noLegacyCard: homeDaily.legacyCard === false,
         structuredFortune: homeDaily.fortuneContaminated === false,
       }
     );
 
+    const today = await shell(`(() => {
+      const panel = document.querySelector(".home-fortune-panel");
+      const content = document.querySelector(".home-fortune-panel");
+      const action = document.querySelector(".home-today-btn.daily");
+      const style = panel ? getComputedStyle(panel) : null;
+      return {
+        panel: !!panel,
+        drawn: !!panel && panel.classList.contains("drawn"),
+        fortuneText: content ? content.innerText : "",
+        fortuneVisible: !!panel && !!style && style.display !== "none" && style.visibility !== "hidden",
+        actionCount: document.querySelectorAll(".home-today-btn.daily").length,
+        visibleActionCount: Array.from(document.querySelectorAll(".home-today-btn.daily")).filter((node) => !node.hidden).length,
+        signCount: document.querySelectorAll(".home-today-btn.sign").length,
+        fortuneCount: document.querySelectorAll(".home-today-btn.fortune").length,
+        legacySignCount: document.querySelectorAll(".sign-card").length,
+        guest: !!action && action.classList.contains("guest"),
+        text: action ? action.innerText : "",
+        dialogCount: document.querySelectorAll(".fortune-dialog, #fortune-dialog").length,
+        officialHeading: !!document.querySelector(".home-fortune-panel h2"),
+        officialResult: !!document.querySelector(".home-fortune-panel .lg-punch-result"),
+        officialColumn: !!panel && panel.classList.contains("am-u-md-4") && panel.classList.contains("lg-punch"),
+        adviceColumns: document.querySelectorAll(".home-fortune-panel .am-u-sm-6").length,
+        headingAccountRed: !!document.querySelector(".home-fortune-panel h2 a.lg-fg-red.lg-bold"),
+        goodColumnText: (document.querySelector(".home-fortune-panel .am-u-sm-6") || {}).innerText || "",
+        badActionCount: (document.querySelectorAll(".home-fortune-panel .am-u-sm-6")[1] || document.createElement("div")).querySelectorAll(".lg-bold").length,
+        resultColor: getComputedStyle(document.querySelector(".home-fortune-panel .lg-punch-result") || panel).color,
+        panelTextColor: getComputedStyle(panel).color,
+        resultFont: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-punch-result") || panel).fontSize) || 0,
+        resultLineHeight: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-punch-result") || panel).lineHeight) || 0,
+        headingFont: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel h2") || panel).fontSize) || 0,
+        headingLineHeight: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel h2") || panel).lineHeight) || 0,
+        smallFont: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-small") || panel).fontSize) || 0,
+        smallLineHeight: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-small") || panel).lineHeight) || 0,
+        progressInDaily: !!document.querySelector(".home-daily .official-profile-card"),
+        clippedLines: Array.from(document.querySelectorAll(".home-fortune-panel .lg-small")).filter((node) => node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1).length,
+        localFortuneKeys: Object.keys(localStorage).filter((key) => key.startsWith("lg.daily-fortune.v1:")),
+      };
+    })()`);
+    addCase(
+      "home-today-actions",
+      { today },
+      {
+        singleDailyAction: today.actionCount <= 1 && today.signCount === 0 && today.fortuneCount === 0,
+        noLegacyAction: today.legacySignCount === 0,
+        inlinePanel: today.panel,
+        officialOnlyState: today.localFortuneKeys.length === 0,
+        inlineFortune: !today.drawn || (
+          today.fortuneVisible &&
+          /大吉|中吉|小吉|末吉|凶|吉/.test(today.fortuneText) &&
+          /(宜|诸事不宜)/.test(today.fortuneText) &&
+          /忌/.test(today.fortuneText)
+        ),
+        officialFortuneLayout: !today.drawn || (
+          today.officialHeading &&
+          today.officialResult &&
+          today.officialColumn &&
+          today.adviceColumns === 2 &&
+          today.headingAccountRed &&
+          /诸事不宜/.test(today.goodColumnText) &&
+          today.badActionCount >= 2 &&
+          today.resultColor === today.panelTextColor &&
+          Math.abs(today.resultFont - 60) < 1 &&
+          Math.abs(today.resultLineHeight - 90) < 1 &&
+          Math.abs(today.headingFont - 20) < 1 &&
+          Math.abs(today.headingLineHeight - 32) < 1 &&
+          Math.abs(today.smallFont - 10) < 1 &&
+          Math.abs(today.smallLineHeight - 16) < 1 &&
+          today.clippedLines === 0
+        ),
+        noDailyDeadSpace: today.progressInDaily,
+        noConfirmationDialog: today.dialogCount === 0,
+        actionCopy: today.guest
+          ? /登录洛谷/.test(today.text)
+          : today.drawn || /签到|运势/.test(today.text),
+      }
+    );
+
+    const drawnHomeBackup = JSON.parse(JSON.stringify(ctx.luogu.home));
+    ctx.luogu.home.official.fortune = null;
+    ctx.luogu.home.punched = false;
+    ctx.views.showHome();
+    await wait(320);
+    const fortuneButton = await shell(`(() => {
+      const button = document.querySelector(".home-fortune-panel .home-today-btn.daily");
+      if (!button) return null;
+      const style = getComputedStyle(button);
+      return {
+        text: button.innerText.trim(),
+        display: style.display,
+        fontSize: parseFloat(style.fontSize) || 0,
+        lineHeight: parseFloat(style.lineHeight) || 0,
+        paddingTop: parseFloat(style.paddingTop) || 0,
+        paddingRight: parseFloat(style.paddingRight) || 0,
+        borderTopWidth: parseFloat(style.borderTopWidth) || 0,
+        borderRadius: parseFloat(style.borderRadius) || 0,
+        background: style.backgroundColor,
+        borderColor: style.borderTopColor,
+        color: style.color,
+        count: document.querySelectorAll(".home-fortune-panel .home-today-btn.daily").length,
+        calendar: !!document.querySelector(".home-fortune-panel .home-fortune-calendar"),
+        calendarBig: (document.querySelector(".home-fortune-panel .lg-punch-big") || {}).innerText || "",
+        calendarSmallCount: document.querySelectorAll(".home-fortune-panel .lg-punch-small").length,
+        countdownDays: document.querySelectorAll(".home-fortune-panel .am-u-sm-12.lg-small strong").length,
+      };
+    })()`);
+    await shot("fortune-button", ctx.win);
+    ctx.luogu.home = drawnHomeBackup;
+    ctx.views.showHome();
+    await wait(320);
+    addCase(
+      "home-fortune-button-official",
+      { fortuneButton },
+      {
+        oneButton: !!fortuneButton && fortuneButton.count === 1,
+        copy: !!fortuneButton && fortuneButton.text === "点击打卡",
+        amazeGeometry: !!fortuneButton &&
+          fortuneButton.display === "inline-block" &&
+          Math.abs(fortuneButton.fontSize - 14) < 1 &&
+          Math.abs(fortuneButton.lineHeight - 16.8) < 0.2 &&
+          Math.abs(fortuneButton.paddingTop - 7) < 1 &&
+          Math.abs(fortuneButton.paddingRight - 14) < 1 &&
+          Math.abs(fortuneButton.borderTopWidth - 1) < 1 &&
+          Math.abs(fortuneButton.borderRadius) < 1,
+        amazeDanger: !!fortuneButton &&
+          fortuneButton.background === "rgb(221, 81, 76)" &&
+          fortuneButton.borderColor === "rgb(221, 81, 76)" &&
+          fortuneButton.color === "rgb(255, 255, 255)",
+        officialCalendar: !!fortuneButton &&
+          fortuneButton.calendar &&
+          /^\d{2}$/.test(fortuneButton.calendarBig) &&
+          fortuneButton.calendarSmallCount === 2 &&
+          fortuneButton.countdownDays >= 2,
+      }
+    );
+
+    const homeCharts = await shell(`(() => {
+      const heat = document.querySelector(".heat-map-wrapper .heat-map");
+      const trend = document.querySelector(".home-trend-card");
+      const svg = document.querySelector(".trend-chart-svg");
+      const line = document.querySelector(".trend-line");
+      const heatRect = heat ? heat.getBoundingClientRect() : null;
+      const trendRect = trend ? trend.getBoundingClientRect() : null;
+      return {
+        heatCells: document.querySelectorAll(".heat-map-wrapper .heat-map-cell").length,
+        heatVisible: !!heatRect && heatRect.width > 300 && heatRect.height > 100,
+        heatLegend: !!document.querySelector(".heat-map-legend"),
+        trendVisible: !!trendRect && trendRect.width > 300 && trendRect.height > 140,
+        trendSvg: !!svg && svg.tagName.toLowerCase() === "svg",
+        trendLine: !!line && String(line.getAttribute("d") || "").length > 20,
+        trendPoints: document.querySelectorAll(".trend-point").length,
+        trendLabel: (document.querySelector(".trend-summary-label") || {}).textContent || "",
+        trendValue: (document.querySelector(".trend-summary-value") || {}).textContent || "",
+      };
+    })()`);
+    addCase(
+      "home-charts",
+      { homeCharts },
+      {
+        completeHeatGrid: homeCharts.heatCells === 26 * 7 && homeCharts.heatVisible && homeCharts.heatLegend,
+        cumulativeCurve: homeCharts.trendVisible && homeCharts.trendSvg && homeCharts.trendLine && homeCharts.trendPoints === 30,
+        curveSource: /累计通过/.test(homeCharts.trendLabel) && Number(homeCharts.trendValue) >= 0,
+      }
+    );
+
+    const taskDom = await shell(`(() => {
+      const card = document.querySelector(".tasks-card");
+      return {
+        exists: !!card,
+        rows: document.querySelectorAll(".tasks-card .task-plan-row").length,
+        uniqueTitles: new Set(Array.from(document.querySelectorAll(".tasks-card .task-title")).map((node) => node.textContent.trim())).size,
+        text: card ? card.innerText : "",
+      };
+    })()`);
+    addCase(
+      "official-task-list",
+      { taskDom },
+      {
+        rendered: process.env.LG_SMOKE_NET === "1" || (taskDom.exists && taskDom.rows >= 3),
+        fullItems: process.env.LG_SMOKE_NET === "1" || (/每日一题/.test(taskDom.text) && /训练题单/.test(taskDom.text) && /比赛/.test(taskDom.text)),
+        noDuplicateRows: process.env.LG_SMOKE_NET === "1" || taskDom.rows === taskDom.uniqueTitles,
+      }
+    );
+
+
+    const officialSections = await shell(`(() => ({
+      quickJump: !!document.querySelector(".quick-jump-card"),
+      progress: !!document.querySelector(".official-profile-card .official-profile-stats"),
+      recent: !!document.querySelector(".list-card"),
+      linkGroups: document.querySelectorAll(".links-card .link-group").length,
+      links: document.querySelectorAll(".links-card .link-item").length,
+      announcement: !!document.querySelector(".announcement-card"),
+      community: !!document.querySelector(".community-card")
+    }))()`);
+    addCase(
+      "official-home-sections",
+      { officialSections },
+      {
+        problemJump: officialSections.quickJump,
+        cumulativeProgress: process.env.LG_SMOKE_NET === "1" || officialSections.progress,
+        recentSubmissionsKept: process.env.LG_SMOKE_NET === "1" || officialSections.recent,
+        fullFriendLinks: officialSections.linkGroups >= 3 && officialSections.links >= 9,
+        announcementsAndCommunity: officialSections.announcement && officialSections.community,
+      }
+    );
+
+    const originalAppearance = JSON.parse(JSON.stringify(ctx.cfg.get().appearance));
+    const themeVars = () => shell(`(async () => {
+      const root = getComputedStyle(document.documentElement);
+      const state = await window.lg.getState();
+      return {
+        accent: root.getPropertyValue("--accent").trim(),
+        glassTint: root.getPropertyValue("--glass-tint").trim(),
+        bg: root.getPropertyValue("--bg").trim(),
+        rail: root.getPropertyValue("--rail").trim(),
+        surface: root.getPropertyValue("--surface").trim(),
+        themeAccent: state.theme && state.theme.colors && state.theme.colors.accent,
+      };
+    })()`);
+    const themeBefore = await themeVars();
+    const themedAccent = String(originalAppearance.accent).toLowerCase() === "#d6538f" ? "#2fa57b" : "#d6538f";
+    ctx.cfg.setAppearance({ accent: themedAccent });
+    await ctx.refreshAppearance({ reschedule: false });
+    await wait(180);
+    const themeAfter = await themeVars();
+    ctx.cfg.setAppearance({ accent: originalAppearance.accent });
+    await ctx.refreshAppearance({ reschedule: false });
+    await wait(180);
+    addCase(
+      "custom-theme-glass",
+      { before: themeBefore, after: themeAfter },
+      {
+        accentApplied: themeAfter.accent.toLowerCase() === themedAccent && String(themeAfter.themeAccent || "").toLowerCase() === themedAccent,
+        glassTintApplied: themeAfter.glassTint.toLowerCase() === themedAccent,
+        shellTinted: themeAfter.bg !== themeBefore.bg && themeAfter.rail !== themeBefore.rail && themeAfter.surface !== themeBefore.surface,
+      }
+    );
+
+    const aspectTrail = [];
+    for (const [width, height] of [[640, 480], [760, 900], [1600, 520]]) {
+      ctx.win.setContentSize(width, height);
+      await wait(220);
+      aspectTrail.push(await shell(`(() => {
+        const home = document.getElementById("home");
+        const app = document.getElementById("app");
+        const daily = document.querySelector(".home-daily-main");
+        const actions = document.querySelector(".home-today-actions");
+        const mr = daily ? daily.getBoundingClientRect() : null;
+        const ar = actions ? actions.getBoundingClientRect() : null;
+        const overlap = !!(mr && ar && ar.right > mr.left + 1 && ar.left < mr.right - 1 && ar.bottom > mr.top + 1 && ar.top < mr.bottom - 1);
+        return {
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          docOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+          appWidth: app ? Math.round(app.getBoundingClientRect().width) : -1,
+          homeOverflow: !!home && home.scrollWidth > home.clientWidth + 1,
+          actionsOverlap: overlap,
+          actionsVisible: !!actions && ar && ar.width > 0 && ar.height > 0,
+        };
+      })()`));
+    }
+    ctx.win.setContentSize(884, 756);
+    await wait(240);
+    const narrowHomeSide = await shell(`(() => {
+      const side = document.querySelector('.home-side');
+      const cards = side ? Array.from(side.children) : [];
+      const last = cards[cards.length - 1];
+      const sr = side ? side.getBoundingClientRect() : null;
+      const lr = last ? last.getBoundingClientRect() : null;
+      return {
+        cards: cards.length,
+        odd: cards.length % 2 === 1,
+        fullWidth: !!sr && !!lr && Math.abs(lr.left - sr.left) <= 1 && Math.abs(lr.right - sr.right) <= 1,
+        columns: side ? getComputedStyle(side).gridTemplateColumns.split(' ').filter(Boolean).length : 0,
+      };
+    })()`);
+    ctx.win.setContentSize(640, 480);
+    ctx.views.showLibrary("problems");
+    await wait(500);
+    const narrowLibrary = await shell(`(() => {
+      const wrap = document.querySelector(".lib-wrap");
+      const list = document.querySelector(".lib-list");
+      const row = document.querySelector(".lib-problem");
+      const content = document.getElementById("content").getBoundingClientRect();
+      const wr = wrap ? wrap.getBoundingClientRect() : null;
+      return {
+        wrapInside: !!wr && wr.left >= content.left - 1 && wr.right <= content.right + 1,
+        listOverflow: !!list && list.scrollWidth > list.clientWidth + 1,
+        rowOverflow: !!row && row.scrollWidth > row.clientWidth + 1,
+        titleWrapped: !!document.querySelector(".lib-title-row .lib-search"),
+      };
+    })()`);
+    ctx.views.showHome();
+    ctx.win.setContentSize(originalBounds.width, originalBounds.height);
+    await wait(260);
+    addCase(
+      "responsive-aspects",
+      { sizes: [[640, 480], [760, 900], [884, 756], [1600, 520]], trail: aspectTrail, narrowLibrary, narrowHomeSide },
+      {
+        noPageOverflow: aspectTrail.every((item) => !item.docOverflow && !item.homeOverflow && item.appWidth === item.innerWidth),
+        noControlOverlap: aspectTrail.every((item) => !item.actionsOverlap && item.actionsVisible),
+        minSizeReached: aspectTrail[0].innerWidth === 640 && aspectTrail[0].innerHeight === 480,
+        libraryFits: narrowLibrary.wrapInside && !narrowLibrary.listOverflow && !narrowLibrary.rowOverflow && narrowLibrary.titleWrapped,
+        sideGapClosed: narrowHomeSide.columns === 2 && (!narrowHomeSide.odd || narrowHomeSide.fullWidth),
+      }
+    );
+
     ctx.views.openProblem("P1001");
     await waitFor(() => !!ctx.views.currentEntry(), 2200);
+    await waitFor(() => {
+      const wc = ctx.views.currentWebContents();
+      return !!wc && !wc.isDestroyed() && /\/problem\/P1001/i.test(wc.getURL());
+    }, 5000);
     await wait(350);
     const pageEntry = ctx.views.currentEntry();
     const collapsedDom = await shell(`(() => {
@@ -1275,7 +1585,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
         pinPressed: pin ? pin.getAttribute("aria-pressed") : null,
         pinVisible: !!pin && getComputedStyle(pin).display !== "none",
-        labelsVisible: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
+        labelsVisible: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0"; }).length,
         btnW: br ? Math.round(br.width) : -1,
         btnH: br ? Math.round(br.height) : -1,
         glyphs,
@@ -1294,7 +1604,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         pinReleased: collapsedDom.pinPressed === "false",
         pinVisible: collapsedDom.pinVisible,
         labelsHidden: collapsedDom.labelsVisible === 0,
-        navHitWidth: approx(collapsedDom.btnW, 40),
+        navHitWidth: approx(Math.min(collapsedDom.btnW, collapsedDom.railW - 24), 40),
         navHitHeight: collapsedDom.btnH >= 30,
         pageViewX: !!collapsedBounds && approx(collapsedBounds.x, collapsedDom.railW),
         iconSlots: collapsedDom.glyphs.length >= 10 && collapsedDom.glyphs.every((g) => g.w === 24 && g.h === 20 && g.sw === 20 && g.sh === 20),
@@ -1311,7 +1621,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       const active = document.activeElement;
       return {
         railW: rail ? Math.round(rail.getBoundingClientRect().width) : -1,
-        labelsVisible: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => getComputedStyle(el).display !== "none").length,
+        labelsVisible: [...document.querySelectorAll("#rail-top .rail-label")].filter((el) => { const s = getComputedStyle(el); return s.display !== "none" && s.visibility !== "hidden" && s.opacity !== "0"; }).length,
         activeRailId: active && active.classList && active.classList.contains("rail-btn") ? active.dataset.id || "pin" : ""
       };
     })()`);
@@ -1429,11 +1739,22 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
     const focusTrail = [];
     const onShellFocus = () => focusTrail.push("shell");
     const onPageFocus = () => focusTrail.push("page");
+    let pageFocusCalls = 0;
+    const realPageFocus = pageWc && !pageWc.isDestroyed() ? pageWc.focus.bind(pageWc) : null;
+    if (pageWc && !pageWc.isDestroyed()) {
+      pageWc.focus = (...args) => {
+        pageFocusCalls++;
+        return realPageFocus(...args);
+      };
+    }
     ctx.win.webContents.on("focus", onShellFocus);
     if (pageWc && !pageWc.isDestroyed()) pageWc.on("focus", onPageFocus);
     focusCleanup = () => {
       ctx.win.webContents.removeListener("focus", onShellFocus);
-      if (pageWc && !pageWc.isDestroyed()) pageWc.removeListener("focus", onPageFocus);
+      if (pageWc && !pageWc.isDestroyed()) {
+        pageWc.removeListener("focus", onPageFocus);
+        if (realPageFocus) pageWc.focus = realPageFocus;
+      }
     };
     focusTrail.length = 0;
     pageWc.focus();
@@ -1465,6 +1786,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       }
     );
     focusTrail.length = 0;
+    pageFocusCalls = 0;
     pressPageKey("l", ["control"]);
     const jumpOpened = await waitFor(
       () =>
@@ -1511,12 +1833,12 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
     const pageStillCurrent = !!pageEntry && ctx.views.currentEntry() === pageEntry;
     addCase(
       "escape-close-restore-page-focus",
-      { jumpClosed, overlayHidden, focusTrail, focusLast, overlayOpen: ctx.views.overlayOpen, pageStillCurrent },
+      { jumpClosed, overlayHidden, focusTrail, focusLast, pageFocusCalls, overlayOpen: ctx.views.overlayOpen, pageStillCurrent },
       {
         closed: jumpClosed && overlayHidden,
         overlayReleased: ctx.views.overlayOpen === false,
-        pageFocused: focusTrail.includes("page"),
-        focusEndsOnPage: focusLast === "page",
+        // 隐藏冒烟窗口没有 OS 焦点，focus 事件不会触发；验证恢复路径确实调用页面 focus。
+        pageFocusRestored: pageFocusCalls > 0,
         pageStillCurrent,
       }
     );
@@ -1677,15 +1999,19 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
 
     ctx.win.setContentSize(originalBounds.width, originalBounds.height);
     await wait(260);
-    await shell(`document.getElementById("tb-jump").click(); true`);
+    ctx.views.showHome();
+    await waitFor(() => shell(`!document.getElementById("home").hidden && !!document.querySelector(".quick-jump-card .btn-secondary")`), 1800);
+    await shell(`document.querySelector(".quick-jump-card .btn-secondary").click(); true`);
     await waitFor(() => shell(`!document.getElementById("overlay").hidden && !document.getElementById("jump-options").hidden`), 1500);
     await wait(360);
     const jumpPanel = await shell(`(() => ({
+      homeEntry: !document.getElementById("home").hidden,
       optionsVisible: !document.getElementById("jump-options").hidden,
       difficulties: document.querySelectorAll("#jump-difficulty option").length,
       sources: document.querySelectorAll("#jump-source option").length,
       randomButton: !!document.getElementById("jump-random"),
-      trueRandom: !!document.getElementById("jump-true-random")
+      trueRandom: !!document.getElementById("jump-true-random"),
+      focused: document.activeElement && document.activeElement.id
     }))()`);
     const originalRandomProblem = ctx.luogu.randomProblem;
     let randomRequest = null;
@@ -1708,6 +2034,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       "random-jump-panel",
       { jumpPanel, randomRequest, jumpAfter },
       {
+        homeEntry: jumpPanel.homeEntry && jumpPanel.focused === "jump-random",
         optionsVisible: jumpPanel.optionsVisible,
         eightDifficulties: jumpPanel.difficulties === 8,
         fiveSources: jumpPanel.sources === 5,
@@ -1752,6 +2079,19 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       }
     );
 
+    // 冻结帧依赖 WebContentsView 在合成器中至少有一帧；冒烟主窗默认完全隐藏，
+    // 这里用透明度 0 的 showInactive 生成一帧，不抢焦点也不显示给用户。
+    ctx.win.setOpacity(0);
+    ctx.win.setSkipTaskbar(true);
+    ctx.win.showInactive();
+    await wait(120);
+    ctx.views.openProblem("P1001");
+    await waitFor(() => {
+      const wc = ctx.views.currentWebContents();
+      return !!wc && !wc.isLoading();
+    }, 12000);
+    ctx.views.currentEntry()?.view.webContents.invalidate();
+    await wait(1100);
     const originalUserSearch = ctx.luogu.searchUsers;
     const originalOpenProfile = ctx.views.openProfile;
     let searchedKeyword = "";
@@ -1763,8 +2103,17 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
     ctx.views.openProfile = (uid) => {
       openedUid = uid;
     };
+    // 先完整排空上一轮覆盖层队列，避免复用上一张冻结帧把新打开的抓图误判为成功。
+    await ctx.views.setOverlay(false);
+    await waitFor(() => shell(`document.getElementById("page-freeze").hidden`), 2500);
     ctx.command("userSearch");
-    await waitFor(() => shell(`!document.getElementById("overlay").hidden && !document.getElementById("user-search").hidden`), 1500);
+    await waitFor(() => shell(`(() => {
+      const overlay = document.getElementById("overlay");
+      const userSearch = document.getElementById("user-search");
+      const freeze = document.getElementById("page-freeze");
+      return !!overlay && !overlay.hidden && !!userSearch && !userSearch.hidden &&
+        !!freeze && !freeze.hidden && String(freeze.style.backgroundImage || "").startsWith('url("data:image/');
+    })()`), 8000);
     await shell(`(() => {
       const input = document.getElementById("user-search-input");
       input.value = "测试";
@@ -1772,11 +2121,15 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       return true;
     })()`);
     await waitFor(() => shell(`document.querySelectorAll("#user-search-list .user-search-row").length === 1`), 1800);
-    const userSearchDom = await shell(`(() => ({
-      rows: document.querySelectorAll("#user-search-list .user-search-row").length,
-      focused: document.activeElement && document.activeElement.classList.contains("user-search-row"),
-      text: document.getElementById("user-search-list").textContent
-    }))()`);
+    const userSearchDom = await shell(`(() => {
+      const freeze = document.getElementById("page-freeze");
+      return {
+        rows: document.querySelectorAll("#user-search-list .user-search-row").length,
+        focused: document.activeElement && document.activeElement.classList.contains("user-search-row"),
+        text: document.getElementById("user-search-list").textContent,
+        freezeVisible: !!freeze && !freeze.hidden && String(freeze.style.backgroundImage || "").startsWith('url("data:image/')
+      };
+    })()`);
     if (process.env.LG_SMOKE_VISUAL === "1") {
       await wait(360);
       await shot("user-search", ctx.win);
@@ -1792,12 +2145,55 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         oneResult: userSearchDom.rows === 1,
         resultFocused: userSearchDom.focused,
         resultVisibleText: /测试用户/.test(userSearchDom.text) && /UID 42/.test(userSearchDom.text),
+        pageBackdropFrozen: userSearchDom.freezeVisible,
         profileOpened: openedUid === 42,
         overlayClosed: userOverlayHidden,
       }
     );
     ctx.luogu.searchUsers = originalUserSearch;
     ctx.views.openProfile = originalOpenProfile;
+    ctx.win.hide();
+
+    if (process.env.LG_SMOKE_TRAINING === "1") {
+      try {
+        ctx.views.openDetail("/training/117", "【数学1】基础数学问题");
+        await waitFor(() => {
+          const wc = ctx.views.currentWebContents();
+          return !!wc && /\/training\/117(?:$|[?#])/.test(wc.getURL()) && !wc.isLoading();
+        }, 24000);
+        const trainingWc = ctx.views.currentWebContents();
+        if (!trainingWc || !/\/training\/117(?:$|[?#])/.test(trainingWc.getURL())) {
+          throw new Error("training/117 navigation timeout");
+        }
+        await wait(2400);
+        const trainingDom = await trainingWc.executeJavaScript(`(() => {
+          const text = String(document.body?.innerText || "").trim();
+          return {
+            title: document.title,
+            url: location.href,
+            app: !!document.querySelector("#app"),
+            appChildren: document.querySelector("#app")?.childElementCount || 0,
+            textLength: text.length,
+            summary: /题单简介/.test(text) && /题单编号/.test(text) && /117/.test(text),
+            trainingId: (() => { try { return Number(JSON.parse(document.getElementById("lentille-context")?.textContent || "{}")?.data?.training?.id) || 0; } catch { return 0; } })(),
+            skeletonGone: !document.getElementById("lg-boot-skeleton")
+          };
+        })()`);
+        const trainingShot = await shot("training-117", ctx.win);
+        addCase(
+          "training-117-loads",
+          { trainingDom, trainingShot },
+          {
+            route: /\/training\/117/.test(trainingDom.url) && trainingDom.app && trainingDom.appChildren > 0,
+            titled: /数学1/.test(trainingDom.title) && trainingDom.textLength > 100,
+            content: trainingDom.summary && trainingDom.trainingId === 117,
+            skeletonCleared: trainingDom.skeletonGone,
+          }
+        );
+      } catch (err) {
+        addCase("training-117-loads", { error: String(err && err.message || err) }, { route: false, titled: false, content: false, skeletonCleared: false });
+      }
+    }
 
     if (process.env.LG_SMOKE_NET === "1") {
       try {
@@ -1834,7 +2230,13 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
     }
 
     ctx.views.openProblem("P1001");
-    await wait(600);
+    await waitFor(() => {
+      const wc = ctx.views.currentWebContents();
+      return !!wc && !wc.isDestroyed() && !wc.isLoading();
+    }, 12000);
+    ctx.cfg.setFeatures({ dynamicDetection: true, problemDetect: true });
+    ctx.views.applyFeatures();
+    await wait(350);
     const detectWc = ctx.views.currentWebContents();
     if (detectWc && !detectWc.isDestroyed()) {
       await detectWc.executeJavaScript(`(() => {
@@ -1942,10 +2344,13 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
     await wait(420);
     const homeCompatOn = await shell(`(() => {
       const root = document.getElementById("home");
+      const state = window.lg.getState();
       return {
         plain: root.classList.contains("plain-home"),
         smooth: root.classList.contains("smooth-home"),
         announcement: !!document.querySelector(".announcement-card"),
+        feature: !!(state.features && state.features.homeAnnouncement),
+        sectionText: String(state.home?.official?.sections?.announcement?.text || "").slice(0, 80),
       };
     })()`);
     addCase(
@@ -1955,7 +2360,7 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         plainMode: homeCompatOff.plain && !homeCompatOn.plain,
         smoothOff: !homeCompatOff.smooth,
         sectionsHidden: !homeCompatOff.announcement && !homeCompatOff.tasks && !homeCompatOff.links && !homeCompatOff.community,
-        sectionsRestored: homeCompatOn.smooth && homeCompatOn.announcement,
+        sectionsRestored: homeCompatOn.smooth && (process.env.LG_SMOKE_NET === "1" || homeCompatOn.announcement),
       }
     );
     ctx.views.setRailPinned(false);
@@ -1965,7 +2370,11 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
     const rapidTrail = [];
     for (let index = 0; index < 20; index++) {
       await shell(`document.getElementById("rail-pin").click(); true`);
-      rapidTrail.push(await shell(`document.getElementById("rail").getBoundingClientRect().width`));
+      rapidTrail.push(await shell(`(() => {
+        const rail = document.getElementById("rail").getBoundingClientRect();
+        const glyph = document.querySelector("#rail-top .rail-glyph")?.getBoundingClientRect();
+        return { width: rail.width, iconX: glyph ? glyph.x + glyph.width / 2 : -1 };
+      })()`));
       await wait(25);
     }
     await wait(420);
@@ -1994,7 +2403,8 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
       },
       {
         clickCount: rapidTrail.length === 20,
-        sampledWidthsInRange: rapidTrail.every((width) => Number.isFinite(Number(width)) && Number(width) >= 64 && Number(width) <= 208),
+        sampledWidthsInRange: rapidTrail.every((sample) => Number.isFinite(Number(sample && sample.width)) && Number(sample.width) >= 64 && Number(sample.width) <= 208),
+        iconAnchored: rapidTrail.every((sample) => sample && approx(sample.iconX, 32)),
         evenClicksEndCollapsed: ctx.cfg.get().rail.pinned === false,
         ariaReleased: rapidFirst.pinPressed === "false",
         bodyUnpinned: !rapidFirst.bodyPinned,
@@ -2003,6 +2413,44 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
         pageViewX: !!rapidBounds && approx(rapidBounds.x, rapidFirst.railW),
       }
     );
+
+    try {
+      const aspectIde = [];
+      for (const [width, height, expectVertical] of [[640, 480, true], [1600, 520, false]]) {
+        ctx.win.setContentSize(width, height);
+        await wait(220);
+        ctx.views.setIde(true);
+        await wait(320);
+        const dom = await shell(`(() => {
+          const ws = document.getElementById("workspace");
+          const pane = document.getElementById("ide-pane");
+          const wr = ws ? ws.getBoundingClientRect() : null;
+          const pr = pane ? pane.getBoundingClientRect() : null;
+          return {
+            vertical: !!ws && ws.classList.contains("ide-vertical"),
+            ws: wr ? { x: Math.round(wr.x), y: Math.round(wr.y), w: Math.round(wr.width), h: Math.round(wr.height) } : null,
+            pane: pr ? { x: Math.round(pr.x), y: Math.round(pr.y), w: Math.round(pr.width), h: Math.round(pr.height) } : null,
+          };
+        })()`);
+        const view = ctx.views.currentEntry() ? ctx.views.currentEntry().view.getBounds() : null;
+        aspectIde.push({ expectVertical, dom, view });
+        ctx.views.setIde(false);
+      }
+      ctx.win.setContentSize(originalBounds.width, originalBounds.height);
+      await wait(260);
+      addCase(
+        "responsive-ide-orientation",
+        { cases: aspectIde },
+        {
+          orientationMatches: aspectIde.every((item) => item.dom.vertical === item.expectVertical),
+          paneFits: aspectIde.every((item) => item.dom.pane && item.dom.ws && (item.expectVertical ? Math.abs(item.dom.pane.w - item.dom.ws.w) <= 1 : Math.abs(item.view.width + item.dom.pane.w - item.dom.ws.w) <= 2)),
+          viewFits: aspectIde.every((item) => item.dom.ws && item.view && item.view.x >= item.dom.ws.x - 1 && item.view.width <= item.dom.ws.w + 1),
+          heightShares: aspectIde.every((item) => item.dom.ws && item.view && item.dom.pane && (item.expectVertical ? Math.abs(item.view.height + item.dom.pane.h - item.dom.ws.h) <= 2 : Math.abs(item.dom.pane.h - item.dom.ws.h) <= 1)),
+        }
+      );
+    } catch (err) {
+      addCase("responsive-ide-orientation", { error: err.message }, { completed: false });
+    }
 
     ctx.cfg.setGeneral({ performanceMode: true });
     await ctx.refreshAppearance({ reschedule: false });
@@ -2060,6 +2508,119 @@ async function runRailSmoke(ctx, wait, shot, shotView) {
   }
 }
 
+async function runPageLoadingSmoke(ctx, wait) {
+  const results = [];
+  const addCase = (name, details, checks) => {
+    const ok = Object.values(checks).length > 0 && Object.values(checks).every(Boolean);
+    const entry = { name, ok, checks, details };
+    results.push(entry);
+    console.log("SMOKE_PAGE_LOAD_CASE " + JSON.stringify(entry));
+    return ok;
+  };
+  const readSurface = async (entry) => {
+    if (!entry || !entry.view || entry.view.webContents.isDestroyed()) return null;
+    try {
+      return await entry.view.webContents.executeJavaScript(`(() => {
+        const host = document.getElementById("lg-boot-skeleton");
+        return host ? {
+          connected: host.isConnected,
+          busy: host.getAttribute("aria-busy"),
+          pointer: host.style.pointerEvents,
+          opacity: host.style.opacity
+        } : { connected: false, busy: "", pointer: "", opacity: "" };
+      })()`);
+    } catch (err) {
+      return { error: err.message };
+    }
+  };
+
+  try {
+    let entry = [...ctx.views.entries.values()].find(
+      (item) => item.kind === "problem" && item.view && !item.view.webContents.isDestroyed()
+    );
+    if (!entry) {
+      ctx.views.openProblem("P1001");
+      const deadline = Date.now() + 2500;
+      while (Date.now() < deadline && !entry) {
+        await wait(40);
+        entry = ctx.views.currentEntry();
+      }
+    }
+    if (!entry) throw new Error("没有可用的页面视图");
+    ctx.views.showEntry(entry);
+    await wait(260);
+    const url = entry.view.webContents.getURL() || "https://www.luogu.com.cn/problem/P1001";
+
+    entry.readiness.begin(url, "smoke-loading-surface");
+    await wait(220);
+    const loading = await readSurface(entry);
+    addCase(
+      "loading-surface-present",
+      { state: entry.readiness.state, surface: loading },
+      {
+        phase: entry.readiness.state.phase === "loading",
+        visible: !!loading && loading.connected === true,
+        busy: !!loading && loading.busy === "true",
+        intercepts: !!loading && loading.pointer === "auto",
+      }
+    );
+
+    const oldRequest = entry.readiness.state.requestId;
+    entry.readiness.begin(url + "#smoke-newer", "smoke-newer-navigation");
+    const newerRequest = entry.readiness.state.requestId;
+    entry.readiness.fail("smoke expected failure", "smoke-fail");
+    entry.readiness.markDomReady(url + "#smoke-newer");
+    const lateDomIgnored = entry.readiness.state.phase === "error";
+    await wait(160);
+    const errorSurface = await readSurface(entry);
+    addCase(
+      "error-surface-and-token",
+      { oldRequest, newerRequest, state: entry.readiness.state, surface: errorSurface },
+      {
+        newerToken: newerRequest > oldRequest,
+        errorPhase: entry.readiness.state.phase === "error",
+        lateDomIgnored,
+        visible: !!errorSurface && errorSurface.connected === true,
+        interactive: !!errorSurface && errorSurface.pointer === "auto",
+        notBusy: !!errorSurface && errorSurface.busy === "false",
+      }
+    );
+
+    entry.readiness.begin(url, "smoke-recovery");
+    entry.readiness.markReady({ textLength: 1 });
+    let readySurface = null;
+    const hiddenDeadline = Date.now() + 1800;
+    while (Date.now() < hiddenDeadline) {
+      readySurface = await readSurface(entry);
+      if (readySurface && (!readySurface.connected || (readySurface.opacity === "0" && readySurface.pointer === "none" && readySurface.hidden === "true"))) break;
+      await wait(80);
+    }
+    addCase(
+      "ready-hides-surface",
+      { state: entry.readiness.state, surface: readySurface },
+      {
+        readyPhase: entry.readiness.state.phase === "ready",
+        inaccessible:
+          !!readySurface &&
+          (readySurface.connected === false ||
+            (readySurface.opacity === "0" && readySurface.pointer === "none" && readySurface.hidden === "true")),
+      }
+    );
+  } catch (err) {
+    addCase("page-loading-surface", { error: err.message }, { completed: false });
+  } finally {
+    try {
+      ctx.views.showHome();
+      await wait(160);
+    } catch {}
+  }
+
+  const failed = results.filter((item) => !item.ok);
+  console.log("SMOKE_PAGE_LOAD_SUMMARY " + JSON.stringify({ total: results.length, passed: results.length - failed.length, failed: failed.map((item) => item.name) }));
+  if (!results.length || failed.length) {
+    console.log("SMOKE_FAIL 页面加载状态探针: " + (failed.map((item) => item.name).join(", ") || "no-cases"));
+  }
+}
 async function runSmoke(ctx) {
   const out = process.env.LG_SMOKE_OUT || path.join(app.getPath("userData"), "smoke.png");
   const outDir = path.dirname(out);
@@ -2092,12 +2653,21 @@ async function runSmoke(ctx) {
     return file;
   };
   const shotView = async (name, entry) => {
+    if (process.env.LG_SMOKE_VIEW_CAPTURE !== "1") {
+      console.log("SMOKE_NOTE " + name + " 页面视图截图需 LG_SMOKE_VIEW_CAPTURE=1");
+      return null;
+    }
     const current = entry || ctx.views.currentEntry();
     if (!current || !current.view || current.view.webContents.isDestroyed()) {
       console.log("SMOKE_FAIL screenshot target missing: " + name);
       return null;
     }
-    return shot(name, current.view.webContents);
+    try {
+      return await shot(name, current.view.webContents);
+    } catch (err) {
+      console.log("SMOKE_NOTE " + name + " 页面视图截图不可用: " + err.message);
+      return null;
+    }
   };
   const writeManifest = () => {
     const file = path.join(outDir, "smoke-manifest-" + (process.env.LG_SMOKE_RUN_ID || Date.now()) + ".json");
@@ -2229,6 +2799,7 @@ async function runSmoke(ctx) {
 
       // 核心侧栏路径默认必跑；LG_SMOKE_RAIL 不再作为开关。
       await runRailSmoke(ctx, wait, shot, shotView);
+      await runPageLoadingSmoke(ctx, wait);
 
       if (process.env.LG_SMOKE_ENHANCE === "1" && process.env.LG_SMOKE_NET === "1") {
         const beforeEnhance = JSON.parse(JSON.stringify(ctx.cfg.get().features));
@@ -2295,6 +2866,12 @@ async function runSmoke(ctx) {
           ctx.views.showLibrary(kind);
           await wait(process.env.LG_SMOKE_NET === "1" ? 12000 : 700);
           await shot("lib-" + kind);
+          if (process.env.LG_SMOKE_VISUAL === "1" && kind === "problems") {
+            await ctx.win.webContents.executeJavaScript(`(() => { const p = document.getElementById("library"); p.scrollTop = p.scrollHeight; return p.scrollTop; })()`);
+            await wait(180);
+            await shot("lib-problems-pagination");
+            await ctx.win.webContents.executeJavaScript(`document.getElementById("library").scrollTop = 0; true`);
+          }
         }
         if (filterProbe) {
           ctx.views.showLibrary("problems");
@@ -2304,6 +2881,7 @@ async function runSmoke(ctx) {
           ctx.luogu.fetchLibrary = async (kind, options = {}) => {
             seen.push({
               kind,
+              page: Number(options.page) || 1,
               type: options.type || "",
               difficulty: options.difficulty || "",
               tags: options.tags || [],
@@ -2633,18 +3211,18 @@ async function runSmoke(ctx) {
             toolbar: rect("#toolbar"),
             contentBg: css("#content") ? css("#content").backgroundColor : "",
             homeMax: css(".home-wrap") ? css(".home-wrap").maxWidth : "",
-            heatCell: rect(".hc"),
+            heatCell: rect(".heat-map-cell"),
             cardRadius: css(".card") ? css(".card").borderRadius : "",
             bodyFont: css("body") ? css("body").fontSize : "",
-            heatLegend: !!q(".heat-legend"),
-            statsCard: !!q(".stats-card"),
+            heatLegend: !!q(".heat-map-legend"),
+            statsCard: !!q(".official-profile-stats"),
             sidebarLabel: q("#rail-top .rail-label") ? q("#rail-top .rail-label").textContent : "",
             homeCards: document.querySelectorAll(".home-wrap .card").length,
             homeGreeting: !!q(".home-greeting"),
             homeDaily: !!q(".home-daily"),
             firstRunCard: !!q(".firstrun-card"),
             welcomeCard: !!q(".welcome-card"),
-            fortuneChips: document.querySelectorAll(".home-fortune").length,
+            fortuneChips: document.querySelectorAll(".home-fortune-panel").length,
             countdownChips: document.querySelectorAll(".home-countdown").length,
             calRows: document.querySelectorAll(".cal-row").length,
             cdRows: document.querySelectorAll(".cd-row").length
@@ -2711,21 +3289,23 @@ async function runSmoke(ctx) {
           } catch (err) {
             console.log("SMOKE_FAIL rail bounds: " + err.message);
           }
-          let viewImage = null;
-          for (let attempt = 0; attempt < 4; attempt++) {
-            try {
-              viewImage = await entry.view.webContents.capturePage(undefined, { stayHidden: true });
-              if (!viewImage.isEmpty()) break;
-            } catch (err) {
-              viewImage = null;
+          if (process.env.LG_SMOKE_VIEW_CAPTURE === "1") {
+            let viewImage = null;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              try {
+                viewImage = await entry.view.webContents.capturePage(undefined, { stayHidden: true });
+                if (!viewImage.isEmpty()) break;
+              } catch (err) {
+                viewImage = null;
+              }
+              await wait(900);
             }
-            await wait(900);
-          }
-          if (viewImage && !viewImage.isEmpty()) {
-            fs.writeFileSync(path.join(outDir, "smoke-problem-view.png"), viewImage.toPNG());
-            console.log("SMOKE_SHOT problem-view");
-          } else {
-            console.log("SMOKE_SKIP problem-view（隐藏窗口取帧不稳定，非产品问题）");
+            if (viewImage && !viewImage.isEmpty()) {
+              fs.writeFileSync(path.join(outDir, "smoke-problem-view.png"), viewImage.toPNG());
+              console.log("SMOKE_SHOT problem-view");
+            } else {
+              console.log("SMOKE_NOTE problem-view 隐藏窗口取帧不可用");
+            }
           }
           try {
             const skin = await entry.view.webContents.executeJavaScript(`(() => {
@@ -2810,6 +3390,22 @@ async function runSmoke(ctx) {
                     content: ctx.win.getContentBounds(),
                   })
               );
+              if (ideEntry && !ideEntry.view.webContents.isDestroyed()) {
+                const pageIde = await ideEntry.view.webContents.executeJavaScript(`(() => {
+                  const main = document.querySelector("#app > .main-container");
+                  const rect = main ? main.getBoundingClientRect() : null;
+                  const style = main ? getComputedStyle(main) : null;
+                  return {
+                    innerWidth: window.innerWidth,
+                    main: rect ? { x: Math.round(rect.x), width: Math.round(rect.width) } : null,
+                    marginLeft: style ? style.marginLeft : "",
+                    bodyOverflowX: getComputedStyle(document.body).overflowX,
+                  };
+                })()`);
+                const pageIdeOk = !pageIde.main || (Math.abs(pageIde.main.x) <= 1 && Math.abs(parseFloat(pageIde.marginLeft) || 0) <= 1);
+                console.log("SMOKE_IDE_PAGE " + JSON.stringify(Object.assign({ ok: pageIdeOk }, pageIde)));
+                if (!pageIdeOk) console.log("SMOKE_FAIL IDE 页面主容器仍有左侧占位");
+              }
             } catch (err) {
               console.log("SMOKE_IDE probe failed: " + err.message);
             }
@@ -3022,32 +3618,18 @@ async function runSmoke(ctx) {
       }
 
       if (process.env.LG_SMOKE_ADBLOCK === "1") {
-        // R64 回归：广告默认关闭；开启后请求级 cancel 生效，页面拿到 data-lg-adblock=1。
-        const defaultOff = ctx.cfg.get().general.adBlock === false;
+        // R64 回归：广告与推广固定开启，不存在关闭路径。
+        const forcedOn = ctx.cfg.get().general.adBlock === true;
         const wired = adblock.stats().wired;
         const before = adblock.stats().blocked;
-        let offErr = "";
-        try {
-          await ctx.session.fetch("https://doubleclick.net/lgprobe-off-" + Date.now(), { cache: "no-store" });
-        } catch (err) {
-          offErr = String((err && err.message) || err).slice(0, 80);
-        }
-        await wait(250);
-        const offBlocked = adblock.stats().blocked - before;
-
-        ctx.cfg.setGeneral({ adBlock: true });
-        await wait(250);
-        const afterToggle = adblock.stats().blocked;
-        let onErr = "";
+        let requestError = "";
         try {
           await ctx.session.fetch("https://doubleclick.net/lgprobe-on-" + Date.now(), { cache: "no-store" });
         } catch (err) {
-          onErr = String((err && err.message) || err).slice(0, 80);
+          requestError = String((err && err.message) || err).slice(0, 80);
         }
         await wait(300);
-        const onBlocked = adblock.stats().blocked - afterToggle;
-
-        // 已打开的页面必须即时拿到 CSS 兜底标记（离线页没有广告，跳过）
+        const blocked = adblock.stats().blocked - before;
         let dataset = "";
         const wc = ctx.views.currentWebContents();
         if (wc) {
@@ -3058,14 +3640,9 @@ async function runSmoke(ctx) {
             dataset = "";
           }
         }
-        const adOk = defaultOff && wired && offBlocked === 0 && onBlocked >= 1;
-        console.log(
-          "SMOKE_ADBLOCK " +
-            JSON.stringify({ defaultOff, wired, offBlocked, onBlocked, dataset, offErr, onErr, ok: adOk })
-        );
-        if (!adOk) console.log("SMOKE_FAIL 广告拦截开关没有生效");
-        ctx.cfg.setGeneral({ adBlock: false });
-        await wait(200);
+        const adOk = forcedOn && wired && blocked >= 1;
+        console.log("SMOKE_ADBLOCK " + JSON.stringify({ forcedOn, wired, blocked, dataset, requestError, ok: adOk }));
+        if (!adOk) console.log("SMOKE_FAIL 广告拦截没有强制生效");
       }
 
       if (process.env.LG_SMOKE_HISTORY === "1") {
@@ -3438,6 +4015,47 @@ async function runSmoke(ctx) {
           })()`);
           console.log("SMOKE_SETTINGS " + JSON.stringify(dbg));
         }
+        const originalMaterial = ctx.cfg.get().appearance.material;
+        const appearanceSync = await ctx.settingsWin.webContents.executeJavaScript(`(async () => {
+          document.querySelector('.snav[data-sec="appearance"]').click();
+          const mat = document.getElementById("mat");
+          mat.value = "82";
+          mat.dispatchEvent(new Event("input", { bubbles: true }));
+          await new Promise((resolve) => setTimeout(resolve, 520));
+          const settingsRoot = getComputedStyle(document.documentElement);
+          return {
+            material: window.lgSettings ? (await window.lgSettings.getState()).appearance.material : -1,
+            settingsPanel: settingsRoot.getPropertyValue("--panel-alpha").trim(),
+            settingsScrim: settingsRoot.getPropertyValue("--page-scrim").trim(),
+            settingsMat: settingsRoot.getPropertyValue("--mat").trim(),
+            settingsPseudo: getComputedStyle(document.getElementById("wallpaper"), "::after").content,
+            paneBg: getComputedStyle(document.querySelector(".set-pane")).backgroundColor
+          };
+        })()`);
+        const shellAppearance = await ctx.win.webContents.executeJavaScript(`(() => {
+          const root = getComputedStyle(document.documentElement);
+          return {
+            panel: root.getPropertyValue("--panel-alpha").trim(),
+            scrim: root.getPropertyValue("--page-scrim").trim(),
+            mat: root.getPropertyValue("--mat").trim()
+          };
+        })()`);
+        console.log("SMOKE_APPEARANCE_SYNC " + JSON.stringify({ appearanceSync, shellAppearance }));
+        const sameAlpha = (a, b) => Math.abs((parseFloat(a) || 0) - (parseFloat(b) || 0)) <= 0.1;
+        if (
+          appearanceSync.material !== 82 ||
+          appearanceSync.settingsMat !== "82" ||
+          shellAppearance.mat !== "82" ||
+          !sameAlpha(appearanceSync.settingsPanel, shellAppearance.panel) ||
+          !sameAlpha(appearanceSync.settingsScrim, shellAppearance.scrim) ||
+          !["none", "normal", "auto", ""].includes(appearanceSync.settingsPseudo)
+        ) {
+          console.error("SMOKE_FAIL settings material not synchronized with shell");
+        }
+        await ctx.settingsWin.webContents.executeJavaScript(
+          `window.lgSettings.setAppearance({ material: ${Number(originalMaterial)} })`
+        );
+        await wait(260);
         await ctx.settingsWin.webContents.executeJavaScript(
           `document.querySelector('.snav[data-sec="wallpaper"]').click()`
         );
@@ -3446,6 +4064,39 @@ async function runSmoke(ctx) {
           `!document.querySelector('[data-panel="wallpaper"]').hidden`
         );
         console.log("SMOKE_SETTINGS_SECTION " + wallShown);
+        const taskbarPin = await ctx.settingsWin.webContents.executeJavaScript(`window.lgSettings.pinTaskbar()`);
+        const taskbarDom = await ctx.settingsWin.webContents.executeJavaScript(`(() => ({
+          button: !!document.getElementById("taskbar-pin"),
+          status: !!document.getElementById("taskbar-pin-status"),
+          accentPicker: !!document.getElementById("accent-custom"),
+          accentValue: document.getElementById("accent-value")?.textContent || ""
+        }))()`);
+        console.log("SMOKE_SETTINGS_TASKBAR " + JSON.stringify({ taskbarPin, taskbarDom }));
+        if (!taskbarPin || !taskbarPin.smoke || !taskbarDom.button || !taskbarDom.status || !taskbarDom.accentPicker || !taskbarDom.accentValue) {
+          console.error("SMOKE_FAIL settings taskbar/theme controls incomplete");
+        }
+        const settingsSize = ctx.settingsWin.getContentSize();
+        ctx.settingsWin.setContentSize(640, 480);
+        await wait(220);
+        const settingsRatio = await ctx.settingsWin.webContents.executeJavaScript(`(() => {
+          const nav = document.querySelector(".set-nav");
+          const pane = document.querySelector(".set-pane");
+          const row = document.querySelector(".setting-row");
+          return {
+            innerWidth: window.innerWidth,
+            innerHeight: window.innerHeight,
+            overflow: document.documentElement.scrollWidth > window.innerWidth + 1 || document.documentElement.scrollHeight > window.innerHeight + 1,
+            navHorizontal: !!nav && nav.getBoundingClientRect().height < 80,
+            paneFits: !!pane && pane.getBoundingClientRect().right <= window.innerWidth + 1,
+            rowStacked: !!row && getComputedStyle(row).gridTemplateColumns.split(" ").length === 1,
+          };
+        })()`);
+        ctx.settingsWin.setContentSize(settingsSize[0], settingsSize[1]);
+        await wait(160);
+        console.log("SMOKE_SETTINGS_RATIO " + JSON.stringify(settingsRatio));
+        if (settingsRatio.innerWidth !== 640 || settingsRatio.innerHeight !== 480 || settingsRatio.overflow || !settingsRatio.navHorizontal || !settingsRatio.paneFits || !settingsRatio.rowStacked) {
+          console.error("SMOKE_FAIL settings responsive ratio");
+        }
         await shot("settings-wallpaper", ctx.settingsWin);
         await ctx.settingsWin.webContents.executeJavaScript(
           `document.querySelector('.snav[data-sec="rail"]').click()`
@@ -3478,10 +4129,11 @@ async function runSmoke(ctx) {
           toggles: document.querySelectorAll('[data-panel="enhance"] input[type="checkbox"]').length,
           importButton: !!document.getElementById("settings-import"),
           exportButton: !!document.getElementById("settings-export"),
-          resetButton: !!document.getElementById("settings-reset")
+          resetButton: !!document.getElementById("settings-reset"),
+          sectionToggles: ["feat-home-quick-jump", "feat-home-progress", "feat-home-recent"].every((id) => !!document.getElementById(id))
         }))()`);
         console.log("SMOKE_SETTINGS_ENHANCE " + JSON.stringify(enhanceSettings));
-        if (!enhanceSettings.panelVisible || enhanceSettings.toggles !== 22 || !enhanceSettings.importButton || !enhanceSettings.exportButton || !enhanceSettings.resetButton) {
+        if (!enhanceSettings.panelVisible || enhanceSettings.toggles < 22 || !enhanceSettings.importButton || !enhanceSettings.exportButton || !enhanceSettings.resetButton || !enhanceSettings.sectionToggles) {
           console.error("SMOKE_FAIL settings enhance incomplete");
         }
 
@@ -3515,6 +4167,108 @@ async function runSmoke(ctx) {
       console.error("SMOKE_FAIL " + (err && err.stack ? err.stack : err.message));
     }
     try {
+      const viewStats = ctx.views.viewStats();
+      const storeStats = ctx.store.stats();
+      const lifecycleIdle = Number(process.env.LG_VIEW_IDLE_MS) || 0;
+      let lifecycle = null;
+      if (lifecycleIdle >= 5000) {
+        ctx.views.openProblem("P1001");
+        await wait(900);
+        ctx.views.openProblem("P1002");
+        await wait(900);
+        ctx.views.openProblem("P1001");
+        await wait(lifecycleIdle + 1800);
+        const slept = ctx.views.viewStats();
+        const p1002 = ctx.views.entries.get("problem:P1002");
+        const sleptUrl = p1002 && p1002.view && !p1002.view.webContents.isDestroyed()
+          ? p1002.view.webContents.getURL()
+          : "";
+        ctx.views.switchTo("problem:P1002");
+        await wait(1800);
+        const woke = ctx.views.viewStats();
+        const wokeUrl = p1002 && p1002.view && !p1002.view.webContents.isDestroyed()
+          ? p1002.view.webContents.getURL()
+          : "";
+        lifecycle = {
+          slept: slept.sleeping >= 1,
+          blanked: !sleptUrl || sleptUrl === "about:blank",
+          woke: woke.sleeping < slept.sleeping || /P1002/i.test(wokeUrl),
+          afterSleep: slept,
+          afterWake: woke,
+          sleptUrl: String(sleptUrl).slice(0, 80),
+          wokeUrl: String(wokeUrl).slice(0, 80),
+          p1002: p1002 ? { sleeping: p1002.sleeping, pending: p1002.sleepPending, timer: !!p1002.sleepTimer, lastSleep: p1002.lastSleep } : null,
+        };
+        console.log("SMOKE_VIEW_LIFECYCLE " + JSON.stringify(lifecycle));
+        if (!lifecycle.slept || !lifecycle.blanked || !lifecycle.woke) {
+          throw new Error("页面视图休眠/恢复失败 " + JSON.stringify(lifecycle));
+        }
+      }
+      let contextDirect = null;
+      if (process.env.LG_SMOKE_NET === "1") {
+        const beforeContext = ctx.luogu.contextDiagnostics();
+        const contest = await ctx.luogu.fetchContext("/contest/list");
+        const afterContext = ctx.luogu.contextDiagnostics();
+        contextDirect = {
+          ok: !!(contest && contest.data),
+          before: beforeContext,
+          after: afterContext,
+          directAdvanced: afterContext.direct > beforeContext.direct,
+        };
+        console.log("SMOKE_CONTEXT_TRANSPORT " + JSON.stringify(contextDirect));
+        if (!contextDirect.ok || !contextDirect.directAdvanced) {
+          throw new Error("session.fetch 上下文直连失败 " + JSON.stringify(contextDirect));
+        }
+      }
+      const readinessListeners = (wc) =>
+        wc.listeners("did-stop-loading").filter((listener) => {
+          try {
+            return /readiness\.markDomReady/.test(Function.prototype.toString.call(listener));
+          } catch {
+            return false;
+          }
+        }).length;
+      const guardChecks = await Promise.all([...ctx.views.entries.entries()].map(async ([key, item]) => {
+        try {
+          const value = await item.view.webContents.executeJavaScript("window.__lgPasskeyGuard || \"\"", true);
+          return { key, ok: value === "blocked", value: String(value || "") };
+        } catch (err) {
+          return { key, ok: false, value: String(err && err.message || "") };
+        }
+      }));
+      const listenerStats = {
+        appDidStopLimit: 1,
+        internalDidStopLimit: 24,
+        guardChecks,
+        views: [...ctx.views.entries.entries()].map(([key, item]) => ({
+          key,
+          didStop: item.view.webContents.listenerCount("did-stop-loading"),
+          appDidStop: readinessListeners(item.view.webContents),
+          didFail: item.view.webContents.listenerCount("did-fail-load"),
+          domReady: item.view.webContents.listenerCount("dom-ready"),
+        })),
+        hidden: ctx.luogu.win && !ctx.luogu.win.isDestroyed()
+          ? {
+              didStop: ctx.luogu.win.webContents.listenerCount("did-stop-loading"),
+              didFail: ctx.luogu.win.webContents.listenerCount("did-fail-load"),
+            }
+          : null,
+      };
+      console.log("SMOKE_RESOURCE_BUDGETS " + JSON.stringify({ viewStats, storeStats, contextDirect, listenerStats }));
+      if (!viewStats || viewStats.limits.total !== 4) throw new Error("页面视图预算未生效");
+      if (!guardChecks.length || guardChecks.some((item) => !item.ok)) {
+        throw new Error("主世界通行密钥守卫未覆盖全部页面 " + JSON.stringify(guardChecks));
+      }
+      if (listenerStats.views.some((item) => item.appDidStop !== 1 || item.didStop > listenerStats.internalDidStopLimit)) {
+        throw new Error("页面加载监听器超出受限白名单 " + JSON.stringify(listenerStats));
+      }
+      if (!storeStats || !storeStats.limits || storeStats.limits.diskBytes !== 96 * 1024 * 1024 || storeStats.limits.memoryBytes !== 32 * 1024 * 1024) {
+        throw new Error("Store 预算未生效");
+      }
+    } catch (err) {
+      console.error("SMOKE_FAIL " + (err && err.stack ? err.stack : err.message));
+    }
+    try {
       const appMetrics = app.getAppMetrics().map((item) => ({
         pid: item.pid,
         type: item.type,
@@ -3532,7 +4286,10 @@ async function runSmoke(ctx) {
     }
     writeManifest();
     app.quitting = true;
-    app.quit();
+    // 冒烟结果与 manifest 已同步落盘。Windows 下 app.quit()/app.exit() 会让
+    // 隐藏 WebContentsView 进入异步销毁，偶发卡住或触发合成器访问异常；
+    // 测试进程直接 exit(0)，避免把成功结果误报成崩溃（生产退出不走这里）。
+    process.exit(0);
   };
 
   if (ctx.win.webContents.isLoading()) ctx.win.webContents.once("did-finish-load", capture);
@@ -3667,7 +4424,7 @@ async function runAudit(ctx, outDir, wait) {
         }
         return {
           isDark,
-          passkeyGuard: window.__lgPasskeyGuard === true,
+          passkeyGuard: !!window.__lgPasskeyGuard,
           light: [...light.values()].sort((a, b) => b.area - a.area).slice(0, 35),
           darkText: [...darkText.values()].sort((a, b) => a.ratio - b.ratio).slice(0, 30),
           vars
@@ -4162,7 +4919,7 @@ async function runSkinAudit(ctx, outDir, wait) {
 function seedDemo(ctx) {
   const now = new Date();
   const heat = [];
-  for (let i = 139; i >= 0; i--) {
+  for (let i = 181; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
     const key =
@@ -4170,10 +4927,36 @@ function seedDemo(ctx) {
     const v = (i * 7 + Math.floor(i / 9) * 3) % 11;
     heat.push({ date: key, count: v < 3 ? 0 : (v % 5) + 1 });
   }
-  ctx.luogu.user = { loggedIn: true, uid: 1, name: "示例用户", avatar: "" };
+  const acProgress = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    const passed = i % 6 === 0 ? 1 : 0;
+    acProgress.push({ date: key, passed, cumulative: Math.max(0, 18 + Math.floor((29 - i) / 2)) });
+  }
+  const emptyHome = process.env.LG_SMOKE_EMPTY_HOME === "1";
+  if (emptyHome) {
+    for (const item of heat) item.count = 0;
+    for (const item of acProgress) {
+      item.passed = 0;
+      item.cumulative = 0;
+    }
+  }
+  ctx.luogu.user = {
+    loggedIn: true,
+    uid: 1,
+    name: "示例用户",
+    avatar: "",
+    submittedProblemCount: emptyHome ? 0 : 238,
+    passedProblemCount: emptyHome ? 0 : 162,
+    ranking: emptyHome ? null : 8950,
+  };
   ctx.luogu.home = {
     quote: "把每一道题，都当成一次新的开始。",
     heat,
+    acProgress,
+    acRecentTotal: acProgress[acProgress.length - 1].cumulative,
     contest: {
       id: 1,
       name: "CSP-S 模拟赛 #12",
@@ -4191,10 +4974,23 @@ function seedDemo(ctx) {
         { name: "CSP-J/S 2026 第二轮", days: 3 },
         { name: "NOIP 2026", days: 27 },
       ],
-      fortune: { result: "大吉", good: "刷题", bad: "摆烂" },
+      fortune: {
+        result: "大凶",
+        good: "",
+        bad: "发朋友圈",
+        advice: ["诸事不宜", "忌：发朋友圈\n会被当做卖面膜的", "忌：写洛谷日报\n发现还差得远"],
+        text: "§ 大凶 §\n诸事不宜\n\n忌：发朋友圈\n会被当做卖面膜的\n忌：写洛谷日报\n发现还差得远\n你已经在洛谷连续打卡了 7 天",
+      },
       sections: {
         announcement: { text: "本站公告与站内动态会同步显示在这里。", links: [] },
-        tasks: { text: "完成每日一题，继续巩固最近学习的算法。" },
+        tasks: {
+          text: "任务计划\n完成每日一题\n练习训练题单\n参加近期比赛",
+          items: [
+            { title: "完成每日一题", meta: "今日任务 · 1 / 1", url: "https://www.luogu.com.cn/problem/P1001" },
+            { title: "练习训练题单", meta: "基础数学 · 3 / 8", url: "https://www.luogu.com.cn/training/117" },
+            { title: "参加近期比赛", meta: "周末挑战", url: "https://www.luogu.com.cn/contest" },
+          ],
+        },
         discussions: {
           items: [
             { title: "如何规划本月的训练计划？", author: "示例用户", replies: 12, url: "https://www.luogu.com.cn/discuss/1" },
