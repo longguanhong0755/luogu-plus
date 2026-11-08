@@ -18,7 +18,7 @@
 | R7 | 顶栏重构（用户 12 问定稿）：双行浏览器式——标签行(极简文字式标签：活动墨色加粗无指示条) + 工具行(`</>`标+后退/前进/刷新+omnibox+站点快捷+操作区) | r7c(-chrome/page).png / r7-tabs-chrome.png / r10-final.json 断言全绿 | ✅ 页脚移除、histbtns 随历史置灰、站点快捷 980px 以下自动隐藏 |
 | R8 | omnibox 三合一（网址/题号 P1001/UID/搜索/映射词）+ 站外解锁标签 + 快捷键(Ctrl+T/W/L/R/I、F5、Alt+方向) + 启动固定首页+IDE + 配置面板(uiScale 80~140% + 映射编辑器 + 去彩渐变) | omniResolve 5 形态断言；r8b-config(-window).png；r10-configvis/shellvis(115% 缩放+壁纸+暗色) | ✅ 映射词 deepseek 直达站外并新标签解锁；配置面板纯单色 |
 | R9 | IDE 页面内容适配：探针定位混杂元素，editor-tab/语言选择/IO 面板线框化、current-line 黄条改发丝线、按钮灰阶化 | ide-dump2.json；r9-ide-light/dark-page.png | ✅ 明暗两种主题下 IDE 均单色统一 |
-| R10 | 品牌定稿：LuoguLab 全面命名、icon 重绘（墨色圆角方块+白 `</>` 胶囊笔画）、标题栏/启动背景随主题、pushUser 改 DOM 探测（usericon 头像含 uid + 欢迎语文本）、打包部署 | assets/icon.png；final2.json + final2-chrome.png（UID 2286752 芯片显示）；asar 含新代码 | ✅ 桌面 C:\Users\Administrator\Desktop\LuoguLab 交付 |
+| R10 | 品牌定稿：LuoguLab 全面命名、icon 重绘（墨色圆角方块+白 `</>` 胶囊笔画）、标题栏/启动背景随主题、pushUser 改 DOM 探测（usericon 头像含 uid + 欢迎语文本）、打包部署 | assets/icon.png；final2.json + final2-chrome.png（UID 2286752 芯片显示）；asar 含新代码 | ✅ 桌面 C:\Users\<user>\Desktop\LuoguLab 交付 |
 
 | R11 | 配色预设体系：主进程作为色表权威源 → `presetVars` 随配置下发 → inject/chrome/settings 三处只贴不存；5 套中性皮肤（墨白/宣纸/青灰/柔雾/高对比）；强调色、边框强度、页面动效三个细调项；修正"暗色整页反转时变量取错一套"的配色倒错 | ct3.png.json：paper → `tint 26,24,20 / ink #e9e2d5 / border 0.280 / anim 0`；切回 ink 全还原 | ✅ |
 | R12 | 细粒度视觉调项落地设置页：圆角、卡片不透明度、毛玻璃模糊、外壳不透明度、边框强度、动效开关；外壳与设置页改用 `color-mix` 由四个基色派生全部中间色 | st6.png.json：`tint/ink/accent/bgBase/radius/borderVar` 六项实测值全对 | ✅ |
