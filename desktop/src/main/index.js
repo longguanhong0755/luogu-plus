@@ -6,7 +6,12 @@ const config = require("./config");
 const theme = require("./theme");
 const wallpaper = require("./wallpaper");
 const { Store } = require("./store");
-const { createMainWindow, createSettingsWindow, applyTheme } = require("./window");
+const {
+  createMainWindow,
+  createSettingsWindow,
+  applyTheme,
+  APP_USER_MODEL_ID,
+} = require("./window");
 const { ViewManager } = require("./views");
 const { LuoguService } = require("./luogu");
 const { createNotifier } = require("./notify");
@@ -16,13 +21,34 @@ const adblock = require("./adblock");
 const { installDevReload } = require("./dev-reload");
 const smoke = () => require("./smoke");
 
+const WEB_CACHE_SOFT_LIMIT = 220 * 1024 * 1024;
+const CACHE_MAINTENANCE_MS = 4 * 60 * 60 * 1000;
+const BACKGROUND_RELEASE_MS = Math.max(10000, Number(process.env.LG_BACKGROUND_RELEASE_MS) || 10 * 60 * 1000);
+
+async function maintainWebCache(ctx, reason = "scheduled", force = false) {
+  if (!ctx.session) return { ok: false, reason: "no-session" };
+  try {
+    const before = await ctx.session.getCacheSize();
+    if (!force && before <= WEB_CACHE_SOFT_LIMIT) return { ok: true, before, cleared: false };
+    await ctx.session.clearCache();
+    console.log("[cache] cleared web cache", reason, Math.round(before / 1024 / 1024) + "MB");
+    return { ok: true, before, cleared: true };
+  } catch (err) {
+    console.warn("[cache] maintenance failed:", err.message);
+    return { ok: false, reason: err.message };
+  }
+}
+
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
 // 桌面端以显式页面 View 管理历史；关闭 Chromium 整页 BFCache，
 // 避免隐藏页面长期保留完整渲染树和 JS 堆。
-app.commandLine.appendSwitch("disable-features", "BackForwardCache");
-app.setAppUserModelId("com.luogulab.desktop");
+app.commandLine.appendSwitch(
+  "disable-features",
+  "BackForwardCache,WebAuthenticationConditionalUI,WebAuthenticationPasskeyAutofill"
+);
+app.setAppUserModelId(APP_USER_MODEL_ID);
 app.userAgentFallback = UA;
 app.quitting = false;
 
@@ -219,6 +245,11 @@ function bootstrap() {
 
     ctx.session = session.fromPartition("persist:luogu");
     ctx.session.setUserAgent(UA);
+    ctx.cacheMaintenance = { softLimitBytes: WEB_CACHE_SOFT_LIMIT, last: null };
+    ctx.maintainWebCache = (reason, force) => maintainWebCache(ctx, reason, force).then((result) => {
+      ctx.cacheMaintenance.last = Object.assign({ at: Date.now() }, result);
+      return result;
+    });
     ctx.session.setPermissionRequestHandler((_wc, permission, details, callback) => {
       // 仅放行洛谷来源的 fullscreen；判源用 requestingUrl（frame 粒度，修顶层 URL 局限）
       const origin = String((details && details.requestingUrl) || (_wc && _wc.getURL && _wc.getURL()) || "");
@@ -299,11 +330,19 @@ function bootstrap() {
     }
     ctx.showWindow = () => {
       if (ctx.win && !ctx.win.isDestroyed()) {
+        if (ctx.views) {
+          try {
+            ctx.views.restoreCurrent();
+          } catch {
+            /* ignore */
+          }
+        }
         ctx.win.show();
         ctx.win.focus();
       }
     };
     ctx.openSettings = () => createSettingsWindow(ctx);
+    ctx.pinTaskbar = () => require("./taskbar").pinToTaskbar({ smoke: ctx.smoke });
     installDevReload(ctx);
 
     ctx.applyAutoLaunch = () => {
@@ -315,15 +354,27 @@ function bootstrap() {
       }
     };
 
+    let wallpaperEpoch = 0;
     ctx.refreshAppearance = async (options = {}) => {
-      const mode = ctx.cfg.get().appearance.mode;
+      const cfg = ctx.cfg.get();
+      const mode = cfg.appearance.mode;
       nativeTheme.themeSource = mode === "system" ? "system" : mode;
-      ctx.theme = theme.payload(ctx.cfg.get());
-      ctx.wallpaper = await wallpaper.resolve(ctx.cfg.get(), ctx.theme);
+      // 材质、透明度、主题色只改 CSS 变量，必须同步落到外壳与设置窗，
+      // 不能等图片/视频壁纸解析完再更新，否则拖动滑杆时两个窗口会各慢一拍。
+      ctx.theme = theme.payload(cfg);
       applyTheme(ctx.win, ctx.theme);
       applyTheme(ctx.settingsWin, ctx.theme);
       ctx.views.updateTheme();
       if (options.reschedule !== false) ctx.scheduleWallpaperRotation();
+      if (options.resolveWallpaper === false) {
+        broadcastState(ctx);
+        return;
+      }
+      const epoch = ++wallpaperEpoch;
+      const resolved = await wallpaper.resolve(cfg, ctx.theme);
+      // 只让最后一轮壁纸解析提交；材质请求不会再错误取消正在解析的壁纸。
+      if (epoch !== wallpaperEpoch) return;
+      ctx.wallpaper = resolved;
       broadcastState(ctx);
     };
 
@@ -464,18 +515,59 @@ function bootstrap() {
       if (!ctx.win || ctx.win.isDestroyed()) return;
       ctx.win.webContents.send("app:window-focus", !!focused);
     };
-    ctx.win.on("focus", () => syncWindowFocus(true));
+    let backgroundReleaseTimer = null;
+    const cancelBackgroundRelease = () => {
+      if (!backgroundReleaseTimer) return;
+      clearTimeout(backgroundReleaseTimer);
+      backgroundReleaseTimer = null;
+    };
+    const scheduleBackgroundRelease = () => {
+      cancelBackgroundRelease();
+      backgroundReleaseTimer = setTimeout(() => {
+        backgroundReleaseTimer = null;
+        if (ctx.win && !ctx.win.isDestroyed() && (ctx.win.isMinimized() || !ctx.win.isVisible())) {
+          ctx.views.suspendBackground().catch(() => {});
+        }
+      }, BACKGROUND_RELEASE_MS);
+      backgroundReleaseTimer.unref && backgroundReleaseTimer.unref();
+    };
+    ctx.win.on("focus", () => {
+      cancelBackgroundRelease();
+      syncWindowFocus(true);
+    });
     ctx.win.on("blur", () => syncWindowFocus(false));
-    ctx.win.on("hide", () => syncWindowFocus(false));
-    ctx.win.on("minimize", () => syncWindowFocus(false));
-    ctx.win.on("restore", () => syncWindowFocus(ctx.win.isFocused()));
-    ctx.win.on("show", () => syncWindowFocus(ctx.win.isFocused()));
+    ctx.win.on("hide", () => {
+      syncWindowFocus(false);
+      scheduleBackgroundRelease();
+    });
+    ctx.win.on("minimize", () => {
+      syncWindowFocus(false);
+      scheduleBackgroundRelease();
+    });
+    ctx.win.on("restore", () => {
+      cancelBackgroundRelease();
+      syncWindowFocus(ctx.win.isFocused());
+    });
+    ctx.win.on("show", () => {
+      cancelBackgroundRelease();
+      syncWindowFocus(ctx.win.isFocused());
+      if (ctx.views) ctx.views.restoreCurrent();
+    });
 
     nativeTheme.on("updated", () => {
       if (ctx.cfg.get().appearance.mode === "system") {
         ctx.refreshAppearance().catch((err) => console.error("[theme]", err.message));
       }
     });
+
+    const cacheEpoch = ctx.store.get("cacheEpoch");
+    ctx.store.set("cacheEpoch", app.getVersion(), 0);
+    const cacheStartup = cacheEpoch && cacheEpoch !== app.getVersion()
+      ? ctx.maintainWebCache("version-change", true)
+      : ctx.maintainWebCache("startup");
+    cacheStartup.catch(() => {});
+    ctx.cacheTimer = setInterval(() => ctx.maintainWebCache("scheduled"), CACHE_MAINTENANCE_MS);
+    ctx.cacheTimer.unref && ctx.cacheTimer.unref();
 
     ctx.applyAutoLaunch();
     ctx.scheduleWallpaperRotation();
@@ -499,6 +591,7 @@ function bootstrap() {
     if (app.__lgCtx && app.__lgCtx.win) {
       const win = app.__lgCtx.win;
       if (win.isMinimized()) win.restore();
+      if (app.__lgCtx.views) app.__lgCtx.views.restoreCurrent();
       win.show();
       win.focus();
     }
@@ -506,6 +599,9 @@ function bootstrap() {
 
   app.on("before-quit", () => {
     app.quitting = true;
+    if (ctx.views) ctx.views.dispose();
+    if (ctx.cacheTimer) clearInterval(ctx.cacheTimer);
+    if (ctx.views) ctx.views.cancelAllSleep && ctx.views.cancelAllSleep();
     if (ctx.cfg) ctx.cfg.flush();
     if (ctx.store) ctx.store.flushAll();
   });

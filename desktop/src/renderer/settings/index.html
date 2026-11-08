@@ -38,7 +38,7 @@
           <section data-panel="appearance">
             <div class="pane-head">
               <h2 tabindex="-1">外观</h2>
-              <p>调整明暗、材质强度与强调色，所有改动即时生效。</p>
+              <p>调整明暗、玻璃材质与主题色，所有改动即时生效。</p>
             </div>
             <div class="settings-group">
               <div class="setting-row">
@@ -66,13 +66,14 @@
                 </div>
               </div>
               <div class="setting-row">
-                <div class="setting-label"><span>强调色</span><small>选中、链接与高亮</small></div>
-                <div class="setting-control">
-                  <div class="swatches" id="accent-row" role="group" aria-label="强调色">
+                <div class="setting-label"><span>主题色</span><small>玻璃、边框、选中、链接与高亮统一着色</small></div>
+                <div class="setting-control accent-control">
+                  <div class="swatches" id="accent-row" role="group" aria-label="主题色">
                     <button type="button" class="sw luogu" data-accent="luogu" title="洛谷蓝" aria-label="洛谷蓝"></button>
                     <button type="button" class="sw sys" data-accent="system" title="Windows 系统色" aria-label="Windows 系统色"></button>
-                    <input type="color" id="accent-custom" class="sw custom-input" value="#5b8cff" title="自定义颜色" aria-label="自定义强调色" />
+                    <input type="color" id="accent-custom" class="sw custom-input" value="#5b8cff" title="自定义主题色" aria-label="自定义主题色" />
                   </div>
+                  <output id="accent-value" class="accent-value nums" aria-live="polite">洛谷蓝</output>
                 </div>
               </div>
             </div>
@@ -259,20 +260,32 @@
             <div class="settings-group">
               <div class="pane-head compact"><h2 tabindex="-1">主页板块</h2><p>控制原生主页卡片显隐，布局即时重排。</p></div>
               <div class="setting-row">
-                <div class="setting-label"><span>最近提交</span></div>
-                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-recent" /><span class="box"></span>显示</label></div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-label"><span>官方问候</span></div>
+                <div class="setting-label"><span>签到与今日运势</span><small>唯一按钮，结果直接来自洛谷</small></div>
                 <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-official" /><span class="box"></span>显示</label></div>
               </div>
               <div class="setting-row">
-                <div class="setting-label"><span>比赛日历</span></div>
-                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-contest" /><span class="box"></span>显示</label></div>
+                <div class="setting-label"><span>官方赛事倒计时</span><small>问候区右侧的 CSP/NOIP 等倒计时</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-countdown" /><span class="box"></span>显示</label></div>
               </div>
               <div class="setting-row">
-                <div class="setting-label"><span>打卡热力图</span></div>
+                <div class="setting-label"><span>问题跳转</span><small>与洛谷首页相同的题号/随机跳题入口</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-quick-jump" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>做题趋势热度图</span><small>同步个人中心近半年提交趋势</small></div>
                 <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-heat" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>累计通过</span><small>直接显示洛谷个人中心的提交、通过与排名</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-progress" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>最近提交</span><small>保留原有板块，可单独隐藏</small></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-recent" /><span class="box"></span>显示</label></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>近期比赛</span></div>
+                <div class="setting-control"><label class="check"><input type="checkbox" id="feat-home-contest" /><span class="box"></span>显示</label></div>
               </div>
               <div class="setting-row">
                 <div class="setting-label"><span>首次使用卡</span></div>
@@ -321,15 +334,16 @@
                 </div>
               </div>
               <div class="setting-row">
-                <div class="setting-label"><span>开机自动启动</span><small>默认关闭</small></div>
-                <div class="setting-control">
-                  <label class="check"><input type="checkbox" id="autolaunch" /><span class="box"></span>登录 Windows 后自动启动</label>
+                <div class="setting-label"><span>Windows 任务栏</span><small>固定后可从任务栏直接打开，不必每次找文件夹</small></div>
+                <div class="setting-control stack-control">
+                  <button type="button" class="btn btn-secondary" id="taskbar-pin">固定到任务栏</button>
+                  <span class="hint-line" id="taskbar-pin-status" role="status">Windows 可能会要求你确认一次。</span>
                 </div>
               </div>
               <div class="setting-row">
-                <div class="setting-label"><span>拦截广告与推广</span><small>默认关闭；开启后隐藏推广位并拦截推广请求</small></div>
+                <div class="setting-label"><span>开机自动启动</span><small>默认关闭</small></div>
                 <div class="setting-control">
-                  <label class="check"><input type="checkbox" id="ad-block" /><span class="box"></span>启用</label>
+                  <label class="check"><input type="checkbox" id="autolaunch" /><span class="box"></span>登录 Windows 后自动启动</label>
                 </div>
               </div>
               <div class="setting-row">
@@ -423,8 +437,12 @@
               </div>
               <div class="setting-row stacked">
                 <div class="setting-label"><span>数据与离线</span></div>
-                <div class="setting-control hint-line">
-                  题面快照、列表缓存、草稿与离线提交队列保存在本机。断网时仍可浏览已缓存的题目和列表；联网后队列自动重放。
+                <div class="setting-control storage-panel">
+                  <div class="hint-line">题面快照、列表缓存、草稿与离线提交队列保存在本机。断网时仍可浏览已缓存的题目和列表；联网后队列自动重放。</div>
+                  <div class="storage-actions">
+                    <span class="hint-line" id="storage-status">正在统计缓存占用…</span>
+                    <button type="button" class="btn btn-secondary" id="clear-web-cache">清理网页缓存</button>
+                  </div>
                 </div>
               </div>
               <div class="setting-row">

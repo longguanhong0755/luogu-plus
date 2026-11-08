@@ -40,12 +40,13 @@ function levels(appearance, performanceMode) {
 
   if (perf) panelBase = Math.min(98, panelBase + 8);
 
-  /* 官方化可读底线：壁纸可以透出，但任何文字承载面都不再归零。
-     这修正了旧版 glass=100 时动态高对比壁纸直接压住正文的问题。 */
-  const panelAlpha = Math.max(86, tail(panelBase, glass));
-  const pageScrim = Math.max(90, tail(scrimBase, glass));
-  const cardAlpha = Math.max(88, tail(cardBase, glass));
-  const raiseAlpha = Math.max(8, Math.min(24, tail(raiseBase, glass)));
+  /* 只保留一层页面纱层。旧版把 panel/page/card 都锁在 86%-90%，
+     等于无论滑杆怎么调都看不到壁纸；这里让 70→100 真正压到 0。
+     代码块与浮层仍单独保留可读下限。 */
+  const panelAlpha = tail(panelBase, glass);
+  const pageScrim = tail(scrimBase, glass);
+  const cardAlpha = tail(cardBase, glass);
+  const raiseAlpha = Math.min(24, tail(raiseBase, glass));
   const codeAlpha = Math.max(68, tail(raiseBase + 55, glass));
   const overlayAlpha = Math.max(94, Math.min(99, cardAlpha + 2));
 

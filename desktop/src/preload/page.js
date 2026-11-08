@@ -32,7 +32,9 @@ function paintBoot() {
   if (bootPainted || !bootBg) return;
   bootPainted = true;
   try {
-    let bootCss = `html,body{background:${bootBg} !important;}`;
+    // 页面视图是透明的，壁纸与唯一一层可调纱层由外壳绘制；
+    // 这里只负责阻止 Chromium 默认白底，不能再盖一层不透明主题色。
+    let bootCss = `html,body{background:transparent !important;color-scheme:${bootMode === "light" ? "light" : "dark"};}`;
     if (bootAccent.includes(",")) {
       const [accentText, accent] = bootAccent.split(",");
       bootCss += `:root{--lg-accent-text:${accentText};--lg-accent:${accent};}`;
@@ -49,36 +51,227 @@ function paintBoot() {
 paintBoot();
 document.addEventListener("DOMContentLoaded", paintBoot, { once: true });
 
-/* ---------- 通行密钥守卫 ---------- */
+/* ---------- 页面加载占位 ----------
+   占位层由主进程的 PageReadinessController 驱动：
+   - 首次文档由 preload 立即挂载，阻止 Chromium 白底；
+   - SPA 导航通过 page:load-state 重新显示；
+   - 只有主进程确认路由根节点稳定后才移除；
+   - 失败时保留可重试界面，不会在固定秒数后直接消失。 */
+(function installPageLoadingSurface() {
+  const dark = bootMode !== "light";
+  const bootSurface = argValue("--lg-boot-surface=") || (dark ? "#16181d" : "#f5f6f8");
+  const accentParts = String(bootAccent || "").split(",");
+  const accent = accentParts.length > 1 ? accentParts[1] : (dark ? "#7aa2ff" : "#2f6fed");
+  let host = null;
+  let shadow = null;
+  let wrap = null;
+  let errorTitle = null;
+  let errorMessage = null;
+  let removeTimer = null;
+  // 主进程每次导航都会递增 requestId。旧导航迟到的 ready/error 不能覆盖新导航。
+  let latestRequestId = 0;
+
+  const make = (tag, className, parent) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (parent) parent.appendChild(node);
+    return node;
+  };
+
+  function ensureHost() {
+    if (host && host.isConnected) return host;
+    host = document.createElement("div");
+    host.id = "lg-boot-skeleton";
+    host.setAttribute("aria-busy", "true");
+    host.setAttribute("aria-label", "页面加载中");
+    host.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "z-index:2147483646",
+      "pointer-events:none",
+      "opacity:0",
+      "transition:opacity 160ms ease",
+      "background:color-mix(in srgb,var(--lg-load-surface) 74%,transparent)",
+      "padding:26px 30px",
+      "font:13px/1.5 'Segoe UI Variable Text','Segoe UI','Microsoft YaHei UI',system-ui,sans-serif",
+      "--lg-load-surface:" + bootSurface,
+      "--lg-load-accent:" + accent,
+    ].join(";");
+    shadow = host.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = [
+      "*{box-sizing:border-box}",
+      ".wrap{display:grid;gap:14px;max-width:980px;margin:0 auto;color:color-mix(in srgb,var(--lg-load-surface) 22%, #8b93a3)}",
+      ".wrap[data-kind='chat'] .summary,.wrap[data-kind='chat'] .side{display:none}",
+      ".wrap[data-kind='chat'] .blocks{grid-template-columns:1fr}",
+      ".wrap[data-kind='notification'] .side{display:none}",
+      ".wrap[data-kind='notification'] .blocks{grid-template-columns:1fr}",
+      ".wrap[data-kind='profile'] .side{display:block}",
+      ".bar,.line,.block,.msg{position:relative;overflow:hidden;background:color-mix(in srgb,var(--lg-load-surface) 18%, transparent);border-radius:7px}",
+      ".bar:after,.line:after,.block:after,.msg:after{content:'';position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--lg-load-accent) 16%,transparent),transparent);animation:shimmer 1.25s ease-in-out infinite}",
+      ".head{display:flex;align-items:center;justify-content:space-between;gap:20px}",
+      ".title{width:210px;height:22px}.action{width:92px;height:32px;border-radius:7px;background:color-mix(in srgb,var(--lg-load-accent) 16%,transparent)}",
+      ".card{display:grid;gap:12px;padding:20px;border:1px solid color-mix(in srgb,var(--lg-load-surface) 18%,transparent);border-radius:12px;background:color-mix(in srgb,var(--lg-load-surface) 10%,transparent)}",
+      ".line{height:12px}.l1{width:32%}.l2{width:68%}.l3{width:48%}.l4{width:82%}",
+      ".blocks{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(220px,.8fr);gap:14px}",
+      ".block{height:150px;border-radius:12px}.tall{height:250px}",
+      ".messages{display:grid;gap:10px}.msg{height:44px;border-radius:10px}.msg:nth-child(2){width:72%;margin-left:auto}",
+      ".hint{margin-top:2px;font-size:12px;color:color-mix(in srgb,var(--lg-load-surface) 28%, #8b93a3)}",
+      ".sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}",
+      ".error{display:none;min-height:100%;place-items:center;padding:24px}.wrap[data-mode='error']{min-height:calc(100vh - 52px)}.wrap[data-mode='error'] .skeleton-view{display:none}.wrap[data-mode='error'] .error{display:grid}",
+      ".error-card{width:min(420px,100%);padding:24px;border:1px solid color-mix(in srgb,var(--lg-load-surface) 22%,transparent);border-radius:14px;background:color-mix(in srgb,var(--lg-load-surface) 80%,transparent);box-shadow:0 16px 44px rgba(0,0,0,.12);text-align:center}",
+      ".error-title{font-size:16px;font-weight:700;color:color-mix(in srgb,var(--lg-load-surface) 12%, #e9edf5)}.error-message{margin-top:8px;font-size:13px;line-height:1.6;color:color-mix(in srgb,var(--lg-load-surface) 32%, #8b93a3)}",
+      ".retry{margin-top:16px;height:32px;padding:0 16px;border:1px solid color-mix(in srgb,var(--lg-load-accent) 46%,transparent);border-radius:8px;background:color-mix(in srgb,var(--lg-load-accent) 18%,transparent);color:inherit;font:inherit;cursor:pointer}",
+      ".retry:hover{background:color-mix(in srgb,var(--lg-load-accent) 28%,transparent)}",
+      "@keyframes shimmer{to{transform:translateX(100%)}}",
+      "@media (prefers-reduced-motion:reduce){.bar:after,.line:after,.block:after,.msg:after{animation:none}}",
+      "@media (max-width:820px){.blocks{grid-template-columns:1fr}.side{display:none}}",
+    ].join("\n");
+    shadow.appendChild(style);
+    wrap = make("div", "wrap", shadow);
+    wrap.dataset.kind = "generic";
+    wrap.dataset.mode = "loading";
+    wrap.setAttribute("role", "status");
+    make("span", "sr", wrap).textContent = "页面正在加载，请稍候";
+    const skeleton = make("div", "skeleton-view", wrap);
+    const head = make("div", "head", skeleton);
+    make("div", "bar title", head);
+    make("div", "bar action", head);
+    const summary = make("div", "card summary", skeleton);
+    make("div", "line l2", summary);
+    make("div", "line l1", summary);
+    const blocks = make("div", "blocks", skeleton);
+    const main = make("div", "card", blocks);
+    const messages = make("div", "messages", main);
+    for (let i = 0; i < 3; i++) make("div", "msg", messages);
+    make("div", "line l4", main);
+    make("div", "line l2", main);
+    const side = make("div", "card side", blocks);
+    make("div", "line l1", side);
+    make("div", "block tall", side);
+    const footer = make("div", "card", skeleton);
+    make("div", "line l3", footer);
+    make("div", "line l4", footer);
+    make("div", "line l2", footer);
+    make("div", "hint", skeleton).textContent = "正在载入洛谷页面…";
+    const error = make("div", "error", wrap);
+    const errorCard = make("div", "error-card", error);
+    errorTitle = make("div", "error-title", errorCard);
+    errorMessage = make("div", "error-message", errorCard);
+    const retry = make("button", "retry", errorCard);
+    retry.type = "button";
+    retry.textContent = "重新加载";
+    retry.addEventListener("click", () => location.reload());
+
+    let mounted = false;
+    function mount() {
+      const root = document.documentElement || document.body;
+      if (!root) {
+        setTimeout(mount, 0);
+        return;
+      }
+      if (!mounted) {
+        root.appendChild(host);
+        mounted = true;
+      }
+      requestAnimationFrame(() => {
+        if (host && host.isConnected) host.style.opacity = "1";
+      });
+    }
+    mount();
+    return host;
+  }
+
+  function show(kind, title) {
+    clearTimeout(removeTimer);
+    ensureHost();
+    wrap.dataset.mode = "loading";
+    wrap.dataset.kind = kind || "generic";
+    wrap.setAttribute("aria-busy", "true");
+    if (title) wrap.setAttribute("aria-label", title + "加载中");
+    // 导航期间吞掉落在旧内容上的点击，避免用户把点击丢进即将销毁的页面。
+    host.setAttribute("aria-busy", "true");
+    host.setAttribute("aria-label", title ? title + "加载中" : "页面加载中");
+    host.setAttribute("aria-hidden", "false");
+    host.style.pointerEvents = "auto";
+    host.style.opacity = "1";
+    const hint = shadow.querySelector(".hint");
+    if (hint) hint.textContent = title ? "正在载入" + title + "…" : "正在载入洛谷页面…";
+  }
+
+  function hide() {
+    if (!host) return;
+    host.setAttribute("aria-busy", "false");
+    host.setAttribute("aria-hidden", "true");
+    host.style.pointerEvents = "none";
+    host.style.opacity = "0";
+    clearTimeout(removeTimer);
+    removeTimer = setTimeout(() => {
+      if (!host) return;
+      if (host.isConnected) host.remove();
+      host = null;
+      shadow = null;
+      wrap = null;
+    }, 180);
+  }
+
+  function fail(message) {
+    clearTimeout(removeTimer);
+    ensureHost();
+    wrap.dataset.mode = "error";
+    wrap.setAttribute("aria-busy", "false");
+    host.setAttribute("aria-busy", "false");
+    host.setAttribute("aria-hidden", "false");
+    host.style.pointerEvents = "auto";
+    host.style.opacity = "1";
+    errorTitle.textContent = "页面没有加载完成";
+    errorMessage.textContent = message || "请检查网络或登录状态后重试。";
+  }
+
+  ipcRenderer.on("page:load-state", (_event, payload) => {
+    if (!payload) return;
+    const requestId = Number(payload.requestId) || 0;
+    if (requestId && requestId < latestRequestId) return;
+    if (requestId) latestRequestId = requestId;
+    const phase = String(payload.phase || "");
+    if (phase === "ready") {
+      hide();
+      return;
+    }
+    if (phase === "error") {
+      fail(payload.message);
+      return;
+    }
+    show(payload.skeleton, payload.title);
+  });
+
+  // 首次文档在 preload 阶段立刻显示，避免主进程事件抵达前出现 Chromium 白底。
+  show("generic", "页面");
+})();
+
+/* ---------- 通行密钥守卫 ----------
+   页面主世界由 CDP 更早拦截；这里作为隔离世界兜底。桌面版不弹出
+   Windows Hello / 安全密钥窗口，密码和 Cookie 登录保持正常。 */
 try {
+  const blocked = () => new Promise(() => {});
   const credentials = navigator.credentials;
   if (credentials && typeof credentials.get === "function") {
     const siteGet = credentials.get.bind(credentials);
     const siteCreate = typeof credentials.create === "function" ? credentials.create.bind(credentials) : null;
-    const guard = (original, method) =>
-      function (options) {
-        const isWebAuthn = !!(options && (options.publicKey || options.mediation || method === "create"));
-        const active = !!(navigator.userActivation && navigator.userActivation.isActive);
-        if (isWebAuthn && !active) {
-          return Promise.reject(
-            new DOMException("Passkey requires a user gesture in Luogu Desktop", "NotAllowedError")
-          );
-        }
-        return original(options);
-      };
+    const isWebAuthn = (options) => !!(options && options.publicKey);
     Object.defineProperty(credentials, "get", {
       configurable: true,
-      value: guard(siteGet, "get"),
+      value: (options) => (isWebAuthn(options) ? blocked() : siteGet(options)),
     });
     if (siteCreate) {
       Object.defineProperty(credentials, "create", {
         configurable: true,
-        value: guard(siteCreate, "create"),
+        value: (options) => (isWebAuthn(options) ? blocked() : siteCreate(options)),
       });
     }
   }
 } catch {
-  /* 某些页面会冻结 navigator，失败时退回 Chromium 默认行为 */
+  /* 某些页面会冻结 navigator，失败时仍由主世界 CDP 守卫兜底 */
 }
 
 /* ---------- 应用轻提示 ----------

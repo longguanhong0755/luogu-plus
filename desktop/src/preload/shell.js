@@ -7,6 +7,18 @@ function on(channel, callback) {
   return () => ipcRenderer.removeListener(channel, handler);
 }
 
+// 网络状态由外壳的 online/offline 事件主动上报，主进程不再每 10 秒执行页面脚本轮询。
+const reportOnline = () => {
+  try {
+    ipcRenderer.send("app:online", navigator.onLine !== false);
+  } catch {
+    /* ignore */
+  }
+};
+window.addEventListener("online", reportOnline);
+window.addEventListener("offline", reportOnline);
+queueMicrotask(reportOnline);
+
 contextBridge.exposeInMainWorld("lg", {
   getState: () => ipcRenderer.invoke("app:getState"),
   setAppearance: (patch) => ipcRenderer.invoke("app:setAppearance", patch),
@@ -51,6 +63,7 @@ contextBridge.exposeInMainWorld("lg", {
   onState: (callback) => on("app:state", callback),
   onCommand: (callback) => on("app:command", callback),
   onRailLayout: (callback) => on("rail:layout", callback),
+  onPageFreeze: (callback) => on("page:freeze", callback),
   onToast: (callback) => on("app:toast", callback),
   onWindowFocus: (callback) => on("app:window-focus", callback),
 });

@@ -15,7 +15,6 @@ body {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  transform: translate3d(var(--lg-pan-x, 0px), var(--lg-pan-y, 0px), 0) scale(var(--lg-zoom, 1));
   transform-origin: 50% 50%;
   background: var(--bg);
 }
@@ -26,21 +25,36 @@ body {
   background-size: cover;
   background-repeat: no-repeat;
   opacity: 0;
-  transition: opacity 600ms var(--ease);
 }
 .wall-layer video {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
-#wallpaper::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--bg);
-  opacity: calc(0.82 - var(--mat, 55) * 0.003);
+body.wall-motion .wall-layer {
+  animation: settings-wall-pan 26s ease-in-out infinite alternate;
 }
-
+body.wall-zoom .wall-layer {
+  animation: settings-wall-zoom 19s ease-in-out infinite alternate;
+}
+body.wall-motion.wall-zoom .wall-layer {
+  animation: settings-wall-pan 26s ease-in-out infinite alternate, settings-wall-zoom 19s ease-in-out infinite alternate;
+}
+body.wall-paused .wall-layer {
+  animation-play-state: paused;
+}
+body.wall-fade .wall-layer {
+  transition: opacity 600ms var(--ease);
+}
+@keyframes settings-wall-pan {
+  from { transform: translate3d(-0.45%, -0.3%, 0) scale(1.035); }
+  to { transform: translate3d(0.45%, 0.3%, 0) scale(1.035); }
+}
+@keyframes settings-wall-zoom {
+  from { scale: 1.015; }
+  to { scale: 1.055; }
+}
 #app {
   position: relative;
   z-index: 1;
@@ -96,10 +110,10 @@ body.perf .set-pane {
 }
 body.perf #titlebar,
 body.perf .set-nav {
-  background: color-mix(in srgb, var(--title) 97%, transparent);
+  background: color-mix(in srgb, var(--title) var(--panel-alpha, 83%), transparent);
 }
 body.perf .set-pane {
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
 }
 
 /* ---------- 布局 ---------- */
@@ -189,9 +203,8 @@ body.perf .set-pane {
   min-width: 0;
   padding: var(--sp-6) var(--page-pad) var(--sp-12);
   overflow-y: auto;
+  /* 与主窗口 #content 完全同层：只压一层主题纱层，不做整块实时模糊。 */
   background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
-  -webkit-backdrop-filter: blur(calc(var(--blur, 19px) * 0.55)) saturate(1.04);
-  backdrop-filter: blur(calc(var(--blur, 19px) * 0.55)) saturate(1.04);
   scrollbar-gutter: stable;
 }
 
@@ -406,6 +419,18 @@ section[data-panel] {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+.accent-control {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.accent-value {
+  min-width: 72px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
 }
 .sw {
   width: 28px;
@@ -984,4 +1009,11 @@ section[data-panel] {
 }
 .sw:active {
   transform: scale(0.94);
+}
+
+.storage-panel { display: grid; gap: 10px; }
+.storage-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .storage-actions { align-items: flex-start; flex-direction: column; }
+  .storage-actions .btn { width: 100%; }
 }

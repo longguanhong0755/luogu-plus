@@ -21,7 +21,9 @@
         <span id="tb-title">主页</span>
         <span class="tb-drag" aria-hidden="true"></span>
         <button id="tb-jump" class="tb-action" type="button" title="搜索题号（Ctrl+L）" aria-label="搜索题号"></button>
-        <button id="tb-avatar" type="button" title="个人主页" aria-label="个人主页">洛</button>
+        <button id="tb-avatar" type="button" title="个人主页" aria-label="个人主页">
+          <span class="tb-avatar-fallback">洛</span>
+        </button>
       </header>
 
       <nav id="rail" aria-label="主导航">
@@ -50,6 +52,7 @@
             <aside id="ide-pane" hidden></aside>
           </div>
         </section>
+        <div id="page-freeze" hidden aria-hidden="true"></div>
       </main>
 
       <div id="overlay" hidden>

@@ -67,10 +67,36 @@ function displayBudget() {
   };
 }
 
-function pruneDisplayCache(dir, keep) {
+function pruneDisplayCache(dir, keep, maxBytes) {
   try {
     const files = fs.readdirSync(dir)
       .filter((name) => /^[a-f0-9]+\.jpg$/i.test(name))
+      .map((name) => {
+        const file = path.join(dir, name);
+        const stat = fs.statSync(file);
+        return { file, size: stat.size, mtime: stat.mtimeMs };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+    let bytes = 0;
+    let kept = 0;
+    for (const item of files) {
+      const fits = kept < keep && bytes + item.size <= maxBytes;
+      if (fits) {
+        kept += 1;
+        bytes += item.size;
+      } else {
+        fs.rmSync(item.file, { force: true });
+      }
+    }
+  } catch {
+    /* 缓存清理失败不影响壁纸显示 */
+  }
+}
+
+function pruneDailyCache(dir, keep = 3) {
+  try {
+    const files = fs.readdirSync(dir)
+      .filter((name) => /^daily-\d{4}-\d{2}-\d{2}\.jpg$/i.test(name))
       .map((name) => {
         const file = path.join(dir, name);
         return { file, mtime: fs.statSync(file).mtimeMs };
@@ -78,7 +104,7 @@ function pruneDisplayCache(dir, keep) {
       .sort((a, b) => b.mtime - a.mtime);
     for (const item of files.slice(keep)) fs.rmSync(item.file, { force: true });
   } catch {
-    /* 缓存清理失败不影响壁纸显示 */
+    /* ignore */
   }
 }
 
@@ -110,7 +136,7 @@ function displayImage(url, maxWidth, maxHeight) {
     if (!fs.existsSync(cache)) {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(cache, image.resize({ width, height, quality: "good" }).toJPEG(84));
-      pruneDisplayCache(dir, 24);
+      pruneDisplayCache(dir, 8, 48 * 1024 * 1024);
     }
     return toUrl(cache);
   } catch {
@@ -130,6 +156,7 @@ function todayKey() {
 
 async function dailyImage() {
   const dir = path.join(app.getPath("userData"), "wallpapers");
+  pruneDailyCache(dir, 3);
   const file = path.join(dir, `daily-${todayKey()}.jpg`);
   if (fs.existsSync(file)) return toUrl(file);
   try {

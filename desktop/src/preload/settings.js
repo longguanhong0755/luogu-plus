@@ -9,6 +9,8 @@ function on(channel, callback) {
 
 contextBridge.exposeInMainWorld("lgSettings", {
   getState: () => ipcRenderer.invoke("app:getState"),
+  getStorageStats: () => ipcRenderer.invoke("app:storageStats"),
+  clearWebCache: () => ipcRenderer.invoke("app:clearWebCache"),
   setAppearance: (patch) => ipcRenderer.invoke("app:setAppearance", patch),
   setRail: (patch) => ipcRenderer.invoke("app:setRail", patch),
   resetRail: () => ipcRenderer.invoke("app:resetRail"),
@@ -26,6 +28,7 @@ contextBridge.exposeInMainWorld("lgSettings", {
   nav: (target) => ipcRenderer.invoke("app:nav", target),
   logout: () => ipcRenderer.invoke("app:logout"),
   getVersion: () => ipcRenderer.invoke("app:getVersion"),
+  pinTaskbar: () => ipcRenderer.invoke("app:taskbarPin"),
   checkUpdate: () => ipcRenderer.invoke("app:checkUpdate"),
   onState: (callback) => on("app:state", callback),
 });

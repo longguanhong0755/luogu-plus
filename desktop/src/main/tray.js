@@ -18,6 +18,13 @@ function createTray(ctx) {
         },
       },
       {
+        label: "固定到任务栏",
+        click: async () => {
+          const result = ctx.pinTaskbar ? await ctx.pinTaskbar() : { ok: false, message: "任务栏固定尚未就绪。" };
+          if (ctx.toast) ctx.toast("任务栏", result.message || (result.ok ? "已发送固定请求。" : "固定失败。"));
+        },
+      },
+      {
         label: "题库",
         click: () => {
           ctx.showWindow();

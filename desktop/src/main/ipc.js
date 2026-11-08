@@ -5,8 +5,15 @@ const { LIBRARY_IDS, resolveRail, canonicalPid } = require("./sections");
 
 /* 冒烟裁决守卫（smoke-guard.js 纯模块）：handler 异常即打 SMOKE_FAIL，
    裁决洞 #1/#2 全闭合；生产模式零改动。 */
-const { guardIpcMain } = require("./smoke-guard");
-guardIpcMain(ipcMain, process.env.LG_SMOKE === "1");
+/* 出包会剥离 smoke-guard.js，因此这里不能裸 require：缺失时按「无守卫」降级，
+   否则整包启动即 Error 弹窗（v0.7.15 便携包曾因此无法启动）。 */
+let guardIpcMain = null;
+try {
+  ({ guardIpcMain } = require("./smoke-guard"));
+} catch {
+  guardIpcMain = null;
+}
+if (typeof guardIpcMain === "function") guardIpcMain(ipcMain, process.env.LG_SMOKE === "1");
 
 function publicWallpaper(wallpaper) {
   const out = Object.assign({}, wallpaper);
@@ -89,10 +96,55 @@ function palette(query, ctx) {
 function registerIpc(ctx) {
   ipcMain.handle("app:getState", () => state(ctx));
 
+  ipcMain.on("app:online", (_event, online) => {
+    if (ctx.luogu && ctx.luogu.setOnline) ctx.luogu.setOnline(!!online);
+  });
+
+  ipcMain.handle("app:storageStats", async () => {
+    let webCacheBytes = 0;
+    try {
+      if (ctx.session) webCacheBytes = await ctx.session.getCacheSize();
+    } catch {
+      webCacheBytes = 0;
+    }
+    return {
+      store: ctx.store ? ctx.store.stats() : null,
+      webCacheBytes,
+      views: ctx.views && ctx.views.viewStats ? ctx.views.viewStats() : null,
+      luogu: ctx.luogu && ctx.luogu.contextDiagnostics ? ctx.luogu.contextDiagnostics() : null,
+    };
+  });
+
+  ipcMain.handle("app:clearWebCache", async () => {
+    if (!ctx.maintainWebCache) return { ok: false, message: "缓存维护尚未就绪。" };
+    const result = await ctx.maintainWebCache("manual", true);
+    return Object.assign({}, result, { message: result.ok ? "网页缓存已清理，登录状态和离线数据已保留。" : "清理失败：" + result.reason });
+  });
+
+  ipcMain.handle("app:taskbarPin", () => {
+    if (!ctx.pinTaskbar) return { ok: false, supported: false, message: "任务栏固定尚未就绪。" };
+    return ctx.pinTaskbar();
+  });
+
   ipcMain.handle("app:setAppearance", async (_event, patch) => {
-    const appearance = ctx.cfg.setAppearance(patch);
-    await ctx.refreshAppearance();
-    ctx.scheduleWallpaperRotation();
+    const next = patch || {};
+    const wallpaperKeys = new Set([
+      "wallpaper",
+      "wallpaperFile",
+      "wallpaperDir",
+      "wallpaperIndex",
+      "wallpaperInterval",
+      "wallpaperShuffle",
+      "wallpaperMotion",
+      "wallpaperZoom",
+      "wallpaperFade",
+      "weRoot",
+      "weId",
+    ]);
+    const resolveWallpaper = Object.keys(next).some((key) => wallpaperKeys.has(key));
+    const appearance = ctx.cfg.setAppearance(next);
+    await ctx.refreshAppearance({ resolveWallpaper });
+    if (resolveWallpaper) ctx.scheduleWallpaperRotation();
     return { appearance, state: state(ctx) };
   });
 
@@ -127,7 +179,7 @@ function registerIpc(ctx) {
       return general;
     }
     if (Object.prototype.hasOwnProperty.call(next, "performanceMode")) {
-      ctx.refreshAppearance({ reschedule: false }).catch(() => {});
+      ctx.refreshAppearance({ reschedule: false, resolveWallpaper: false }).catch(() => {});
     } else {
       broadcastState(ctx);
     }
@@ -348,9 +400,7 @@ function registerIpc(ctx) {
     ctx.views.setIdeSplit(Number(ratio));
   });
 
-  ipcMain.handle("app:overlay", (_event, open) => {
-    ctx.views.setOverlay(!!open);
-  });
+  ipcMain.handle("app:overlay", (_event, open) => ctx.views.setOverlay(!!open));
 
   ipcMain.handle("app:submit", async (_event, payload) => {
     const pid = canonicalPid((payload && payload.pid) || "");
@@ -442,6 +492,7 @@ function registerIpc(ctx) {
   ipcMain.handle("app:checkin", async () => {
     const result = await ctx.luogu.checkin();
     if (result.ok) ctx.toast("签到", result.already ? "今天已经签过了。" : "签到成功。");
+    else if (result.uncertain) ctx.toast("签到状态待确认", result.message || "请刷新主页确认今日签到状态。");
     else ctx.toast("签到没有成功", result.message || "没找到签到入口，稍后再试一次。");
     return result;
   });

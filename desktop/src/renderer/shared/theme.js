@@ -1,6 +1,7 @@
 /* 把主进程解析好的主题落成 CSS 变量，并驱动壁纸层。
    外壳与设置窗共用；设置窗没有 #wallpaper 时只落变量。 */
 let wallKey = "";
+let wallContentKey = "";
 let activeSlot = 0;
 
 function builtinImage(theme) {
@@ -16,7 +17,8 @@ function fillLayer(layer, wall, theme) {
   layer.textContent = "";
   layer.style.backgroundImage = "";
   layer.classList.toggle("builtin", wall.kind === "builtin");
-  if (wall.video && wall.url) {
+  const allowVideo = !document.body || document.body.dataset.wallpaperVideo !== "off";
+  if (wall.video && wall.url && allowVideo) {
     const video = document.createElement("video");
     video.src = wall.url;
     video.muted = true;
@@ -30,7 +32,9 @@ function fillLayer(layer, wall, theme) {
     layer.appendChild(video);
     const play = video.play();
     if (play && play.catch) play.catch(() => {});
-  } else if (wall.url) {
+  } else if (wall.poster) {
+    layer.style.backgroundImage = `url("${String(wall.poster).replace(/"/g, '\\"')}")`;
+  } else if (wall.url && !wall.video) {
     layer.style.backgroundImage = `url("${String(wall.url).replace(/"/g, '\\"')}")`;
   } else {
     layer.style.backgroundImage = builtinImage(theme);
@@ -41,16 +45,20 @@ function applyWallpaper(theme) {
   const box = document.getElementById("wallpaper");
   if (!box) return;
   const wall = theme.wallpaper || { kind: "builtin", url: "" };
-  const key = [wall.kind, wall.url, wall.video, wall.poster, theme.isDark].join("|");
+  const contentKey = [wall.kind, wall.url, wall.video, wall.poster, theme.isDark].join("|");
+  const key = contentKey + "|fade:" + (wall.fade ? "1" : "0");
   if (key === wallKey) return;
-  const first = !wallKey;
+  const contentChanged = contentKey !== wallContentKey;
+  const first = !wallContentKey;
   wallKey = key;
 
   const layers = box.querySelectorAll(".wall-layer");
   if (!layers.length) return;
-  // “切换时淡入”开挂到 body 上（body.wall-fade），CSS 只有挂了它才给层加过渡
+  // 淡入开关本身也要即时生效；内容没变时只更新 body class 后返回。
   if (document.body) document.body.classList.toggle("wall-fade", !!(wall && wall.fade));
-  const slot = first ? 0 : activeSlot;
+  if (!contentChanged) return;
+  wallContentKey = contentKey;
+  const slot = first ? 0 : 1 - activeSlot;
   const next = layers[slot];
   const prev = layers[1 - slot];
   if (first || !wall.fade) {
@@ -93,6 +101,8 @@ export function applyThemeVars(theme) {
     "--text-2": theme.colors.text2,
     "--text-3": theme.colors.text3,
     "--accent": theme.colors.accent,
+    "--glass-tint": theme.colors.glassTint || theme.colors.accent,
+    "--glass-tint-soft": theme.colors.glassTintSoft || theme.colors.accentSoft,
     "--accent-soft": theme.colors.accentSoft,
     "--accent-line": theme.colors.accentLine,
     "--accent-fill": theme.colors.accentFill || theme.colors.accent,
@@ -107,7 +117,7 @@ export function applyThemeVars(theme) {
     "--pressed": theme.colors.pressed,
     "--shadow-color": theme.colors.shadow,
     "--glass-highlight": theme.colors.highlight,
-    "--scrim": theme.isDark ? "rgba(8,10,14,0.45)" : "rgba(20,24,32,0.24)",
+    "--scrim": theme.colors.scrim || (theme.isDark ? "rgba(8,10,14,0.45)" : "rgba(20,24,32,0.24)"),
     "--panel-alpha": theme.panelAlpha + "%",
     "--panel-pct": theme.panelAlpha + "%",
     "--page-scrim": theme.pageScrim + "%",
@@ -129,6 +139,7 @@ export function applyTheme(theme) {
 
 export function resetWallpaperKey() {
   wallKey = "";
+  wallContentKey = "";
   activeSlot = 0;
 }
 

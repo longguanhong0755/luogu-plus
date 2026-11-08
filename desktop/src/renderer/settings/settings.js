@@ -27,6 +27,32 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return value + " B";
+  if (value < 1024 * 1024) return (value / 1024).toFixed(1) + " KB";
+  return (value / 1024 / 1024).toFixed(1) + " MB";
+}
+
+async function refreshStorageStats() {
+  const status = $("storage-status");
+  if (!status) return;
+  try {
+    const stats = await api.getStorageStats();
+    const store = stats && stats.store;
+    const web = stats ? Number(stats.webCacheBytes) || 0 : 0;
+    const views = stats && stats.views;
+    const parts = [
+      "网页缓存 " + formatBytes(web),
+      store ? "离线数据 " + formatBytes(store.diskBytes) : "",
+      views ? "活动页面 " + views.live + " / 休眠 " + views.sleeping : "",
+    ].filter(Boolean);
+    status.textContent = parts.join(" · ");
+  } catch (err) {
+    status.textContent = "缓存统计失败：" + err.message;
+  }
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -68,6 +94,7 @@ function apply(state) {
   renderRail(state);
   applyFeatures(state);
   applyGeneral(state);
+  syncWallpaperMotion(state);
   applyAccount(state);
 
   if (section === "wallpaper" && state.appearance.weRoot && !weItems.length && !weScanning) {
@@ -91,6 +118,9 @@ const FEATURE_CONTROLS = {
   "feat-custom-sections": "customSections",
   "feat-home-recent": "homeRecent",
   "feat-home-official": "homeOfficial",
+  "feat-home-countdown": "homeCountdown",
+  "feat-home-quick-jump": "homeQuickJump",
+  "feat-home-progress": "homeProgress",
   "feat-home-contest": "homeContest",
   "feat-home-heat": "homeHeat",
   "feat-home-first-run": "homeFirstRun",
@@ -133,8 +163,11 @@ function applyAppearance(state) {
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   });
   const custom = $("accent-custom");
-  if (/^#[0-9a-fA-F]{6}$/.test(appearance.accent)) custom.value = appearance.accent;
-  custom.classList.toggle("on", /^#[0-9a-fA-F]{6}$/.test(appearance.accent));
+  const customActive = /^#[0-9a-fA-F]{6}$/.test(appearance.accent);
+  if (customActive && document.activeElement !== custom) custom.value = appearance.accent;
+  custom.classList.toggle("on", customActive);
+  const value = $("accent-value");
+  if (value) value.textContent = customActive ? appearance.accent.toUpperCase() : appearance.accent === "system" ? "跟随系统" : "洛谷蓝";
 }
 
 function applyWallpaper(state) {
@@ -195,11 +228,24 @@ function applyWallpaper(state) {
   renderWe(state);
 }
 
+function syncWallpaperMotion(state) {
+  const wallpaper = (state.theme && state.theme.wallpaper) || {};
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const paused = !!(state.general && state.general.performanceMode) || reduced;
+  document.body.classList.toggle("wall-motion", !!wallpaper.motion && !paused);
+  document.body.classList.toggle("wall-zoom", !!wallpaper.zoom && !paused);
+  document.body.classList.toggle("wall-paused", paused);
+  const video = document.querySelector("#wallpaper video");
+  if (video) {
+    if (paused) video.pause();
+    else video.play().catch(() => {});
+  }
+}
+
 function applyGeneral(state) {
   const closeRadio = document.querySelector(`input[name="close"][value="${state.general.closeAction}"]`);
   if (closeRadio) closeRadio.checked = true;
   $("autolaunch").checked = !!state.general.autoLaunch;
-  $("ad-block").checked = !!state.general.adBlock;
   $("perf-mode").checked = !!state.general.performanceMode;
   $("disclaimer-accepted").checked = !!state.general.disclaimerAccepted;
   $("shortcut-problems").value = state.general.shortcutOpenProblems || "Alt+L";
@@ -479,15 +525,38 @@ function bind() {
   document.querySelectorAll("#accent-row .sw[data-accent]").forEach((btn) => {
     btn.addEventListener("click", () => api.setAppearance({ accent: btn.dataset.accent }));
   });
-  $("accent-custom").addEventListener("change", (event) => {
-    api.setAppearance({ accent: event.target.value });
-  });
+  let accentTimer = null;
+  const applyCustomAccent = (value) => {
+    if (!/^#[0-9a-fA-F]{6}$/.test(value)) return;
+    if (accentTimer) clearTimeout(accentTimer);
+    accentTimer = setTimeout(() => api.setAppearance({ accent: value }), 70);
+  };
+  $("accent-custom").addEventListener("input", (event) => applyCustomAccent(event.target.value));
+  $("accent-custom").addEventListener("change", (event) => applyCustomAccent(event.target.value));
 
   document.querySelectorAll('input[name="close"]').forEach((radio) => {
     radio.addEventListener("change", () => api.setGeneral({ closeAction: radio.value }));
   });
+  $("taskbar-pin").addEventListener("click", async () => {
+    const button = $("taskbar-pin");
+    const status = $("taskbar-pin-status");
+    button.disabled = true;
+    status.textContent = "正在创建任务栏入口…";
+    try {
+      const result = await api.pinTaskbar();
+      if (result && result.ok) {
+        status.textContent = result.already ? "已经固定在任务栏。" : "已发送固定请求，请查看任务栏。";
+        button.textContent = "已固定";
+      } else {
+        status.textContent = (result && result.message) || "Windows 未允许自动固定，请右键任务栏中的洛谷图标选择“固定到任务栏”。";
+      }
+    } catch (err) {
+      status.textContent = "固定失败：" + (err.message || "未知错误") + "。可在任务栏图标上右键手动固定。";
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("autolaunch").addEventListener("change", (event) => api.setGeneral({ autoLaunch: event.target.checked }));
-  $("ad-block").addEventListener("change", (event) => api.setGeneral({ adBlock: event.target.checked }));
   $("perf-mode").addEventListener("change", (event) => api.setGeneral({ performanceMode: event.target.checked }));
   $("disclaimer-accepted").addEventListener("change", (event) => api.setGeneral({ disclaimerAccepted: event.target.checked }));
   $("shortcut-problems").addEventListener("keydown", (event) => {
@@ -541,6 +610,22 @@ function bind() {
       alert("恢复默认失败：" + err.message);
     }
   });
+  $("clear-web-cache").addEventListener("click", async () => {
+    const button = $("clear-web-cache");
+    button.disabled = true;
+    $("storage-status").textContent = "正在清理网页缓存…";
+    try {
+      const result = await api.clearWebCache();
+      const message = (result && result.message) || "网页缓存已清理。";
+      await refreshStorageStats();
+      $("storage-status").textContent = message;
+    } catch (err) {
+      $("storage-status").textContent = "清理失败：" + err.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   $("check-update").addEventListener("click", async () => {
     const button = $("check-update");
     const status = $("update-status");
@@ -605,6 +690,7 @@ async function boot() {
   api.onState(apply);
   apply(await api.getState());
   setSection(section, false);
+  refreshStorageStats();
   try {
     $("about-version").textContent = "版本 " + (await api.getVersion());
   } catch {

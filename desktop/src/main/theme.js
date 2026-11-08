@@ -127,19 +127,37 @@ function payload(cfg) {
   const isDark = mode === "dark";
   const colors = Object.assign({}, isDark ? DARK : LIGHT);
   colors.accent = resolveAccent(cfg, isDark);
+  /* 主题色不只驱动按钮和链接：所有玻璃承载面都在中性底色上混入同一色相，
+     外壳、设置窗和 WebContentsView 因此共享统一的着色玻璃。 */
+  const neutral = isDark ? DARK : LIGHT;
+  const tint = (base, amount) => mixHex(colors.accent, base, amount);
+  colors.bg = tint(neutral.bg, isDark ? 0.08 : 0.05);
+  colors.rail = tint(neutral.rail, isDark ? 0.14 : 0.09);
+  colors.title = tint(neutral.title, isDark ? 0.12 : 0.08);
+  colors.surface = tint(neutral.surface, isDark ? 0.18 : 0.1);
+  colors.surface2 = tint(neutral.surface2, isDark ? 0.22 : 0.13);
+  colors.editor = tint(neutral.editor, isDark ? 0.12 : 0.06);
+  colors.glassTint = colors.accent;
+  colors.glassTintSoft = hexToRgba(colors.accent, isDark ? 0.2 : 0.14);
   colors.accentSoft = hexToRgba(colors.accent, isDark ? 0.14 : 0.1);
   colors.accentLine = hexToRgba(colors.accent, isDark ? 0.65 : 0.55);
   /* 主按钮悬停色:替代 brightness(1.07) 滤镜(滤镜不在过渡列表里,悬停会突变) */
   colors.accentHover = isDark ? mixHex(colors.accent, "#ffffff", 0.92) : mixHex(colors.accent, "#101218", 0.9);
   colors.accentFill = isDark ? mixHex(colors.accent, "#101218", 0.78) : colors.accent;
-  colors.onAccent = contrast("#ffffff", colors.accentFill) >= 4.5 ? "#ffffff" : "#101218";
+  // 洛谷主按钮使用白字（官方蓝约 3.1:1，满足大字号/按钮图形的最低可读阈值）；
+  // 只有真正很浅的自定义 accent 才切换为深色字，避免蓝底出现截图里的灰字。
+  const whiteOnAccent = contrast("#ffffff", colors.accentFill);
+  const darkOnAccent = contrast("#101218", colors.accentFill);
+  colors.onAccent = whiteOnAccent >= 3 || whiteOnAccent >= darkOnAccent ? "#ffffff" : "#101218";
   colors.accentText = readableAccent(colors.accent, isDark, [colors.bg, colors.surface]);
-  colors.borderStrong = isDark ? "rgba(255,255,255,0.18)" : "rgba(22,24,31,0.22)";
-  colors.divider = isDark ? "rgba(255,255,255,0.07)" : "rgba(22,24,31,0.08)";
-  colors.hover = isDark ? "rgba(255,255,255,0.06)" : "rgba(22,24,31,0.05)";
-  colors.pressed = isDark ? "rgba(255,255,255,0.10)" : "rgba(22,24,31,0.09)";
+  colors.border = hexToRgba(colors.accent, isDark ? 0.16 : 0.14);
+  colors.borderStrong = hexToRgba(colors.accent, isDark ? 0.3 : 0.26);
+  colors.divider = hexToRgba(colors.accent, isDark ? 0.1 : 0.09);
+  colors.hover = hexToRgba(colors.accent, isDark ? 0.1 : 0.08);
+  colors.pressed = hexToRgba(colors.accent, isDark ? 0.16 : 0.13);
   colors.shadow = isDark ? "rgba(0,0,0,0.45)" : "rgba(16,24,40,0.14)";
-  colors.highlight = isDark ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.85)";
+  colors.highlight = hexToRgba(colors.accent, isDark ? 0.22 : 0.16);
+  colors.scrim = hexToRgba(tint(isDark ? "#080a0e" : "#141820", 0.18), isDark ? 0.45 : 0.24);
 
   const material = clamp(cfg.appearance.material, 0, 100, 55);
   const glass = clamp(cfg.appearance.glass, 0, 100, 45);

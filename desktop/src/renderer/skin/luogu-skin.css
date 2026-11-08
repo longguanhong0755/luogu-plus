@@ -9,7 +9,7 @@
 }
 
 html {
-  background: var(--lg-bg) !important;
+  background: transparent !important;
 }
 
 body {
@@ -29,7 +29,8 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: var(--lg-bg);
+  /* 外壳已经绘制唯一的可调纱层，页面内不再叠第二层底色。 */
+  background: transparent;
   pointer-events: none;
 }
 html,
@@ -67,6 +68,15 @@ body,
   margin-top: 0 !important;
   padding-top: var(--lg-gutter-top, 20px) !important;
   box-sizing: border-box;
+}
+/* 官网给已被隐藏的站内侧栏预留了 64px margin；桌面版已有外壳侧栏，
+   这笔占位在 IDE 半宽视口里会变成一大片左侧空白。 */
+#app > .main-container.lside-nav,
+#app > .main-container.rside-nav {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 #app .theme-page::before,
@@ -818,12 +828,18 @@ body,
 }
 /* 站点把灰色按钮的文字写死成 #595959，深色卡片上只有 1.5:1：
    登录页“通过通行密钥登录”因此像消失了。禁用态也要能读出来。 */
-#app button.lcolor-var-grey-4,
-#app a.lcolor-var-grey-4,
-#app .lauth-container button[class*="lcolor-var-grey"],
-#app .lauth-container a[class*="lcolor-var-grey"] {
+#app button.lcolor-var-grey-4:not(.solid):not(.primary),
+#app a.lcolor-var-grey-4:not(.solid):not(.primary),
+#app .lauth-container button[class*="lcolor-var-grey"]:not(.solid):not(.primary),
+#app .lauth-container a[class*="lcolor-var-grey"]:not(.solid):not(.primary) {
   color: var(--lg-text-3) !important;
   border-color: var(--lg-border) !important;
+}
+/* 洛谷“自测”同时带 solid 和 grey 类；实心按钮必须由 accent 规则接管，
+   不能被灰色按钮补丁改成深灰字。图标使用 currentColor 一并恢复。 */
+#app button.solid :is(svg, i, .fa),
+#app a.solid :is(svg, i, .fa) {
+  color: inherit !important;
 }
 
 /* ---- 列表标题/摘要 ---- */

@@ -127,25 +127,55 @@ export function initChrome(actions) {
   }
 
   function updateAvatar(user) {
-    const url = user && user.avatar ? String(user.avatar) : "";
-    if (url) {
-      if (avatar.dataset.url !== url) {
-        avatar.dataset.url = url;
-        avatar.textContent = "";
-        const img = document.createElement("img");
-        img.src = url;
-        img.alt = (user && user.name) || "头像";
-        avatar.appendChild(img);
-      }
-      avatar.classList.toggle("guest", false);
-    } else {
-      if (avatar.dataset.url) {
-        avatar.dataset.url = "";
-        avatar.textContent = "";
-      }
-      if (!avatar.textContent) avatar.textContent = "洛";
-      avatar.classList.toggle("guest", !(user && user.loggedIn));
+    const fallbackText = String((user && user.name) || "洛").trim().slice(0, 1) || "洛";
+    let fallback = avatar.querySelector(".tb-avatar-fallback");
+    if (!fallback) {
+      fallback = document.createElement("span");
+      fallback.className = "tb-avatar-fallback";
+      avatar.prepend(fallback);
     }
+    fallback.textContent = fallbackText;
+
+    const rawUrl = user && user.avatar ? String(user.avatar).trim() : "";
+    let url = "";
+    if (rawUrl) {
+      try {
+        const resolved = rawUrl.startsWith("//") ? "https:" + rawUrl : rawUrl;
+        const parsed = new URL(resolved, "https://www.luogu.com.cn/");
+        if (parsed.protocol === "https:" || parsed.protocol === "http:" || parsed.protocol === "data:") {
+          url = parsed.href;
+        }
+      } catch {
+        url = "";
+      }
+    }
+    let image = avatar.querySelector("img");
+    if (!url) {
+      if (image) image.remove();
+      avatar.dataset.url = "";
+      avatar.classList.remove("has-avatar-image");
+      avatar.classList.toggle("guest", !(user && user.loggedIn));
+      return;
+    }
+
+    if (!image) {
+      image = document.createElement("img");
+      image.alt = "";
+      image.decoding = "async";
+      image.addEventListener("load", () => avatar.classList.add("has-avatar-image"));
+      image.addEventListener("error", () => {
+        avatar.classList.remove("has-avatar-image");
+        image.remove();
+        avatar.dataset.url = "";
+      });
+      avatar.appendChild(image);
+    }
+    if (avatar.dataset.url !== url) {
+      avatar.dataset.url = url;
+      image.src = url;
+    }
+    image.alt = (user && user.name) || "头像";
+    avatar.classList.toggle("guest", false);
   }
 
   function syncPin(pinned) {
@@ -248,9 +278,9 @@ export function initChrome(actions) {
     if (page.isProblem) {
       const group = document.createElement("div");
       group.className = "tb-actions";
-      group.appendChild(textButton(icon("list") + "提交记录", () => actions.problem({ action: "records", pid: page.pid })));
-      group.appendChild(textButton(icon("article") + "题解", () => actions.problem({ action: "solutions", pid: page.pid })));
-      const ide = textButton(icon("code") + "IDE", () => actions.ide(!page.ide));
+      group.appendChild(textButton(icon("list") + "<span>提交记录</span>", () => actions.problem({ action: "records", pid: page.pid })));
+      group.appendChild(textButton(icon("article") + "<span>题解</span>", () => actions.problem({ action: "solutions", pid: page.pid })));
+      const ide = textButton(icon("code") + "<span>IDE</span>", () => actions.ide(!page.ide));
       if (page.ide) {
         ide.classList.add("primary");
         ide.setAttribute("aria-pressed", "true");

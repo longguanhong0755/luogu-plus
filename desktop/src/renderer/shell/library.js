@@ -88,6 +88,11 @@ function fmtNum(value) {
   return String(n);
 }
 
+/* 通过人数/提交人数要求完整可读，不能走 1.2 万这样的缩写。 */
+function fmtExact(value) {
+  return new Intl.NumberFormat("zh-CN").format(Number(value) || 0);
+}
+
 function pad(n) {
   return String(n).padStart(2, "0");
 }
@@ -1188,18 +1193,88 @@ export function initLibrary(actions) {
     const foot = state.dom.foot;
     if (!foot) return;
     foot.textContent = "";
-    if (state.loading && state.items.length) {
-      foot.appendChild(el("span", "lib-loading", "加载中…"));
-      return;
-    }
-    const hasMore =
-      !state.error && !state.needLogin && (state.hasMore || state.items.length < state.total) && state.page > 0;
-    if (hasMore) {
-      const btn = el("button", "lib-more", "加载更多");
+    if (!state.page || !state.total) return;
+    const refreshingExisting = state.loading && state.items.length > 0;
+
+    const perPage = state.perPage || state.items.length;
+    if (!perPage) return;
+    const knownPages = Math.max(1, Math.ceil(state.total / perPage));
+    // 记录列表的 count 偶发不可用：hasMore 为真时至少保留下一页入口。
+    const totalPages = state.hasMore ? Math.max(state.page + 1, knownPages) : knownPages;
+    if (totalPages <= 1) return;
+
+    const nav = el("nav", "lib-pages");
+    nav.setAttribute("aria-label", "列表分页");
+
+    const addButton = (label, page, options = {}) => {
+      const btn = el("button", "lib-page" + (options.edge ? " edge" : ""), label);
       btn.type = "button";
-      btn.addEventListener("click", () => load(state, state.page + 1, { append: true }));
-      foot.appendChild(btn);
+      if (options.current) {
+        btn.classList.add("current");
+        btn.setAttribute("aria-current", "page");
+        btn.setAttribute("aria-label", `第 ${page} 页，当前页`);
+      } else {
+        btn.setAttribute("aria-label", typeof page === "number" ? `第 ${page} 页` : label);
+      }
+      if (options.disabled) {
+        btn.disabled = true;
+        btn.setAttribute("aria-disabled", "true");
+      } else {
+        btn.addEventListener("click", () => {
+          if (!state.loading && page !== state.page) load(state, page);
+        });
+      }
+      nav.appendChild(btn);
+    };
+
+    addButton("上一页", Math.max(1, state.page - 1), { edge: true, disabled: state.page <= 1 });
+
+    const wanted = new Set([1, totalPages, state.page - 2, state.page - 1, state.page, state.page + 1, state.page + 2]);
+    const pages = [...wanted].filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+    let previous = 0;
+    for (const page of pages) {
+      if (previous && page - previous > 1) {
+        nav.appendChild(el("span", "lib-page-gap", "…"));
+      }
+      addButton(String(page), page, { current: page === state.page });
+      previous = page;
     }
+
+    addButton("下一页", Math.min(totalPages, state.page + 1), {
+      edge: true,
+      disabled: state.page >= totalPages,
+    });
+    foot.appendChild(nav);
+    const jump = el("form", "lib-jump");
+    jump.setAttribute("aria-label", "快速跳转页码");
+    jump.appendChild(el("label", "lib-jump-label", "跳至"));
+    const input = el("input", "lib-jump-input");
+    input.type = "number";
+    input.min = "1";
+    input.max = String(totalPages);
+    input.step = "1";
+    input.value = String(state.page);
+    input.setAttribute("inputmode", "numeric");
+    input.setAttribute("aria-label", `页码，范围 1 到 ${totalPages}`);
+    const submit = el("button", "lib-page lib-jump-go", "GO");
+    submit.type = "submit";
+    submit.setAttribute("aria-label", "跳转到输入页码");
+    jump.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const page = Math.trunc(Number(input.value));
+      if (!Number.isFinite(page) || page < 1 || page > totalPages) {
+        input.setAttribute("aria-invalid", "true");
+        input.focus();
+        return;
+      }
+      input.removeAttribute("aria-invalid");
+      if (!state.loading && page !== state.page) load(state, page);
+    });
+    input.addEventListener("input", () => input.removeAttribute("aria-invalid"));
+    jump.append(input, submit);
+    foot.appendChild(jump);
+    foot.appendChild(el("span", "lib-page-total", `第 ${state.page} / ${totalPages} 页`));
+    if (refreshingExisting) foot.appendChild(el("span", "lib-loading", "更新中…"));
   }
 
   function rowFor(state, item) {
@@ -1207,7 +1282,7 @@ export function initLibrary(actions) {
 
     if (item.type === "problem") {
       row.appendChild(el("span", "lib-pid", item.pid));
-      const main = el("div", "lib-main");
+      const main = el("div", "lib-main lib-problem-main");
       main.appendChild(el("span", "lib-name", item.title));
       const meta = el("span", "lib-meta");
       const dot = el("span", "diff-dot");
@@ -1217,26 +1292,28 @@ export function initLibrary(actions) {
       meta.appendChild(el("span", "lib-sep", "·"));
       meta.appendChild(el("span", "", item.provider || "洛谷"));
       main.appendChild(meta);
+      const tagCell = el("span", "lib-tags lib-problem-tags");
       if (state.showTags && Array.isArray(item.tags) && item.tags.length) {
         const named = item.tags
           .map((id) => catalogTag(id))
           .filter((tag) => tag && Number(tag.id) > 0 && (Number(tag.type) === 2 || Number(tag.type) === 5));
-        if (named.length) {
-          const tags = el("span", "lib-tags");
-          for (const tag of named.slice(0, 4)) {
-            const chip = el("span", "lib-tag", tag.name);
-            chip.title = tag.name;
-            tags.appendChild(chip);
-          }
-          if (named.length > 4) tags.appendChild(el("span", "lib-tag more", "+" + (named.length - 4)));
-          main.appendChild(tags);
+        for (const tag of named.slice(0, 3)) {
+          const chip = el("span", "lib-tag", tag.name);
+          chip.title = tag.name;
+          tagCell.appendChild(chip);
         }
+        if (named.length > 3) tagCell.appendChild(el("span", "lib-tag more", "+" + (named.length - 3)));
+        if (named.length) tagCell.title = named.map((tag) => tag.name).join(" · ");
       }
       row.appendChild(main);
+      row.appendChild(tagCell);
       const stats = el("div", "lib-stats");
       const rate = item.submissions ? Math.round((item.accepted / item.submissions) * 100) : 0;
-      stats.appendChild(el("span", "lib-stat-strong", rate + "%"));
-      stats.appendChild(el("span", "lib-stat-weak", "通过率"));
+      const counts = `${fmtExact(item.accepted)} / ${fmtExact(item.submissions)}`;
+      const strong = el("span", "lib-stat-strong", counts);
+      strong.title = `通过 ${fmtExact(item.accepted)} 人，提交 ${fmtExact(item.submissions)} 人`;
+      stats.appendChild(strong);
+      stats.appendChild(el("span", "lib-stat-weak", `通过率 ${rate}%`));
       row.appendChild(stats);
       return row;
     }
@@ -1398,7 +1475,7 @@ export function initLibrary(actions) {
       state.perPage = res.perPage || 0;
       state.total = res.total || 0;
       state.categories = res.categories || [];
-      state.items = options.append ? state.items.concat(res.items || []) : res.items || [];
+      state.items = res.items || [];
       state.loadedAt = Date.now();
     }
     renderRows(state);

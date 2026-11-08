@@ -4,6 +4,36 @@
    这个 script 里），不依赖易变的私有 API。
    签到用页面内点击（洛谷的打卡本身是前端行为），提交先尝试接口、失败则回退。 */
 const { BrowserWindow, Notification } = require("electron");
+const { attachToWebContents: attachPasskeyGuard } = require("./passkey-guard");
+const LOAD_WAIT_KEY = Symbol("lg.loadWait");
+/* 隐藏数据窗会被多轮请求复用。等待加载时必须同时解除 did-stop-loading /
+   did-fail-load / destroyed 监听，否则超时后的 once 监听会跨请求累积。 */
+function waitForLoadStop(webContents, timeoutMs = 12000) {
+  if (!webContents || webContents.isDestroyed()) return Promise.resolve();
+  // 同一个隐藏 WebContents 上可能并发多个 exec。共享一个等待 Promise，
+  // 避免每个请求都往 EventEmitter 上挂一对 did-stop/did-fail 监听。
+  if (webContents[LOAD_WAIT_KEY]) return webContents[LOAD_WAIT_KEY];
+  const pending = new Promise((resolve) => {
+    let settled = false;
+    let timer = null;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      webContents.removeListener("did-stop-loading", done);
+      webContents.removeListener("did-fail-load", done);
+      webContents.removeListener("destroyed", done);
+      if (webContents[LOAD_WAIT_KEY] === pending) delete webContents[LOAD_WAIT_KEY];
+      resolve();
+    };
+    webContents.once("did-stop-loading", done);
+    webContents.once("did-fail-load", done);
+    webContents.once("destroyed", done);
+    timer = setTimeout(done, timeoutMs);
+  });
+  webContents[LOAD_WAIT_KEY] = pending;
+  return pending;
+}
 
 /* 验证码识别是可选能力（本机装了 python + ddddocr 才有），懒加载。 */
 let ocrMod = null;
@@ -215,10 +245,20 @@ class LuoguService {
     this.win = null;
     this.loadPromise = null;
     this.winIdleTimer = null;
-    this.user = { loggedIn: false, uid: null, name: "", avatar: "" };
+    this.user = {
+      loggedIn: false,
+      uid: null,
+      name: "",
+      avatar: "",
+      submittedProblemCount: null,
+      passedProblemCount: null,
+      ranking: null,
+    };
     this.home = {
       quote: quoteFor(new Date()),
       heat: [],
+      acProgress: [],
+      acRecentTotal: 0,
       contest: null,
       recent: [],
       punched: null,
@@ -227,6 +267,7 @@ class LuoguService {
       error: "",
     };
     this.refreshing = false;
+    this.refreshWaiters = [];
     this.lastRefresh = 0;
     this.libCache = new Map();
     this.tagsCache = null;
@@ -238,6 +279,7 @@ class LuoguService {
     this.onlineTimer = null;
     this.flushing = false;
     this.queueTimer = null;
+    this.contextStats = { direct: 0, browser: 0, last: '' };
   }
 
   init() {
@@ -281,7 +323,8 @@ class LuoguService {
       } catch {
         /* 主窗口未就绪时保持现状 */
       }
-    }, 10000);
+    }, 60000);
+    if (this.onlineTimer.unref) this.onlineTimer.unref();
   }
 
   setOnline(online) {
@@ -456,7 +499,6 @@ class LuoguService {
         backgroundThrottling: true,
       },
     });
-    this.win.loadURL("https://www.luogu.com.cn/");
     // 隐藏数据窗也锁导航：站内可跳，站外拒绝（不 openExternal——它没有用户可见面）；
     // window.open 一律拒绝，防止站内内容弹可见原生窗（继承登录会话）。
     this.win.webContents.on("will-navigate", (event, url) => {
@@ -477,12 +519,17 @@ class LuoguService {
     this.win.webContents.on("will-attach-webview", (event) => {
       event.preventDefault();
     });
-    this.loadPromise = new Promise((resolve) => {
-      const done = () => resolve();
-      this.win.webContents.once("did-stop-loading", done);
-      this.win.webContents.once("did-fail-load", done);
-      setTimeout(done, 12000);
-    });
+    const wc = this.win.webContents;
+    this.loadPromise = (async () => {
+      // 隐藏窗口没有可见登录页，但站点仍可能自动调用 WebAuthn；在所有文档
+      // 创建前拦住它，确保不会弹出 Windows 安全中心。
+      await attachPasskeyGuard(wc);
+      try {
+        await wc.loadURL("https://www.luogu.com.cn/");
+      } catch (err) {
+        console.error("[luogu] hidden window load:", err.message);
+      }
+    })();
     return this.win;
   }
 
@@ -493,13 +540,7 @@ class LuoguService {
     // reload/导航期间 executeJavaScript 会失败，这里统一等待
     try {
       const wc = this.win.webContents;
-      if (wc.isLoading()) {
-        await new Promise((resolve) => {
-          const done = () => resolve();
-          wc.once("did-stop-loading", done);
-          setTimeout(done, 10000);
-        });
-      }
+      if (wc.isLoading()) await waitForLoadStop(wc, 10000);
     } catch {
       /* ignore */
     }
@@ -521,52 +562,110 @@ class LuoguService {
       this.win.destroy();
       this.win = null;
       this.loadPromise = null;
-    }, 60000);
+    }, Math.max(5000, Number(process.env.LG_DATA_WINDOW_IDLE_MS) || 15000));
   }
 
   reloadHidden() {
     if (!this.win || this.win.isDestroyed()) return;
-    this.loadPromise = new Promise((resolve) => {
-      const done = () => resolve();
-      this.win.webContents.once("did-stop-loading", done);
-      this.win.webContents.once("did-fail-load", done);
-      setTimeout(done, 12000);
-    });
+    this.loadPromise = waitForLoadStop(this.win.webContents, 12000);
     this.win.webContents.reload();
   }
 
+  async fetchContextDirect(url) {
+    if (!this.ctx.session || typeof this.ctx.session.fetch !== 'function') {
+      return { ok: false, reason: 'no-session-fetch' };
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    let timedOut = false;
+    let timeoutTimer = null;
+    try {
+      const request = this.ctx.session.fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: { Accept: 'text/html,application/xhtml+xml' },
+      }).then(async (response) => {
+        const text = await response.text();
+        if (!response.ok) {
+          return { ok: false, status: response.status, reason: 'http', len: text.length };
+        }
+        const match = text.match(/<script[^>]*id=["']lentille-context["'][^>]*>([\s\S]*?)<\/script>/);
+        if (!match) {
+          return { ok: false, status: response.status, reason: 'no-ctx', len: text.length };
+        }
+        try {
+          return { ok: true, context: JSON.parse(match[1]), transport: 'session.fetch' };
+        } catch (error) {
+          return { ok: false, status: response.status, reason: 'parse', detail: String(error).slice(0, 120) };
+        }
+      }).catch((error) => ({ ok: false, reason: 'network', error: String(error).slice(0, 160) }));
+      const watchdog = new Promise((resolve) => {
+        timeoutTimer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          resolve({ ok: false, reason: 'timeout' });
+        }, 12000);
+      });
+      return await Promise.race([request, watchdog]);
+    } catch (error) {
+      return { ok: false, reason: timedOut ? 'timeout' : 'network', error: String(error).slice(0, 160) };
+    } finally {
+      clearTimeout(timer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    }
+  }
+
   async fetchContext(pathname) {
-    const url = pathname.startsWith("http") ? pathname : "https://www.luogu.com.cn" + pathname;
-    // 离线时页面 fetch 立刻失败，重试五次只是白等——直接走调用方的缓存回退
+    const url = pathname.startsWith('http') ? pathname : 'https://www.luogu.com.cn' + pathname;
+    // 离线时页面 fetch 立刻失败，重试只是白等——直接走调用方的缓存回退。
     if (!this.online) return null;
-    let lastFail = "";
-    for (let attempt = 0; attempt < 5; attempt++) {
+
+    // 常规读取只取 HTML 内的 lentille-context，不需要完整站点 renderer。
+    // 这样主页刷新、题库/记录分页不会为了抓一段 JSON 常驻隐藏 BrowserWindow。
+    const direct = await this.fetchContextDirect(url);
+    if (direct.ok && direct.context) {
+      this.contextStats.direct += 1;
+      this.contextStats.last = 'session.fetch';
+      return direct.context;
+    }
+
+    // 只有直连拿不到可解析上下文时才启用浏览器回退，兼容防爬页、验证码页
+    // 或未来需要站点脚本生成 DOM 的页面。成功一次后仍保持隐藏窗空闲回收。
+    this.contextStats.browser += 1;
+    this.contextStats.last = 'browser';
+    let lastFail = JSON.stringify(direct);
+    for (let attempt = 0; attempt < 3; attempt++) {
       const result = await this.exec(
         `(async () => {
           try {
-            const r = await fetch(${JSON.stringify(url)}, { credentials: "include", signal: AbortSignal.timeout(9000) });
+            const r = await fetch(${JSON.stringify(url)}, { credentials: 'include', signal: AbortSignal.timeout(9000) });
             const text = await r.text();
-            const m = text.match(/<script[^>]*id=["']lentille-context["'][^>]*>([\\s\\S]*?)<\\/script>/);
-            if (!m) return { ok: false, status: r.status, reason: "no-ctx", len: text.length, online: navigator.onLine };
+            const m = text.match(/<script[^>]*id=["']lentille-context["'][^>]*>([\s\S]*?)<\/script>/);
+            if (!m) return { ok: false, status: r.status, reason: 'no-ctx', len: text.length, online: navigator.onLine };
             try {
               return { ok: true, context: JSON.parse(m[1]), online: navigator.onLine };
             } catch (e) {
-              return { ok: false, status: r.status, reason: "parse", detail: String(e).slice(0, 120), online: navigator.onLine };
+              return { ok: false, status: r.status, reason: 'parse', detail: String(e).slice(0, 120), online: navigator.onLine };
             }
           } catch (e) {
             return { ok: false, error: String(e).slice(0, 120), online: navigator.onLine };
           }
         })()`
       );
-      // 页面上下文顺手回报 OS 网络状态：轮询之外最快的离线感知途径
-      if (result && typeof result.online === "boolean") this.setOnline(result.online);
+      if (result && typeof result.online === 'boolean') this.setOnline(result.online);
       if (result && result.ok && result.context) return result.context;
       if (result && result.online === false) return null;
       lastFail = JSON.stringify(result);
-      await delay(800);
+      await delay(600);
     }
-    console.error("[luogu] fetchContext failed", pathname, lastFail);
+    console.error('[luogu] fetchContext failed', pathname, lastFail);
     return null;
+  }
+
+  contextDiagnostics() {
+    return Object.assign({ hiddenWindow: !!(this.win && !this.win.isDestroyed()) }, this.contextStats);
   }
 
   async cookies() {
@@ -618,6 +717,46 @@ class LuoguService {
       if (!("uid" in item) || !("name" in item)) return false;
       return uid ? Number(item.uid) === Number(uid) : true;
     });
+  }
+
+  /* 个人中心把做题趋势放在 dailyCounts 中。字段在不同页面版本里可能是
+     [日期, 次数]、{ date, count } 或 { time, value }，这里统一归一化；
+     看不到公开数据时返回空数组，由最近提交回退。 */
+  parseDailyCounts(context) {
+    if (!context) return [];
+    const holder = findObject(context, (item) => item && item.dailyCounts && typeof item.dailyCounts === "object");
+    if (!holder) return [];
+    const rawList = Array.isArray(holder.dailyCounts)
+      ? holder.dailyCounts
+      : Object.entries(holder.dailyCounts).map(([date, count]) => ({ date, count }));
+    const out = [];
+    for (const raw of rawList) {
+      let date = "";
+      let count = 0;
+      if (Array.isArray(raw)) {
+        date = raw[0];
+        count = raw[1];
+      } else if (raw && typeof raw === "object") {
+        date = raw.date || raw.day || raw.time || raw.timestamp || raw.at || "";
+        count = raw.count ?? raw.value ?? raw.total ?? raw.num ?? 0;
+      } else {
+        continue;
+      }
+      // 官方 dailyCounts 的值为 [等级, 提交次数]；旧解析把数组直接 Number()
+      // 会得到 NaN 并显示成全零。兼容普通数字和 [次数, 等级] 两种变体。
+      if (Array.isArray(count)) {
+        const first = Number(count[0]) || 0;
+        const second = Number(count[1]) || 0;
+        count = first >= 1 && first <= 5 && second >= first ? second : first;
+      }
+      const numeric = Number(date);
+      let key = "";
+      if (Number.isFinite(numeric) && numeric > 0) key = dayKey(new Date(toMillis(numeric)));
+      else key = String(date || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+      out.push({ date: key, count: Math.max(0, Number(count) || 0) });
+    }
+    return out;
   }
 
   /* ---------- 原生列表 ---------- */
@@ -1008,28 +1147,73 @@ class LuoguService {
     return payload;
   }
 
-  buildHeat(records) {
+  buildHeat(records, dailyCounts) {
     const counts = new Map();
-    for (const record of records) {
-      const ms = toMillis(record.submitTime || record.time);
-      if (!ms) continue;
-      const key = dayKey(new Date(ms));
-      counts.set(key, (counts.get(key) || 0) + 1);
+    for (const item of Array.isArray(dailyCounts) ? dailyCounts : []) {
+      if (!item || !item.date) continue;
+      counts.set(String(item.date).slice(0, 10), Math.max(0, Number(item.count) || 0));
+    }
+    if (!counts.size) {
+      for (const record of records) {
+        const ms = toMillis(record.submitTime || record.time);
+        if (!ms) continue;
+        const key = dayKey(new Date(ms));
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
     }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const start = new Date(today);
-    start.setDate(start.getDate() - 139);
-    const cellByDate = new Map();
-    for (const [key, count] of counts) cellByDate.set(key, count);
+    // 与个人中心一致：26 周、以周日为一列，覆盖约半年。
+    const end = new Date(today);
+    end.setDate(today.getDate() + (6 - today.getDay()));
+    const start = new Date(end);
+    start.setDate(end.getDate() - 26 * 7 + 1);
     const days = [];
-    for (let i = 0; i < 140; i++) {
+    for (let i = 0; i < 26 * 7; i++) {
       const d = new Date(start);
       d.setDate(start.getDate() + i);
       const key = dayKey(d);
-      days.push({ date: key, count: cellByDate.get(key) || 0 });
+      days.push({ date: key, count: counts.get(key) || 0 });
     }
     return days;
+  }
+
+  /* 主页累计通过趋势：按题目去重，只统计首次通过，避免同一题重复提交把曲线抬高。 */
+  buildProgress(records, days = 30) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today);
+    start.setDate(today.getDate() - days + 1);
+    const startKey = dayKey(start);
+    const todayKey = dayKey(today);
+    const firstAccepted = new Map();
+    for (const record of records) {
+      if (Number(record && record.status) !== 12) continue;
+      const ms = toMillis(record.submitTime || record.time);
+      if (!ms) continue;
+      const problem = record.problem || {};
+      const pid = String(problem.pid || record.pid || "").toUpperCase();
+      if (!pid) continue;
+      if (!firstAccepted.has(pid) || ms < firstAccepted.get(pid)) firstAccepted.set(pid, ms);
+    }
+    const byDay = new Map();
+    for (const ms of firstAccepted.values()) {
+      const day = dayKey(new Date(ms));
+      // 窗口前已经 AC 过的老题，窗口内再次 AC 不算“新通过”。
+      if (day < startKey || day > todayKey) continue;
+      byDay.set(day, (byDay.get(day) || 0) + 1);
+    }
+    let cumulative = 0;
+    const points = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const date = dayKey(d);
+      const passed = byDay.get(date) || 0;
+      cumulative += passed;
+      points.push({ date, passed, cumulative });
+    }
+    return { points, total: firstAccepted.size };
   }
 
   buildRecent(records) {
@@ -1092,7 +1276,10 @@ class LuoguService {
   /* ---------- 主刷新 ---------- */
 
   async refresh(force = false) {
-    if (this.refreshing) return this.state();
+    if (this.refreshing) {
+      await new Promise((resolve) => this.refreshWaiters.push(resolve));
+      return this.state();
+    }
     if (!force && Date.now() - this.lastRefresh < 20000) return this.state();
     // 离线时保留现有/缓存数据不动，不要用一轮失败的抓取把好数据清掉
     if (!this.online) {
@@ -1102,12 +1289,18 @@ class LuoguService {
     this.refreshing = true;
     const prev = this.home;
     let networkFailed = false;
+    let stage = "login";
+    const slowTimer = setTimeout(() => {
+      console.warn("[luogu] refresh slow at " + stage);
+    }, 15000);
     try {
       const login = await this.loginState();
       this.user = { loggedIn: login.loggedIn, uid: login.uid, name: "", avatar: "" };
       const next = {
         quote: quoteFor(new Date()),
         heat: [],
+        acProgress: [],
+        acRecentTotal: 0,
         contest: null,
         contests: [],
         official: null,
@@ -1119,6 +1312,7 @@ class LuoguService {
       };
 
       // 比赛列表是公开数据：未登录也抓，主页不至于空着
+      stage = "contests";
       try {
         const contestContext = await this.fetchContext("/contest/list");
         const all = this.parseContests(contestContext);
@@ -1129,6 +1323,7 @@ class LuoguService {
       }
 
       // 0.7.2 官方主页融合块：比赛倒计时/欢迎/运势（旧版首页 DOM，游客可见倒计时）
+      stage = "official-home";
       try {
         next.official = await this.fetchOfficialHome();
       } catch (err) {
@@ -1136,42 +1331,42 @@ class LuoguService {
       }
 
       if (login.loggedIn) {
+        stage = "profile";
         let profileContext = null;
         if (login.uid) profileContext = await this.fetchContext("/user/" + login.uid);
         const profile = this.parseUser(profileContext, login.uid);
         if (profile) {
           this.user.name = String(profile.name || "");
           this.user.avatar = String(profile.avatar || "");
+          this.user.submittedProblemCount =
+            profile.submittedProblemCount == null ? null : Math.max(0, Number(profile.submittedProblemCount) || 0);
+          this.user.passedProblemCount =
+            profile.passedProblemCount == null ? null : Math.max(0, Number(profile.passedProblemCount) || 0);
+          this.user.ranking = profile.ranking == null ? null : Math.max(0, Number(profile.ranking) || 0);
         }
 
         let records = [];
-        // 热力图只要最近 140 天：翻页翻到早于窗口起点就可以停，别为边缘数据拉满 6 页
-        const heatWindowStart = Date.now() - 140 * 86400000;
-        for (let page = 1; page <= 6; page++) {
-          const context = await this.fetchContext(
-            `/record/list?user=${encodeURIComponent(login.uid)}&page=${page}`
-          );
-          // cookie 还在但服务端会话已过期时，记录页会返回 needLogin 错误页
-          if (context && context.data && context.data.errorCode) {
-            this.user.loggedIn = false;
-            next.error = "登录已过期，请重新登录";
-            break;
-          }
-          if (!context) {
-            networkFailed = true;
-            break;
-          }
-          const pageRecords = this.parseRecords(context);
-          if (!pageRecords.length) break;
-          records = records.concat(pageRecords);
-          if (pageRecords.length < 20) break;
-          const oldest = pageRecords.reduce((min, record) => {
-            const ms = toMillis(record.submitTime || record.time);
-            return ms && ms < min ? ms : min;
-          }, Infinity);
-          if (oldest < heatWindowStart) break;
+        // 最近提交只需要第一页；热力图直接消费个人中心 dailyCounts。
+        // 不再为自绘半年图翻 12 页记录，既保持官网口径又显著降低内存/请求量。
+        stage = "records";
+        const recordContext = await this.fetchContext(
+          `/record/list?user=${encodeURIComponent(login.uid)}&page=1`
+        );
+        // cookie 还在但服务端会话已过期时，记录页会返回 needLogin 错误页
+        if (recordContext && recordContext.data && recordContext.data.errorCode) {
+          this.user.loggedIn = false;
+          next.error = "登录已过期，请重新登录";
+        } else if (!recordContext) {
+          networkFailed = true;
+        } else {
+          records = this.parseRecords(recordContext);
         }
-        next.heat = this.buildHeat(records);
+        const dailyCounts = this.parseDailyCounts(profileContext);
+        stage = "assemble";
+        next.heat = this.buildHeat(records, dailyCounts);
+        const progress = this.buildProgress(records);
+        next.acProgress = progress.points;
+        next.acRecentTotal = progress.total;
         next.recent = this.buildRecent(records);
 
         const punch = await this.readPunchState();
@@ -1186,6 +1381,10 @@ class LuoguService {
         if (!next.contests.length && prev.contests && prev.contests.length) next.contests = prev.contests;
         if (!next.official && prev.official) next.official = prev.official;
         if (!next.heat.length && prev.heat && prev.heat.length) next.heat = prev.heat;
+        if (!next.acProgress.length && prev.acProgress && prev.acProgress.length) {
+          next.acProgress = prev.acProgress;
+          next.acRecentTotal = prev.acRecentTotal || 0;
+        }
         if (!next.recent.length && prev.recent && prev.recent.length) next.recent = prev.recent;
         if (next.punched === null && prev.punched !== null) {
           next.punched = prev.punched;
@@ -1196,12 +1395,30 @@ class LuoguService {
 
       this.home = next;
       this.lastRefresh = Date.now();
+      stage = "persist";
       this.persistSnapshot();
     } catch (err) {
-      this.home.error = err.message;
-      console.error("[luogu] refresh:", err.message);
+      const message = String((err && err.message) || "主页同步失败").slice(0, 240);
+      const hasUsableSnapshot = !!(
+        prev &&
+        (prev.updatedAt ||
+          (prev.heat || []).some((item) => Number(item.count) > 0) ||
+          (prev.acProgress || []).length ||
+          (prev.recent || []).length ||
+          (prev.contests || []).length ||
+          prev.official)
+      );
+      // 一次临时脚本/网络失败不能把已有主页推成「数据同步失败」大卡片；
+      // 保留上一份可用快照，下一轮静默重试即可。
+      this.home = hasUsableSnapshot
+        ? Object.assign({}, prev, { error: "" })
+        : Object.assign({}, prev || this.home, { error: message });
+      console.error("[luogu] refresh(" + stage + "):", message);
     } finally {
+      clearTimeout(slowTimer);
       this.refreshing = false;
+      const waiters = this.refreshWaiters.splice(0);
+      for (const resolve of waiters) resolve();
       if (this.ctx.emitState) this.ctx.emitState();
     }
     return this.state();
@@ -1219,69 +1436,156 @@ class LuoguService {
      昵称统一使用登录资料；无法识别的打卡容器文本必须丢弃，禁止整块文本回填。 */
   async fetchOfficialHome() {
     const data = await this.exec(`(() => {
-      const root = document.querySelector("#app-old .lg-index-content");
+      const root = document.querySelector("#app-old .lg-index-content") || document.querySelector("#app-old");
       if (!root) return { ok: false };
       const text = (el) => ((el && el.textContent) || "").replace(/\\s+/g, " ").trim();
+      const absolute = (href) => {
+        try { return new URL(href, location.origin).href; } catch { return ""; }
+      };
+      const articles = Array.from(root.querySelectorAll(".lg-article"));
+      const headingOf = (article) => text(article && article.querySelector("h2, h3, .panel-title"));
+      const findSection = (wanted) => articles.find((article) => headingOf(article) === wanted) || null;
+      const uniqueLinks = (node, limit = 40, pattern = "") => {
+        if (!node) return [];
+        const re = pattern ? new RegExp(pattern) : null;
+        return Array.from(node.querySelectorAll("a[href]"))
+          .map((a) => ({ title: text(a).slice(0, 120), url: absolute(a.getAttribute("href")) }))
+          .filter((item) => item.title && item.url && (!re || re.test(item.url)))
+          .filter((item, index, list) => list.findIndex((x) => x.url === item.url) === index)
+          .slice(0, limit);
+      };
+
       const countdowns = [];
-      const cal = root.querySelector(".am-u-md-12");
-      for (const raw of String((cal && cal.innerText) || "").split("\\n")) {
-        const s = raw.trim();
-        const m = s.match(/^距(.+)还剩\\s*(\\d+)\\s*天$/);
+      const countdownText = String((root.querySelector(".lg-punch") && root.querySelector(".lg-punch").innerText) || "");
+      for (const raw of countdownText.split("\\n")) {
+        const line = raw.replace(/\\s+/g, " ").trim();
+        const m = line.match(/距\\s*(.+?)\\s*还剩\\s*(-?\\d+)\\s*天/);
         if (m) countdowns.push({ name: m[1].trim(), days: Number(m[2]) });
       }
+
       const punch = root.querySelector(".lg-punch");
+      const punchText = punch ? String(punch.innerText || punch.textContent || "") : "";
+      const punchLines = punchText.split("\\n").map((line) => line.replace(/\\s+/g, " ").trim()).filter(Boolean);
       const resultNode = punch && punch.querySelector(".lg-punch-result, [class*='punch-result']");
-      const resultText = text(resultNode);
+      const resultText = text(resultNode) || (punchLines.find((line) => /大吉|中吉|小吉|末吉|大凶|凶|吉/.test(line)) || "");
       const fortuneResult = (resultText.match(/(大吉|中吉|小吉|末吉|大凶|凶|吉)/) || [])[1] || "";
-      const adviceNodes = punch ? Array.from(punch.querySelectorAll(".am-u-sm-6")) : [];
-      const advice = adviceNodes.map(text).filter(Boolean);
+      const adviceNodes = punch
+        ? Array.from(punch.querySelectorAll(".am-u-sm-6, .lg-punch-advice, [class*='fortune'], [class*='advice']"))
+        : [];
+      const advice = [];
+      for (const node of adviceNodes) {
+        const value = text(node);
+        if (value && !advice.includes(value)) advice.push(value);
+      }
+      for (const line of punchLines) {
+        if (/^[宜忌]\\s*[:：]/.test(line) && !advice.includes(line)) advice.push(line);
+      }
       const part = (prefix) => {
         const row = advice.find((item) => item.startsWith(prefix));
-        return row ? row.slice(prefix.length).replace(/^[\s:：]+/, "").replace(/[§·,，。;；\s]+$/g, "").slice(0, 18) : "";
+        return row ? row.slice(prefix.length).replace(/^[\\s:：]+/, "").replace(/[§·,，。;；\\s]+$/g, "").slice(0, 36) : "";
       };
       const fortuneGood = part("宜");
       const fortuneBad = part("忌");
+      const punched = /已打卡|已签到|今日已/.test(punchText);
+      const streakMatch = punchText.match(/(\\d+)\\s*天/);
       const fortune = fortuneResult || fortuneGood || fortuneBad
-        ? { result: fortuneResult.trim(), good: fortuneGood, bad: fortuneBad }
+        ? { result: fortuneResult, good: fortuneGood, bad: fortuneBad, advice, text: punchText }
         : null;
-      const findSection = (wanted) => {
-        const candidates = Array.from(root.querySelectorAll(".lg-article, .am-panel, .card, .section"));
-        return candidates.find((node) => {
-          const heading = node.querySelector("h2, h3, .title, .panel-title");
-          return heading && text(heading) === wanted;
-        }) || null;
-      };
-      const sectionText = (wanted) => {
-        const node = findSection(wanted);
-        return node ? text(node).slice(0, 320) : "";
-      };
-      const linksFor = (wanted, pattern) => {
-        const node = findSection(wanted);
-        if (!node) return [];
-        const re = new RegExp(pattern);
-        return Array.from(node.querySelectorAll("a[href]"))
-          .map((a) => ({
-            title: text(a).slice(0, 80),
-            url: new URL(a.getAttribute("href"), location.origin).href,
-          }))
-          .filter((item, index, list) => item.title && re.test(item.url) && list.findIndex((x) => x.url === item.url) === index)
-          .slice(0, 6);
-      };      const discussionNode = findSection("最近讨论");
-      const discussionLinks = discussionNode
-        ? Array.from(discussionNode.querySelectorAll('a[href*="/discuss/"]'))
-            .map((a) => ({ title: text(a).slice(0, 100), url: new URL(a.getAttribute("href"), location.origin).href }))
-            .filter((item, index, list) => item.title && list.findIndex((x) => x.url === item.url) === index)
-            .slice(0, 6)
+
+      const linksNode = findSection("友情链接");
+      const linkGroups = [];
+      if (linksNode) {
+        for (const p of Array.from(linksNode.querySelectorAll("p"))) {
+          const strong = p.querySelector("strong");
+          const links = uniqueLinks(p, 20);
+          if (links.length) linkGroups.push({ title: text(strong) || "相关链接", links });
+        }
+        if (!linkGroups.length) linkGroups.push({ title: "相关链接", links: uniqueLinks(linksNode, 40) });
+      }
+
+      const announcementNode = findSection("本站公告");
+      const discussionNode = findSection("最近讨论");
+      const contestNode = findSection("近期比赛");
+      const contestItems = contestNode
+        ? Array.from(contestNode.querySelectorAll("section.am-panel, [class*='contest']"))
+            .map((node) => {
+              const titleLink = node.querySelector("h3 a[href], h2 a[href], a[href]");
+              const title = text(titleLink);
+              if (!title) return null;
+              return {
+                title,
+                url: absolute(titleLink.getAttribute("href")),
+                badges: Array.from(node.querySelectorAll(".am-badge")).map(text).filter(Boolean).slice(0, 4),
+                meta: text(node.querySelector(".am-panel-bd, [class*='body']")).slice(0, 260),
+              };
+            })
+            .filter(Boolean)
+            .filter((item, index, list) => list.findIndex((x) => x.url === item.url && x.title === item.title) === index)
+            .slice(0, 8)
         : [];
+
+      const tasksFor = (wanted) => {
+        const node = findSection(wanted);
+        if (!node) return { title: wanted, text: "", items: [] };
+        const itemMap = new Map();
+        const candidates = Array.from(node.querySelectorAll("li, a[href], button, [role='button'], [class*='task'], [class*='mission'], [class*='todo']"));
+        const push = (element) => {
+          if (!element || element === node) return;
+          const lines = String(element.innerText || "")
+            .split("\\n")
+            .map((line) => line.replace(/\\s+/g, " ").trim())
+            .filter(Boolean)
+            .filter((line) => line !== wanted);
+          if (!lines.length) return;
+          const title = lines[0].slice(0, 180);
+          if (!title || title.length < 2) return;
+          const all = lines.join(" ");
+          const link = element.matches("a[href]") ? element : element.querySelector("a[href]");
+          const url = link ? absolute(link.getAttribute("href")) : "";
+          const meta = lines.slice(1, 5).join(" · ").slice(0, 260);
+          const progressMatch = all.match(/(\\d+\\s*\\/\\s*\\d+|\\d+\\s*%)/);
+          const item = {
+            title,
+            meta,
+            url,
+            progress: progressMatch ? progressMatch[1].replace(/\\s+/g, "") : "",
+            done: /已完成|已领取|已打卡/.test(all),
+          };
+          const key = [url, title, meta].join("|");
+          if (!itemMap.has(key)) itemMap.set(key, item);
+        };
+        for (const element of candidates.slice(0, 160)) push(element);
+        let items = Array.from(itemMap.values());
+        if (!items.length) {
+          const lines = String(node.innerText || "")
+            .split("\\n")
+            .map((line) => line.replace(/\\s+/g, " ").trim())
+            .filter(Boolean)
+            .filter((line) => line !== wanted);
+          items = lines.slice(0, 60).map((line) => ({ title: line.slice(0, 180), meta: "", url: "", progress: "", done: /已完成|已领取|已打卡/.test(line) }));
+        }
+        return { title: wanted, text: text(node).slice(0, 6000), items: items.slice(0, 60) };
+      };
+      const taskPlan = tasksFor("任务计划");
+      const taskData = taskPlan.items.length ? taskPlan : tasksFor("智能推荐");
+
+      const discussionLinks = uniqueLinks(discussionNode, 12, "/discuss/");
       return {
         ok: true,
-        countdowns: countdowns.slice(0, 3),
+        countdowns: countdowns.slice(0, 4),
         fortune,
+        punch: {
+          punched,
+          streak: streakMatch ? Number(streakMatch[1]) : 0,
+          text: punchText,
+        },
         sections: {
-          announcement: { text: sectionText("本站公告"), links: linksFor("本站公告", "^https://www\\.luogu\\.com\\.cn/") },
-          tasks: { text: sectionText("任务计划") || sectionText("智能推荐") },
-          links: { text: sectionText("友情链接") },
-          discussions: { items: discussionLinks },
+          announcement: { title: "本站公告", text: text(announcementNode).slice(0, 6000), links: uniqueLinks(announcementNode, 40) },
+          tasks: taskData,
+          links: { title: "友情链接", text: text(linksNode).slice(0, 6000), groups: linkGroups },
+          discussions: { title: "最近讨论", items: discussionLinks },
+          contests: { title: "近期比赛", items: contestItems },
+          quickJump: { title: "问题跳转", text: text(findSection("问题跳转")).slice(0, 500) },
         },
       };
     })()`);
@@ -1291,31 +1595,81 @@ class LuoguService {
 
   async readPunchState() {
     const result = await this.exec(`(() => {
-      const card = document.querySelector(".lg-punch") || document.querySelector('[class*="punch"]');
-      const text = card ? card.textContent || "" : "";
-      const buttons = Array.from(document.querySelectorAll("button, a, .am-btn"));
-      const target = buttons.find((b) => /打卡|签到/.test(b.textContent || ""));
-      const btnText = target ? target.textContent || "" : "";
+      const clean = (node) => String((node && node.textContent) || "").replace(/\\s+/g, " ").trim();
+      const cards = Array.from(document.querySelectorAll(
+        ".lg-punch, [class*='punch'], [class*='checkin'], [class*='check-in'], [class*='signin'], [class*='sign-in']"
+      ));
+      const controls = Array.from(document.querySelectorAll("button, a, [role='button'], [onclick], .am-btn"));
+      const target = controls.find((node) => /^(签到|打卡|已签到|已打卡|今日已签)/.test(clean(node)));
+      if (target) {
+        const panel = target.closest(".am-panel, .card, section, [class*='punch'], [class*='checkin'], [class*='signin']");
+        if (panel) cards.push(panel);
+      }
+      const uniqueCards = cards.filter((node, index) => node && cards.indexOf(node) === index);
+      const text = uniqueCards.map(clean).filter(Boolean).join(" ");
+      const btnText = target ? clean(target) : "";
       const streakMatch = (text + " " + btnText).match(/(\\d+)\\s*天/);
       return {
         punched: /已打卡|已签到|今日已/.test(text + " " + btnText),
         hasButton: !!target,
+        hasCard: uniqueCards.length > 0,
         streak: streakMatch ? Number(streakMatch[1]) : 0
       };
     })()`);
-    if (!result) return { punched: null, streak: 0 };
-    return { punched: result.punched || (result.hasButton === false ? null : false), streak: result.streak || 0 };
+    if (!result) return { punched: null, hasButton: false, hasCard: false, streak: 0 };
+    return {
+      punched: result.punched || (result.hasCard && result.hasButton === false ? false : null),
+      hasButton: !!result.hasButton,
+      hasCard: !!result.hasCard,
+      streak: result.streak || 0,
+    };
   }
 
   async checkin() {
     if (!this.online) return { ok: false, message: "当前离线，签到需要联网后进行。" };
+    const refreshedMs = Number(this.home && this.home.updatedAt) || 0;
+    const homeAge = Date.now() - refreshedMs;
+    const homeDay = refreshedMs ? new Date(refreshedMs).toDateString() : "";
+    const today = new Date().toDateString();
+    if (homeDay === today && homeAge < 30 * 60 * 1000 && this.home && this.home.punched === true) {
+      const refreshed = await this.refresh(true);
+      const payload = refreshed && refreshed.home ? refreshed.home : this.home;
+      return {
+        ok: true,
+        already: true,
+        home: refreshed,
+        fortune: payload && payload.official ? payload.official.fortune || null : null,
+      };
+    }
     const punchState = await this.readPunchState();
-    if (punchState.punched) return { ok: true, already: true };
+    if (punchState.punched) {
+      // 已签到时仍强制同步一次，确保历史登录会话能立刻拿到当天真实运势。
+      const refreshed = await this.refresh(true);
+      return {
+        ok: true,
+        already: true,
+        home: refreshed,
+        fortune: refreshed && refreshed.home && refreshed.home.official ? refreshed.home.official.fortune || null : null,
+      };
+    }
     const clickScript = `(() => {
-      const buttons = Array.from(document.querySelectorAll("button, a, [role=button], .am-btn"));
-      const target = buttons.find((b) => /打卡|签到/.test(b.textContent || ""));
+      const clean = (node) => String((node && node.textContent) || "").replace(/\\s+/g, " ").trim();
+      const cards = Array.from(document.querySelectorAll(
+        ".lg-punch, [class*='punch'], [class*='checkin'], [class*='check-in'], [class*='signin'], [class*='sign-in']"
+      ));
+      const scoped = Array.from(document.querySelectorAll(
+        ".lg-punch button, .lg-punch a, [class*='punch'] button, [class*='punch'] a, " +
+        "[class*='checkin'] button, [class*='checkin'] a, [class*='signin'] button, [class*='signin'] a, " +
+        "[name='punch'], [name='checkin'], [role='button'], .am-btn"
+      ));
+      const controls = Array.from(new Set(scoped.concat(
+        Array.from(document.querySelectorAll("button, a, [role='button'], [onclick], .am-btn"))
+      )));
+      const target = controls.find((node) => /^(签到|打卡|已签到|已打卡|今日已签)/.test(clean(node)));
       if (!target) return { ok: false, reason: "not-found" };
-      if (/已打卡|已签到/.test(target.textContent || "")) return { ok: true, already: true };
+      const panel = target.closest(".am-panel, .card, section, [class*='punch'], [class*='checkin'], [class*='signin']");
+      if (/已打卡|已签到|今日已/.test(clean(panel) + " " + clean(target))) return { ok: true, already: true };
+      if (target.disabled || target.classList.contains("am-disabled")) return { ok: false, reason: "disabled" };
       target.click();
       return { ok: true, clicked: true };
     })()`;
@@ -1327,11 +1681,45 @@ class LuoguService {
       result = await this.exec(clickScript);
     }
     if (!result || !result.ok) {
-      return { ok: false, message: "没找到签到入口，已打开洛谷首页，可以在页面里手动签到。" };
+      // 页面 DOM 已更新但选择器没命中时，先用一次完整同步确认是否其实已签到，
+      // 避免把“今日已完成”误报成失败。
+      const refreshed = await this.refresh(true);
+      const payload = refreshed && refreshed.home ? refreshed.home : this.home;
+      if (payload && payload.punched === true) {
+        return {
+          ok: true,
+          already: true,
+          home: refreshed,
+          fortune: payload.official ? payload.official.fortune || null : null,
+        };
+      }
+      return { ok: false, uncertain: true, message: "暂时没找到签到入口，可能今天已经完成。请刷新主页确认。" };
     }
-    await delay(1800);
-    const refreshed = await this.refresh(true);
-    return { ok: true, already: !!result.already, home: refreshed };
+    let confirmed = false;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await delay(attempt === 0 ? 1200 : 650);
+      const stateAfter = await this.readPunchState();
+      if (stateAfter && stateAfter.punched) {
+        confirmed = true;
+        break;
+      }
+    }
+    let refreshed = null;
+    if (confirmed) refreshed = await this.refresh(true);
+    if (!confirmed) {
+      // 页面 DOM 尚未换新时再完整同步一次；refresh 内部也会重新读取打卡卡。
+      refreshed = await this.refresh(true);
+      confirmed = !!(refreshed && refreshed.home && refreshed.home.punched);
+    }
+    if (!confirmed) {
+      return { ok: false, message: "洛谷没有确认签到成功，请稍后重试。" };
+    }
+    return {
+      ok: true,
+      already: !!result.already,
+      home: refreshed,
+      fortune: refreshed && refreshed.home && refreshed.home.official ? refreshed.home.official.fortune || null : null,
+    };
   }
 
   /* ---------- 提交 ---------- */

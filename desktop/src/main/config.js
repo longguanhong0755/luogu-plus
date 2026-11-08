@@ -59,6 +59,9 @@ const DEFAULTS = {
     customSections: true,
     homeRecent: true,
     homeOfficial: true,
+    homeCountdown: true,
+    homeQuickJump: true,
+    homeProgress: true,
     homeContest: true,
     homeHeat: true,
     homeFirstRun: true,
@@ -170,7 +173,8 @@ function sanitize() {
   const g = data.general;
   if (!["tray", "quit"].includes(g.closeAction)) g.closeAction = "tray";
   g.autoLaunch = !!g.autoLaunch;
-  g.adBlock = !!g.adBlock;
+  // 广告与推广始终拦截，不向用户暴露关闭入口。
+  g.adBlock = true;
   g.performanceMode = !!g.performanceMode;
   g.firstRunSeen = !!g.firstRunSeen;
   g.disclaimerAccepted = !!g.disclaimerAccepted;
@@ -178,6 +182,9 @@ function sanitize() {
 
   const featureKeys = Object.keys(DEFAULTS.features);
   data.features = Object.assign({}, data.features);
+  for (const key of Object.keys(data.features)) {
+    if (!featureKeys.includes(key)) delete data.features[key];
+  }
   for (const key of featureKeys) data.features[key] = !!data.features[key];
 
   const n = data.notify;
@@ -186,8 +193,8 @@ function sanitize() {
   n.contestLeadMin = Math.round(clamp(n.contestLeadMin, 1, 60, 10));
 
   const w = data.window;
-  w.width = Math.round(clamp(w.width, 1000, 10000, 1280));
-  w.height = Math.round(clamp(w.height, 640, 10000, 820));
+  w.width = Math.round(clamp(w.width, 640, 10000, 1280));
+  w.height = Math.round(clamp(w.height, 480, 10000, 820));
   w.x = Number.isFinite(Number(w.x)) ? Math.round(Number(w.x)) : null;
   w.y = Number.isFinite(Number(w.y)) ? Math.round(Number(w.y)) : null;
   w.maximized = !!w.maximized;

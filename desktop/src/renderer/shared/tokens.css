@@ -1,6 +1,6 @@
 /* 设计令牌：所有界面只消费这里和主题派生变量。
    规则：4px 基线；中文最小 12px；圆角只用 4/6/8/12/999；
-   正文内容面 >= 91% 不透明，玻璃只用于外壳与临时浮层。 */
+   内容区只绘制一层可调纱层，玻璃强度由主题变量统一控制。 */
 :root {
   --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;

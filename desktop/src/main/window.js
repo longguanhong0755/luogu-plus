@@ -9,14 +9,24 @@ const TITLE_H = 40;
 const RAIL_W = 208;
 const RAIL_COLLAPSED_W = 64;
 const TOOLBAR_H = 44;
+const APP_USER_MODEL_ID = "com.luogulab.desktop";
+const APP_DISPLAY_NAME = "洛谷桌面版";
+const MIN_WINDOW_W = 640;
+const MIN_WINDOW_H = 480;
+const MIN_SETTINGS_W = 640;
+const MIN_SETTINGS_H = 480;
 
 function clamp(value, lo, hi) {
   return Math.min(hi, Math.max(lo, value));
 }
 
 function fitBoundsToArea(saved, area) {
-  const width = Math.min(Math.max(1000, Math.round(saved.width || 1280)), area.width);
-  const height = Math.min(Math.max(640, Math.round(saved.height || 820)), area.height);
+  // Windows Snap 左/右半屏在 1920px 显示器上是 960px；旧的最小 1000px
+  // 会把半屏强行撑宽。默认仍打开 1280×820，只降低用户主动缩放的下限。
+  const minWidth = Math.min(MIN_WINDOW_W, area.width);
+  const minHeight = Math.min(MIN_WINDOW_H, area.height);
+  const width = Math.min(Math.max(minWidth, Math.round(saved.width || 1280)), area.width);
+  const height = Math.min(Math.max(minHeight, Math.round(saved.height || 820)), area.height);
   const hasPosition = Number.isFinite(saved.x) && Number.isFinite(saved.y);
   const x = hasPosition
     ? clamp(Math.round(saved.x), area.x, Math.max(area.x, area.x + area.width - width))
@@ -41,7 +51,32 @@ function sanitizeBounds(saved) {
   return fitBoundsToArea(saved, display.workArea);
 }
 function overlayFor(colors) {
-  return { color: colors.title, symbolColor: colors.text2, height: TITLE_H };
+  // Windows 会自行绘制 overlay 的底色。标题栏本身已经是半透明玻璃，
+  // 若这里再传主题色会在右上角形成一块不透明矩形；透明 overlay 让
+  // 原生最小化/最大化/关闭按钮直接覆盖在外壳玻璃上。
+  return { color: "#00000000", symbolColor: colors.text2, height: TITLE_H };
+}
+
+function relaunchCommand() {
+  const exe = process.execPath.replace(/"/g, '\\"');
+  if (app.isPackaged) return `"${exe}"`;
+  const appPath = app.getAppPath().replace(/"/g, '\\"');
+  return `"${exe}" "${appPath}"`;
+}
+
+function applyAppDetails(win) {
+  if (!win || win.isDestroyed() || process.platform !== "win32") return;
+  try {
+    win.setAppDetails({
+      appId: APP_USER_MODEL_ID,
+      appIconPath: path.join(ASSETS, "icon.ico"),
+      appIconIndex: 0,
+      relaunchCommand: relaunchCommand(),
+      relaunchDisplayName: APP_DISPLAY_NAME,
+    });
+  } catch (err) {
+    console.warn("[window] taskbar identity:", err.message);
+  }
 }
 
 function createMainWindow(ctx) {
@@ -54,8 +89,8 @@ function createMainWindow(ctx) {
     height: bounds.height,
     x: bounds.x === null ? undefined : bounds.x,
     y: bounds.y === null ? undefined : bounds.y,
-    minWidth: 1000,
-    minHeight: 640,
+    minWidth: Math.min(MIN_WINDOW_W, screen.getPrimaryDisplay().workArea.width),
+    minHeight: Math.min(MIN_WINDOW_H, screen.getPrimaryDisplay().workArea.height),
     show: false,
     backgroundColor: t.colors.bg,
     icon: path.join(ASSETS, "icon.ico"),
@@ -71,6 +106,7 @@ function createMainWindow(ctx) {
       backgroundThrottling: !ctx.smoke,
     },
   });
+  applyAppDetails(win);
 
   win.loadFile(path.join(RENDERER, "shell", "index.html"));
 
@@ -129,11 +165,17 @@ function createSettingsWindow(ctx) {
     return ctx.settingsWin;
   }
   const t = ctx.theme;
+  const display = ctx.win && !ctx.win.isDestroyed()
+    ? screen.getDisplayMatching(ctx.win.getBounds())
+    : screen.getPrimaryDisplay();
+  const bounds = fitBoundsToArea({ width: 860, height: 640 }, display.workArea);
   const win = new BrowserWindow({
-    width: 860,
-    height: 640,
-    minWidth: 760,
-    minHeight: 560,
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    minWidth: Math.min(MIN_SETTINGS_W, display.workArea.width),
+    minHeight: Math.min(MIN_SETTINGS_H, display.workArea.height),
     show: false,
     parent: ctx.win && !ctx.win.isDestroyed() ? ctx.win : undefined,
     backgroundColor: t.colors.bg,
@@ -147,6 +189,7 @@ function createSettingsWindow(ctx) {
       sandbox: true,
     },
   });
+  applyAppDetails(win);
   win.loadFile(path.join(RENDERER, "settings", "index.html"));
   // 设置窗永不导航：外链走安全出口，其余窗口打开请求一律拒绝
   win.webContents.on("will-navigate", (event) => {
@@ -187,9 +230,15 @@ function applyTheme(win, t) {
 
 module.exports = {
   TITLE_H,
+  APP_USER_MODEL_ID,
+  APP_DISPLAY_NAME,
   RAIL_W,
   RAIL_COLLAPSED_W,
   TOOLBAR_H,
+  MIN_WINDOW_W,
+  MIN_WINDOW_H,
+  MIN_SETTINGS_W,
+  MIN_SETTINGS_H,
   createMainWindow,
   createSettingsWindow,
   applyTheme,

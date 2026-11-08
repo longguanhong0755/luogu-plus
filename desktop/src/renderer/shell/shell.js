@@ -88,6 +88,8 @@ function homeKey(state) {
       ? JSON.stringify(home.official.countdowns || []) + "|" + JSON.stringify(home.official.fortune || null)
       : "",
     (home.heat || []).length,
+    home.acRecentTotal || 0,
+    (home.acProgress || []).length,
     JSON.stringify(state.features || {}),
     state.online === false ? "off" : "on",
     (state.queue && state.queue.items || []).map((item) => [item.id, item.status, item.tries]).join(","),
@@ -133,6 +135,7 @@ async function boot() {
     nav: (target) => window.lg.nav(target),
     openProblem: (pid) => window.lg.openProblem(pid),
     openDetail: (payload) => window.lg.openDetail(payload),
+    openRandomJump: () => overlays.openRandomJump(),
     queueAction: (payload) => window.lg.queueAction(payload),
     setGeneral: (patch) => window.lg.setGeneral(patch),
   };
@@ -304,6 +307,20 @@ async function boot() {
   window.lg.onRailLayout((payload) => {
     const width = Number(payload && payload.width);
     if (Number.isFinite(width) && width > 0) chrome.setRailWidth(width);
+    const workspace = document.getElementById("workspace");
+    if (workspace) workspace.classList.toggle("ide-vertical", !!(payload && payload.ideVertical));
+  });
+  const pageFreeze = document.getElementById("page-freeze");
+  window.lg.onPageFreeze((payload) => {
+    if (!pageFreeze) return;
+    const dataUrl = payload && typeof payload.dataUrl === "string" ? payload.dataUrl : "";
+    if (dataUrl.startsWith("data:image/")) {
+      pageFreeze.style.backgroundImage = `url("${dataUrl}")`;
+      pageFreeze.hidden = false;
+    } else {
+      pageFreeze.hidden = true;
+      pageFreeze.style.backgroundImage = "";
+    }
   });
   window.lg.onCommand((name) => {
     const fromPage = { fromPage: true };

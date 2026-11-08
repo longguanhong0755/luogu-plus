@@ -224,6 +224,7 @@ export function initEditor(actions) {
     resizer.setPointerCapture(event.pointerId);
     resizer.classList.add("dragging");
     document.body.classList.add("resizing");
+    document.body.classList.toggle("resizing-y", workspace.classList.contains("ide-vertical"));
   }
 
   let splitRaf = 0;
@@ -232,8 +233,10 @@ export function initEditor(actions) {
   resizer.addEventListener("pointermove", (event) => {
     if (!resizer.classList.contains("dragging")) return;
     const rect = workspace.getBoundingClientRect();
-    if (!rect.width) return;
-    nextSplit = 1 - (event.clientX - rect.left) / rect.width;
+    if (!rect.width || !rect.height) return;
+    nextSplit = workspace.classList.contains("ide-vertical")
+      ? 1 - (event.clientY - rect.top) / rect.height
+      : 1 - (event.clientX - rect.left) / rect.width;
     if (!splitRaf) {
       splitRaf = requestAnimationFrame(() => {
         splitRaf = 0;
@@ -243,15 +246,18 @@ export function initEditor(actions) {
   });
   const endDrag = () => {
     resizer.classList.remove("dragging");
-    document.body.classList.remove("resizing");
+    document.body.classList.remove("resizing", "resizing-y");
   };
   resizer.addEventListener("pointerup", endDrag);
   resizer.addEventListener("pointercancel", endDrag);
   resizer.addEventListener("dblclick", () => applySplit(0.5));
   resizer.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const vertical = workspace.classList.contains("ide-vertical");
+    const decrease = vertical ? "ArrowUp" : "ArrowLeft";
+    const increase = vertical ? "ArrowDown" : "ArrowRight";
+    if (event.key !== decrease && event.key !== increase) return;
     event.preventDefault();
-    applySplit(split + (event.key === "ArrowLeft" ? 0.03 : -0.03));
+    applySplit(split + (event.key === decrease ? 0.03 : -0.03));
   });
 
   submit.addEventListener("click", async () => {

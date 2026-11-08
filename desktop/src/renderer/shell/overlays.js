@@ -122,11 +122,25 @@ export function initOverlays(actions) {
     if (palFoot) palFoot.textContent = featureState.betterSearch === false
       ? "题号支持 P1001 / 1001 / 13A · ↵ 跳转 · Esc 关闭"
       : "题号支持 P1001 / 1001 / 13A · ↵ 跳转 · 难度/题库随机 · Esc 关闭";
-    if (jumpStatus) jumpStatus.textContent = "可输入题号，或按难度与题库随机跳题";
+    const randomMode = options && options.random === true;
+    if (jumpStatus) {
+      jumpStatus.textContent = randomMode
+        ? "选择难度与题库，然后点击「按条件随机」"
+        : "可输入题号，或按难度与题库随机跳题";
+      jumpStatus.classList.remove("bad");
+    }
     if (jumpRandom) jumpRandom.disabled = false;
     actions.overlay(true);
-    input.focus();
-    input.select();
+    if (randomMode && jumpRandom && !jumpOptions.hidden) {
+      requestAnimationFrame(() => jumpRandom.focus());
+    } else {
+      input.focus();
+      input.select();
+    }
+  }
+
+  function openRandomJump() {
+    openJump({ random: true });
   }
 
   function openUserSearch(options = {}) {
@@ -544,5 +558,14 @@ export function initOverlays(actions) {
     featureState = next && typeof next === "object" ? next : {};
   }
 
-  return { setFeatures, openPalette, openJump, openUserSearch, openSwitcher, close, isOpen: () => !overlay.hidden };
+  return {
+    setFeatures,
+    openPalette,
+    openJump,
+    openRandomJump,
+    openUserSearch,
+    openSwitcher,
+    close,
+    isOpen: () => !overlay.hidden,
+  };
 }
