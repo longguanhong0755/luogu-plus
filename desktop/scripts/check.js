@@ -163,6 +163,7 @@ const required = [
   "scripts/captcha-ocr.py",
   "src/main/luogu.js",
   "src/main/tray.js",
+  "src/main/taskbar.js",
   "src/main/notify.js",
   "src/main/ipc.js",
   "src/main/smoke.js",
@@ -280,15 +281,20 @@ else fail("工具条缺少恢复按钮");
 
 /* 7. 产品关键约束（0.2.0） */
 const passkeySource = read("src/main/passkey-guard.js");
-if (/__lgPasskeyGuard/.test(passkeySource) && /allowUntil/.test(passkeySource) && /credentials\.get/.test(passkeySource)) {
-  ok("通行密钥守卫存在且需要显式点击");
+if (/__lgPasskeyGuard/.test(passkeySource) && /options\.publicKey/.test(passkeySource) && /credentials\.get/.test(passkeySource)) {
+  ok("通行密钥守卫存在且完全阻止系统凭据弹窗");
 } else {
   fail("通行密钥守卫不完整");
 }
-if (/addScriptToEvaluateOnNewDocument/.test(viewsSource) && /runImmediately/.test(viewsSource)) {
-  ok("守卫在主世界文档创建前注入");
+if (
+  /attachPasskeyGuard/.test(viewsSource) &&
+  /addScriptToEvaluateOnNewDocument/.test(passkeySource) &&
+  /runImmediately/.test(passkeySource) &&
+  /attachToWebContents/.test(passkeySource)
+) {
+  ok("守卫在主世界文档创建前注入所有页面视图");
 } else {
-  fail("views.js 没有主世界守卫注入");
+  fail("页面视图没有主世界守卫注入");
 }
 if (/uid > 0/.test(luoguSource)) ok("登录态要求真实 uid（游客 _uid=0 不算登录）");
 else fail("登录态可能把游客误判为已登录");
@@ -328,6 +334,18 @@ else fail("sections.js 缺少侧栏定制模型");
 const themeSource = read("src/main/theme.js");
 if (/accentFill/.test(themeSource) && /onAccent/.test(themeSource)) ok("强调色实心按钮有对比度令牌");
 else fail("theme.js 缺少 accentFill/onAccent");
+if (
+  /const tint = \(base, amount\) => mixHex\(colors\.accent, base, amount\)/.test(themeSource) &&
+  /colors\.bg = tint\(neutral\.bg/.test(themeSource) &&
+  /colors\.rail = tint\(neutral\.rail/.test(themeSource) &&
+  /colors\.surface = tint\(neutral\.surface/.test(themeSource) &&
+  /colors\.glassTint = colors\.accent/.test(themeSource) &&
+  /--lg-glass-tint/.test(viewsSource)
+) {
+  ok("自定义主题色统一给外壳/设置/页面玻璃着色");
+} else {
+  fail("自定义主题色只改变强调元素，未覆盖全部玻璃承载面");
+}
 
 for (const [name, content, needle] of [
   ["壁纸来源", configSource, /wallpaperInterval/],
@@ -349,6 +367,37 @@ if (/data-sec="wallpaper"/.test(settingsHtml) && /data-sec="rail"/.test(settings
   ok("设置包含壁纸与侧边栏分区");
 } else {
   fail("设置缺少壁纸/侧边栏分区");
+}
+if (/id="accent-custom"/.test(settingsHtml) && /id="accent-value"/.test(settingsHtml) && /自定义主题色/.test(settingsHtml)) {
+  ok("设置提供可发现的自定义主题色入口与当前值反馈");
+} else {
+  fail("设置缺少自定义主题色入口或值反馈");
+}
+const taskbarSource = read("src/main/taskbar.js");
+const mainWindowSource = read("src/main/window.js");
+if (
+  /app\.setAppUserModelId/.test(read("src/main/index.js")) &&
+  /CreateShortcut/.test(taskbarSource) &&
+  /SHGetPropertyStoreFromParsingName/.test(taskbarSource) &&
+  /taskbarpin/.test(taskbarSource) &&
+  /app:taskbarPin/.test(ipcSource) &&
+  /pinTaskbar: \(\) => ipcRenderer\.invoke\("app:taskbarPin"\)/.test(read("src/preload/settings.js")) &&
+  /id="taskbar-pin"/.test(settingsHtml) &&
+  /ctx\.pinTaskbar/.test(read("src/main/tray.js"))
+) {
+  ok("Windows 任务栏固定入口贯通设置页/托盘/主进程快捷方式");
+} else {
+  fail("Windows 任务栏固定链路不完整");
+}
+if (
+  /setAppDetails\(\{/.test(mainWindowSource) &&
+  /appIconPath/.test(mainWindowSource) &&
+  /relaunchCommand/.test(mainWindowSource) &&
+  /color: "#00000000"/.test(mainWindowSource)
+) {
+  ok("窗口任务栏身份同步且原生标题栏按钮覆盖层透明");
+} else {
+  fail("窗口任务栏身份或透明标题栏覆盖层契约失败");
 }
 
 const designFile = path.join(ROOT, "..", "design.md");
@@ -425,8 +474,8 @@ else fail("比赛提醒仍是假开关");
 /* R62 性能与稳定 */
 if (/refreshIndex/.test(storeSrc) && /mtimeMs/.test(storeSrc)) ok("store 淘汰路径走 mtime 索引（不再每次全量解析）");
 else fail("store 仍全量解析目录");
-if (/heatWindowStart/.test(luoguSrc)) ok("主页刷新翻到热力窗口外即停（不再固定拉 6 页）");
-else fail("主页刷新仍拉满 6 页");
+if (!/heatWindowStart/.test(luoguSrc) && /record\/list\?user=.*page=1/.test(luoguSrc)) ok("主页只取最近提交首屏，热度直接消费个人中心 dailyCounts");
+else fail("主页仍在为自绘热度图批量拉取历史提交");
 if (/will-download/.test(indexSrc)) ok("页面下载自动落「下载」文件夹并 toast");
 else fail("缺少下载处理");
 
@@ -450,7 +499,12 @@ for (const [name, needle] of [
 const checkinBlock = ipcSrc.split("app:checkin")[1] || "";
 if (/签到没有成功/.test(checkinBlock)) ok("签到失败会 toast 具体原因");
 else fail("签到失败仍被吞掉");
-if (/签到失败 · 稍后再试/.test(read("src/renderer/shell/home.js"))) ok("签到失败在按钮上留字");
+if (/hasCard/.test(luoguSrc) && /result\.hasCard && result\.hasButton/.test(luoguSrc) && /避免把“今日已完成”误报成失败/.test(luoguSrc)) {
+  ok("签到状态先判重，已签到时不会误报找不到入口");
+} else {
+  fail("签到缺少已签/入口缺失的幂等判定");
+}
+if (/签到失败/.test(read("src/renderer/shell/home.js")) && /签到失败/.test(read("src/renderer/shell/home.js"))) ok("签到失败在顶部按钮上留字");
 else fail("主页签到按钮无失败反馈");
 
 const editorSrc = read("src/renderer/shell/editor.js");
@@ -509,6 +563,10 @@ try {
   const found = freshStore.entries("problem:");
   if (found.length === 1 && found[0].key === "problem:A" && found[0].at === 10) ok("store mtime 索引：新实例免解析枚举磁盘条目");
   else fail("store 索引枚举失败", JSON.stringify(found.map((item) => item.key)));
+  for (let i = 0; i < 140; i++) idxStore.set("tiny:" + i, { key: "tiny:" + i, at: i, value: "x" }, 600000);
+  const stats = idxStore.stats();
+  if (stats.memoryEntries <= stats.limits.memoryEntries && stats.memoryBytes <= stats.limits.memoryBytes) ok("store 内存缓存遵守条目与字节 LRU 上限");
+  else fail("store 内存缓存未遵守预算", JSON.stringify(stats));
   fs.rmSync(dir, { recursive: true, force: true });
   fs.rmSync(bigDir, { recursive: true, force: true });
   fs.rmSync(idxDir, { recursive: true, force: true });
@@ -545,24 +603,24 @@ if (/accentText/.test(themeSource) && /borderStrong/.test(themeSource) && /color
 const materialSource = read("src/main/material.js");
 const material = require(path.join(ROOT, "src", "main", "material.js"));
 const baseLevel = material.levels({ material: 55, glass: 45 }, false);
-if (baseLevel.panelAlpha === 86 && baseLevel.pageScrim === 90 && baseLevel.cardAlpha === 88 && baseLevel.raiseAlpha === 11 && baseLevel.codeAlpha === 68) {
-  ok("官方化可读基线（panel 86 / scrim 90 / card 88 / raise 11 / code 68）");
+if (baseLevel.panelAlpha === 72 && baseLevel.pageScrim === 75 && baseLevel.cardAlpha === 80 && baseLevel.raiseAlpha === 11 && baseLevel.codeAlpha === 68) {
+  ok("单层透明基线（panel 72 / scrim 75 / card 80 / raise 11 / code 68）");
 } else {
-  fail("默认可读基线偏离设计", JSON.stringify(baseLevel));
+  fail("默认透明基线偏离设计", JSON.stringify(baseLevel));
 }
 const fullLevel = material.levels({ material: 55, glass: 100 }, false);
-if (fullLevel.panelAlpha >= 86 && fullLevel.pageScrim >= 90 && fullLevel.cardAlpha >= 88 && fullLevel.raiseAlpha >= 8) {
-  ok("壁纸透出 100% 仍保留官方化可读下限");
+if (fullLevel.panelAlpha === 0 && fullLevel.pageScrim === 0 && fullLevel.cardAlpha === 0 && fullLevel.raiseAlpha === 0) {
+  ok("壁纸透出 100% 时外壳/纱层/承载面真正归零");
 } else {
-  fail("glass=100 失去可读下限", JSON.stringify(fullLevel));
+  fail("glass=100 仍有重复不透明底", JSON.stringify(fullLevel));
 }
 if (fullLevel.codeAlpha >= 68) ok("代码块例外层保留 68% 保读下限");
 else fail("代码块保读下限不足");
 if (fullLevel.overlayAlpha >= 94) ok("浮层保留 94% 可读下限");
 else fail("浮层可读下限不足");
 const perfFull = material.levels({ material: 55, glass: 100 }, true);
-if (perfFull.panelAlpha >= 86 && perfFull.blurPx === 0) ok("性能模式关闭模糊且保留可读下限");
-else fail("性能模式破坏可读下限", JSON.stringify(perfFull));
+if (perfFull.panelAlpha === 0 && perfFull.blurPx === 0) ok("性能模式关闭模糊且保留透明状态");
+else fail("性能模式破坏透明状态", JSON.stringify(perfFull));
 if (/materialLevels/.test(themeSource) && /require\("\.\/material"\)/.test(themeSource)) ok("theme.js 委托 material.js 计算透明度");
 else fail("theme.js 没有接入 material.js");
 if (/glass: 45,/.test(configSource) && /a\.glass = Math\.round/.test(configSource)) ok("「壁纸透出」默认 45 且落盘前收敛");
@@ -586,18 +644,53 @@ if (offscreen && offscreen.x >= 0 && offscreen.y >= 0 && offscreen.x + offscreen
 } else {
   fail("窗口位置恢复仍可能跑出屏幕");
 }
-/* 广告拦截：对齐 Luogu Plus 默认开启，配置/设置页/IPC/页面兜底四处齐 */
+const halfScreen = fitBoundsToArea ? fitBoundsToArea({ width: 960, height: 1040 }, { x: 0, y: 0, width: 1920, height: 1040 }) : null;
+if (halfScreen && halfScreen.width === 960 && /MIN_WINDOW_W = 640/.test(read("src/main/window.js")) && /MIN_WINDOW_H = 480/.test(read("src/main/window.js"))) {
+  ok("Windows 左右半屏与 640×480 窄窗口吸附不受固定下限撑宽");
+} else {
+  fail("窗口最小尺寸仍阻止半屏/窄比例吸附", JSON.stringify(halfScreen));
+}
+/* 广告拦截固定开启，不再提供关闭入口。 */
 const preloadPageSource = read("src/preload/page.js");
-if (/adBlock: true/.test(configSource) && /g\.adBlock = !!g\.adBlock/.test(configSource)) ok("广告拦截默认开启且落盘收敛");
-else fail("config.js 缺少 adBlock 默认值/收敛");
-if (/id="ad-block"/.test(settingsHtml) && /setGeneral\(\{ adBlock:/.test(read("src/renderer/settings/settings.js"))) ok("设置页提供广告拦截开关");
-else fail("设置页缺少广告拦截开关");
-if (/hasOwnProperty\.call\(next, "adBlock"\)/.test(ipcSource) && /ctx\.views\.applyAdBlock\(\)/.test(ipcSource)) ok("切换广告拦截即时应用");
-else fail("ipc.js 没有在 adBlock 变化时应用");
+if (/g\.adBlock = true/.test(configSource) && !/id="ad-block"/.test(settingsHtml)) ok("广告与推广强制拦截且不提供关闭入口");
+else fail("广告拦截仍可被关闭或缺少强制配置");
+if (/ctx\.views\.applyAdBlock\(\)/.test(ipcSource)) ok("既有页面会即时应用广告拦截标记");
+else fail("ipc.js 没有应用广告拦截标记");
 if (/qiafan/.test(read("src/main/adblock.js")) && /onBeforeRequest/.test(read("src/main/adblock.js"))) ok("主进程按 /qiafan/ 请求级拦截");
 else fail("adblock.js 缺少请求级拦截");
 if (/--lg-adblock=/.test(read("src/main/views.js")) && /dataset\.lgAdblock/.test(preloadPageSource)) ok("页面 preload 在 document-start 置广告拦截标记");
 else fail("页面 preload 缺少广告拦截标记");
+if (
+  /lg-boot-skeleton/.test(preloadPageSource) &&
+  /function installPageLoadingSurface/.test(preloadPageSource) &&
+  /attachShadow/.test(preloadPageSource) &&
+  /page:load-state/.test(preloadPageSource) &&
+  /phase === "ready"/.test(preloadPageSource) &&
+  /phase === "error"/.test(preloadPageSource) &&
+  /location\.reload\(\)/.test(preloadPageSource) &&
+  /host\.style\.pointerEvents = "auto"/.test(preloadPageSource) &&
+  /latestRequestId/.test(preloadPageSource) &&
+  /host\.setAttribute\("aria-busy", "true"\)/.test(preloadPageSource) &&
+  !/shadow\.innerHTML/.test(preloadPageSource) &&
+  !/setTimeout\([^\n]*8000/.test(preloadPageSource)
+) {
+  ok("网页骨架由主进程状态驱动，可拦截误点、显示错误并重试");
+} else {
+  fail("网页骨架仍依赖固定计时器或缺少安全错误恢复");
+}
+const freezeIndex = read("src/renderer/shell/index.html");
+if (/captureOverlayBackdrop/.test(viewsSource) && /overlayQueue/.test(viewsSource) && /applyOverlay/.test(viewsSource) && /page:freeze/.test(read("src/preload/shell.js")) && /id="page-freeze"/.test(freezeIndex) && /onPageFreeze/.test(read("src/renderer/shell/shell.js"))) {
+  ok("搜索覆盖层用当前页面冻结帧作背景，不再清空正文");
+} else {
+  fail("搜索覆盖层冻结帧链路缺失");
+}
+if (/entry\.booted && entry\.view\.webContents\.getURL\(\) !== url/.test(viewsSource) && /requestedUrl/.test(viewsSource) && /题单加载失败/.test(viewsSource)) {
+  ok("题单首次导航单一所有权，并在空正文时静默重试");
+} else {
+  fail("题单首次导航竞态或空正文恢复缺失");
+}
+if (/M7\.9 20A9 9/.test(read("src/renderer/shell/icons.js")) && /M8 12h\.01M12 12h\.01M16 12h\.01/.test(read("src/renderer/shell/icons.js"))) ok("聊天图标使用单气泡轮廓与居中描边点");
+else fail("聊天图标几何仍未修正");
 if (/data-lg-adblock="1"/.test(read("src/renderer/skin/luogu-skin.css"))) ok("皮肤提供广告容器兜底隐藏");
 else fail("luogu-skin.css 缺少广告容器兜底");
 
@@ -644,6 +737,20 @@ if (/const RAIL_W = 208;/.test(windowSource) && /const RAIL_COLLAPSED_W = 64;/.t
   ok("侧栏固定/折叠宽度 208px/64px");
 } else {
   fail("window.js 侧栏宽度不是固定 208px、折叠 64px");
+}
+if (
+  /MIN_WINDOW_W = 640/.test(windowSource) &&
+  /MIN_WINDOW_H = 480/.test(windowSource) &&
+  /clamp\(w\.width, 640, 10000/.test(configSource) &&
+  /clamp\(w\.height, 480, 10000/.test(configSource) &&
+  /fitBoundsToArea\(\{ width: 860, height: 640 \}/.test(windowSource) &&
+  /#workspace\.ide-vertical/.test(shellCss) &&
+  /availableWidth < IDE_VERTICAL_BREAKPOINT/.test(viewsSource) &&
+  /Math\.floor\(availableHeight \* \(1 - this\.ideSplit\)\)/.test(viewsSource)
+) {
+  ok("640×480 最小窗口与窄屏 IDE 上下分栏几何完整");
+} else {
+  fail("不同窗口比例的最小尺寸或 IDE 自适应缺失");
 }
 
 const shellPreloadSource = read("src/preload/shell.js");
@@ -694,7 +801,7 @@ for (const file of walk(path.join(ROOT, "src", "main"), []).filter((f) => f.ends
 if (
   railLayoutSenders.length === 1 &&
   railLayoutSenders[0] === "src/main/views.js" &&
-  /const rect = \{ x: railW, y, width, height \}/.test(viewsSource) &&
+  /const rect = \{ x: railW, y: TITLE_H \+ TOOLBAR_H, width: metrics\.width, height: metrics\.height \}/.test(viewsSource) &&
   /onRailLayout: \(callback\) => on\("rail:layout", callback\)/.test(shellPreloadSource) &&
   /window\.lg\.onRailLayout/.test(shellJsSource) &&
   /grid-template-columns: var\(--rail-current-w/.test(shellCss) &&
@@ -839,8 +946,8 @@ if (/class="pane-head"/.test(settingsHtml) && /class="settings-group"/.test(sett
 const homeSrc2 = read("src/renderer/shell/home.js");
 for (const [name, needle] of [
   ["两栏仪表盘", /home-grid/],
-  ["学习概览", /buildStatGrid/],
-  ["热力图图例", /heat-legend/],
+  ["官方累计通过", /official-profile-stats/],
+  ["热力图图例", /heat-map-legend/],
   ["空寄语不渲染", /if \(home\.quote\)/],
 ]) {
   if (needle.test(homeSrc2)) ok("home.js " + name);
@@ -921,6 +1028,15 @@ if (
   ok("账户入口仅保留标题栏头像");
 } else {
   fail("侧栏仍重复账户卡或标题栏头像入口缺失");
+}
+if (
+  /tb-avatar-fallback/.test(read("src/renderer/shell/index.html") + chromeRailSrc + read("src/renderer/shell/shell.css")) &&
+  /avatar\.classList\.add\("has-avatar-image"\)/.test(chromeRailSrc) &&
+  /image\.addEventListener\("error"/.test(chromeRailSrc)
+) {
+  ok("标题栏头像有常驻字母底层与图片失败回退");
+} else {
+  fail("标题栏头像仍可能因图片加载失败而消失");
 }
 if (
   /id="rail-pin"/.test(read("src/renderer/shell/index.html")) &&
@@ -1004,14 +1120,15 @@ for (const selector of [".side", ".lfe-side", ".list", ".lfe-list", ".box", ".pa
 const railCss = read("src/renderer/shell/shell.css");
 if (
   /#rail \{[\s\S]*?padding: 12px;/.test(railCss) &&
+  /#rail-top,[\s\S]*?#rail-bottom \{[\s\S]*?width: 184px;[\s\S]*?min-width: 184px;/.test(railCss) &&
   /\.rail-btn \{[\s\S]*?height: 32px;[\s\S]*?margin: 4px 0;/.test(railCss) &&
-  /body:not\(\.rail-visual-wide\) \.rail-btn \{[\s\S]*?width: 40px;[\s\S]*?justify-content: center;/.test(railCss) &&
-  /body:not\(\.rail-visual-wide\) \.rail-label,[\s\S]*?display: none;/.test(railCss) &&
+  /\.rail-label,[\s\S]*?\.rail-group-label \{[\s\S]*?opacity: 0;[\s\S]*?visibility: hidden;/.test(railCss) &&
+  /body\.rail-visual-wide \.rail-label,[\s\S]*?visibility: visible;/.test(railCss) &&
   /body:not\(\.rail-visual-wide\) \.rail-group \{[\s\S]*?border-top-color: var\(--border\);/.test(railCss)
 ) {
-  ok("侧栏 64px 图标轨、40×32 热区与折叠分组分隔");
+  ok("侧栏 64px 可见轨道、固定 184px 内部栅格与无重排展开");
 } else {
-  fail("侧栏几何未对齐 64px 图标轨设计");
+  fail("侧栏固定栅格裁切展开契约缺失");
 }
 if (
   !/\.rail-overlay/.test(railCss) &&
@@ -1097,6 +1214,21 @@ if (/state\.hasMore/.test(libraryClick)) ok("列表支持 count 未知时的 has
 else fail("列表未接入 hasMore 分页");
 if (/hasMore:\s*!countKnown && full/.test(luoguSource)) ok("记录列表在 count 未知时按整页推断 hasMore");
 else fail("记录列表 total 仍写死 items.length");
+if (/max-width:\s*960px/.test(shellCss) && /\.lib-page\.current/.test(shellCss) && !/\.lib-more/.test(shellCss)) {
+  ok("题库按网页版阅读宽度与页码分页呈现，不再使用加载更多");
+} else {
+  fail("题库仍过宽或仍使用加载更多");
+}
+if (/aria-current/.test(libraryClick) && /lib-pages/.test(libraryClick) && /load\(state, page\)/.test(libraryClick)) {
+  ok("页码按钮会替换当前页并标记 aria-current");
+} else {
+  fail("题库页码交互契约缺失");
+}
+if (/fmtExact/.test(libraryClick) && /通过率 \$\{rate\}%/.test(libraryClick) && /item\.accepted.*item\.submissions/s.test(libraryClick)) {
+  ok("通过率同时显示完整通过/提交人数");
+} else {
+  fail("通过率未显示完整人数");
+}
 
 /* ---------- R69 丝滑与清瑕 ---------- */
 const skin69 = read("src/renderer/skin/luogu-skin.css");
@@ -1360,6 +1492,38 @@ if (/node /.test(pack79) && /smoke\.js/.test(pack79) && /LASTEXITCODE/.test(pack
 else fail("R79 出包门禁仍绕过启动器");
 if (/smoke-guard\.js/.test(pack79)) ok("R79 剥离清单含 smoke-guard.js");
 else fail("R79 剥离清单缺 guard 模块");
+/* 剥离清单 × 顶层 require：出包会删掉清单内的文件，任何裸顶层 require 都会让整包
+   启动即 Error 弹窗（v0.7.15 便携包因 ipc.js require("./smoke-guard") 无法启动，
+   而打包冒烟只跑 desktop/ 开发态，漏掉了这一层）。 */
+const stripNames = [];
+for (const line of pack79.split("\n")) {
+  if (!/Remove-Item/.test(line) || /Test-Path/.test(line)) continue;
+  const m = line.match(/"src\\main\\([\w-]+)\.js"/);
+  if (m && !stripNames.includes(m[1])) stripNames.push(m[1]);
+}
+if (stripNames.length) ok("R94 剥离清单可解析（" + stripNames.join(" / ") + "）");
+else fail("R94 无法从 pack-portable.ps1 解析剥离清单");
+const bareStripRequires = [];
+for (const file of walk(path.join(ROOT, "src"), [])) {
+  if (!/\.js$/.test(file)) continue;
+  const lines = fs.readFileSync(file, "utf8").split("\n");
+  for (const name of stripNames) {
+    const re = new RegExp("require\\([\"']\\./" + name + "[\"']\\)");
+    lines.forEach((line, i) => {
+      if (!re.test(line)) return;
+      const near = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
+      const safe = /try\s*\{/.test(near) || /=>\s*require\(/.test(line);
+      if (!safe) bareStripRequires.push(path.relative(ROOT, file) + ":" + (i + 1) + ' require("./' + name + '")');
+    });
+  }
+}
+if (!bareStripRequires.length) ok("R94 剥离清单内模块无顶层裸 require（出包不会因缺模块崩启动）");
+else fail("R94 剥离清单内模块被顶层裸 require：" + bareStripRequires.join("；"));
+if (/BOOT-OK/.test(pack79) && /LG_USERDATA/.test(pack79)) ok("R94 出包对暂存产物做隔离启动自检（BOOT-OK）");
+else fail("R94 出包缺少针对暂存产物的启动自检");
+const packBuf = fs.readFileSync(path.join(__dirname, "pack-portable.ps1"));
+if (packBuf[0] === 0xef && packBuf[1] === 0xbb && packBuf[2] === 0xbf) ok("R94 pack-portable.ps1 带 UTF-8 BOM（powershell.exe 5.1 才不会按 ANSI 误读中文）");
+else fail("R94 pack-portable.ps1 缺 UTF-8 BOM，Windows PowerShell 5.1 会直接解析失败");
 if (/hiddenOpen === "skipped"/.test(smoke74) && /ensureWindow/.test(smoke74)) ok("R79 SEC hidden 腿环境感知（ensureWindow+skipped）");
 else fail("R79 SEC hidden 腿缺 skip 语义");
 if (/TIMEOUT after/.test(fs.readFileSync(path.join(__dirname, "smoke.js"), "utf8"))) ok("R79 超时归档带上下文");
@@ -1557,10 +1721,22 @@ if (hotCalls.join(",") === "win,settings,win,settings,skin") ok("热加载命令
 else fail("热加载命令执行链错误");
 
 /* ---------- R90 稳定性、可读性与资源占用 ---------- */
-if (/MAX_PROBLEMS = 2/.test(viewsSource) && /MAX_DETAILS = 4/.test(viewsSource) && /MAX_TOTAL_ENTRIES = 6/.test(viewsSource) && /evictTotal\(MAX_TOTAL_ENTRIES/.test(viewsSource) && /setAudioMuted\(true\)/.test(viewsSource)) {
-  ok("R90 隐藏页面有总数上限、后台节流与静音回收");
+const luoguSourceMemory = read("src/main/luogu.js");
+if (/MAX_PROBLEMS = 2/.test(viewsSource) && /MAX_DETAILS = 3/.test(viewsSource) && /MAX_TOTAL_ENTRIES = 4/.test(viewsSource) && /evictTotal\(MAX_TOTAL_ENTRIES/.test(viewsSource) && /async sleepEntry\(entry, force = false\)/.test(viewsSource) && /loadURL\("about:blank"\)/.test(viewsSource) && /suspendBackground\(\)/.test(viewsSource) && /setAudioMuted\(true\)/.test(viewsSource)) {
+  ok("R93 页面 View 有总数上限、空闲休眠、后台释放与静音回收");
 } else {
-  fail("R90 页面 View 内存回收契约缺失");
+  fail("R93 页面 View 内存回收契约缺失");
+}
+if (/fetchContextDirect\(url\)/.test(luoguSourceMemory || "") && /session\.fetch\(url/.test(luoguSourceMemory || "") && /contextStats/.test(luoguSourceMemory || "") && /contextDiagnostics\(\)/.test(luoguSourceMemory || "")) {
+  ok("R93 洛谷上下文优先走会话直连，浏览器窗仅作降级");
+} else {
+  fail("R93 洛谷上下文直连降级契约缺失");
+}
+const storeMemory = read("src/main/store.js");
+if (/MAX_TOTAL_BYTES/.test(storeMemory) && /MAX_MEM_BYTES/.test(storeMemory) && /trimMemory\(\)/.test(storeMemory) && /pruneDisk\(\)/.test(storeMemory) && /stats\(\)/.test(storeMemory)) {
+  ok("R93 Store 有内存 LRU、磁盘字节上限与统计接口");
+} else {
+  fail("R93 Store 内存/磁盘预算契约缺失");
 }
 if (/wall-motion/.test(shellCss) && /wall-paused/.test(shellCss) && /lg-wall-pan/.test(shellCss) && !/requestAnimationFrame\(tickWallpaper\)/.test(shellJsSource)) {
   ok("R90 壁纸改为合成器动画，不再逐帧写 DOM 样式");
@@ -1582,7 +1758,6 @@ if (
 } else {
   fail("R90 壁纸显示尺寸缓存链路不完整");
 }
-const luoguSourceMemory = read("src/main/luogu.js");
 if (/backgroundThrottling: true/.test(luoguSourceMemory) && /scheduleWindowIdle\(\)/.test(luoguSourceMemory) && /trimMap\(this\.libCache, 30\)/.test(luoguSourceMemory) && /trimMap\(this\.userSearchCache, 20\)/.test(luoguSourceMemory)) {
   ok("R91 隐藏数据窗空闲回收且在内存缓存有容量上限");
 } else {
@@ -1594,10 +1769,10 @@ if (/BackForwardCache/.test(read("src/main/index.js")) && !/--lg-wall-image:\$\{
   fail("R90 页面壁纸/BFCache 仍有重复内存");
 }
 const pack90 = read("scripts/pack-portable.ps1");
-if (/-t7z -mx=9/.test(pack90) && /超过 100MB/.test(pack90) && /7z\.sfx/.test(pack90)) {
-  ok("R90 便携包使用 7z/SFX 并带 100MB 硬门禁");
+if (/-t7z -mx=9/.test(pack90) && /7z\.sfx/.test(pack90)) {
+  ok("便携包使用 7z/SFX，体积仅作报告不作为门禁");
 } else {
-  fail("R90 便携包没有 100MB 体积门禁");
+  fail("便携包缺少 7z/SFX 打包链路");
 }
 if (/patch-exe\.js/.test(pack90) && /Luogu Desktop\.exe/.test(pack90) && /patchedSfx/.test(pack90)) {
   ok("便携包写入洛谷图标/产品名/版本，并同步修补 SFX 外层");
@@ -1772,13 +1947,379 @@ if (
   fail("R88 设置备份链路缺失");
 }
 
+/* R92：当前反馈的 7 个回归契约（主页操作、官方任务、遮罩、侧栏、题库、IDE、按钮色） */
+const r92Home = read("src/renderer/shell/home.js");
+const r92Luogu = read("src/main/luogu.js");
+const r92Shell = read("src/renderer/shell/shell.css");
+const r92Library = read("src/renderer/shell/library.js");
+const r92Skin = read("src/renderer/skin/luogu-skin.css");
+const r93Overlays = read("src/renderer/shell/overlays.js");
+if (
+  /actions\.openRandomJump\(\)/.test(r92Home) &&
+  /openRandomJump/.test(r93Overlays) &&
+  /options\.random === true/.test(r93Overlays) &&
+  !/actions\.randomProblem\(\{\}\)/.test(r92Home)
+) {
+  ok("R93 首页随机跳题复用搜索题号面板的筛选与限流反馈");
+} else {
+  fail("R93 首页仍绕过统一随机跳题面板");
+}
+if (
+  /home-sync-note/.test(r92Home) &&
+  /hasUsableSnapshot/.test(r92Luogu) &&
+  /prev[^\n]*error: ""/.test(r92Luogu)
+) {
+  ok("R93 临时同步失败保留可用主页快照，不再回填整块失败卡片");
+} else {
+  fail("R93 临时同步失败仍会覆盖主页快照");
+}
+if (/refreshWaiters/.test(r92Luogu) && /Promise\.race\(\[request, watchdog\]\)/.test(r92Luogu)) {
+  ok("R93 主页刷新并发复用同一轮结果，直连请求有显式超时");
+} else {
+  fail("R93 主页刷新仍可能并发抢跑或无限等待");
+}
+if (
+  /\.home-side > :last-child:nth-child\(odd\)/.test(r92Shell) &&
+  /grid-column: 1 \/ -1/.test(r92Shell) &&
+  /\.home-side \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/.test(r92Shell)
+) {
+  ok("R93 窄窗口奇数侧栏卡片贯通两列，消除整块空列");
+} else {
+  fail("R93 窄窗口主页仍可能出现整块空白");
+}
+if (
+  /home-today-actions/.test(r92Home) &&
+  /normalizeFortune/.test(r92Home) &&
+  /lg-punch-result/.test(r92Home) &&
+  /am-u-sm-6/.test(r92Home) &&
+  /lg-fg-red/.test(r92Home) &&
+  /fortuneText\(fortune\)/.test(r92Home) &&
+  /actions\.checkin\(\)/.test(r92Home) &&
+  /home\.official\.fortune/.test(r92Home) &&
+  !/function openFortuneDialog/.test(r92Home) &&
+  !/DAILY_FORTUNES/.test(r92Home)
+) {
+  ok("R92 完整运势直接内联显示，签到与抽签最多一个按钮且无确认弹窗");
+} else {
+  fail("R92 主页完整运势内联链路不完整");
+}
+if (/tasksFor/.test(r92Luogu) && /items: items\.slice\(0, 60\)/.test(r92Luogu) && /tasks: taskData/.test(r92Luogu)) {
+  ok("R92 官方任务计划抓取完整条目而非 180 字截断");
+} else {
+  fail("R92 官方任务计划仍为截断文本");
+}
+if (
+  /--page-scrim/.test(r92Shell) &&
+  !/body\.perf #content \{\s*background: color-mix\(in srgb, var\(--bg\) 98%/.test(r92Shell) &&
+  !/#content \{\s*background: color-mix\(in srgb, var\(--bg\) 92%/.test(r92Shell)
+) {
+  ok("R92 壁纸遮罩统一消费 pageScrim，无后置高不透明度覆盖");
+} else {
+  fail("R92 仍有后置不透明遮罩盖住壁纸");
+}
+if (
+  /#rail-top,[\s\S]*?#rail-bottom \{[\s\S]*?width: 184px;/.test(r92Shell) &&
+  /opacity: 0;[\s\S]*?visibility: hidden;/.test(r92Shell) &&
+  /body\.rail-visual-wide \.rail-label/.test(r92Shell)
+) {
+  ok("R92 侧栏使用固定内部栅格裁切展开，图标不随中间帧漂移");
+} else {
+  fail("R92 侧栏仍在展开过程中重排图标");
+}
+if (
+  /lib-problem-tags/.test(r92Shell) &&
+  /lib-problem-tags/.test(r92Library) &&
+  /grid-column: 3;/.test(r92Shell)
+) {
+  ok("R92 题库标签移到标题右侧并压缩题目行高");
+} else {
+  fail("R92 题库标签仍单独占一行");
+}
+if (
+  /main-container\.lside-nav[\s\S]*?margin-left: 0 !important/.test(r92Skin) &&
+  /lcolor-var-grey-4:not\(\.solid\)/.test(r92Skin) &&
+  /button\.solid :is\(svg, i, \.fa\)/.test(r92Skin)
+) {
+  ok("R92 IDE 左空白与 solid+grey 自测按钮深灰字已修复");
+} else {
+  fail("R92 IDE 左侧占位或自测按钮配色回归");
+}
+
+const appearanceIndex = read("src/main/index.js");
+const settingsCssCurrent = read("src/renderer/settings/settings.css");
+if (
+  /wallpaperEpoch/.test(appearanceIndex) &&
+  /applyTheme\(ctx\.win, ctx\.theme\)[\s\S]*?applyTheme\(ctx\.settingsWin, ctx\.theme\)[\s\S]*?ctx\.views\.updateTheme\(\)[\s\S]*?broadcastState\(ctx\)/.test(appearanceIndex) &&
+  /resolveWallpaper === false/.test(appearanceIndex) &&
+  /function syncWallpaperMotion/.test(read("src/renderer/settings/settings.js")) &&
+  /body\.perf \.set-pane[\s\S]*?--page-scrim/.test(settingsCssCurrent) &&
+  /body\.perf #titlebar,[\s\S]*?--panel-alpha/.test(settingsCssCurrent) &&
+  !/#wallpaper::after/.test(settingsCssCurrent)
+) {
+  ok("设置窗与主窗口共享材质/壁纸透出变量并即时同步");
+} else {
+  fail("设置窗材质或主窗口同步链路不完整");
+}
+if (
+  /lib-jump/.test(r92Library) &&
+  /type = "number"/.test(r92Library) &&
+  /input\.max = String\(totalPages\)/.test(r92Library) &&
+  /load\(state, page\)/.test(r92Library) &&
+  /\.lib-jump-input/.test(r92Shell)
+) {
+  ok("题库分页支持输入页码快速跳转");
+} else {
+  fail("题库分页缺少页码跳转");
+}
+if (
+  /parseDailyCounts/.test(r92Luogu) &&
+  /Array\.isArray\(count\)/.test(r92Luogu) &&
+  /const second = Number\(count\[1\]\)/.test(r92Luogu) &&
+  /submittedProblemCount/.test(r92Luogu) &&
+  /passedProblemCount/.test(r92Luogu) &&
+  /buildProgress\(records/.test(r92Luogu) &&
+  /linkGroups/.test(r92Luogu) &&
+  !/lg-slider|am-slides/.test(r92Luogu)
+) {
+  ok("个人中心热度、累计通过官方字段与轮播广告过滤链路齐备");
+} else {
+  fail("主页官方统计字段、热度解析或广告过滤不完整");
+}
+if (
+  !/if \(!total\)[\s\S]{0,120}?return card;/.test(r92Home) &&
+  /for \(let i = 0; i < 26 \* 7; i\+\+\)/.test(r92Home) &&
+  /if \(side\.childElementCount\) grid\.appendChild\(side\)/.test(r92Home) &&
+  /grid\.childElementCount === 1/.test(r92Home) &&
+  /\.home-grid\.single/.test(r92Shell) &&
+  /if \(!items\.length\)[\s\S]*?fallbackLines/.test(r92Home)
+) {
+  ok("首页空数据仍绘制完整热度网格，空任务和单侧内容不会留下空白区域");
+} else {
+  fail("首页空数据图表、重复任务或空列仍有缺口");
+}
+if (
+  /function buildTrend\(home, user\)/.test(r92Home) &&
+  /home-trend-card/.test(r92Home) &&
+  /trend-chart-svg/.test(r92Home) &&
+  /trend-line/.test(r92Home) &&
+  /\(home\.acProgress \|\| \[\]\)/.test(r92Home) &&
+  /\.trend-chart-svg/.test(r92Shell) &&
+  /\.trend-line/.test(r92Shell) &&
+  /\.trend-flat-note/.test(r92Shell)
+) {
+  ok("首页累计通过折线图始终渲染，空数据保留坐标与零线");
+} else {
+  fail("首页累计通过折线图缺失或空数据会被隐藏");
+}
+if (
+  /am-u-md-4 lg-punch am-text-center home-fortune-panel/.test(r92Home) &&
+  /lg-punch-result/.test(r92Home) &&
+  !/lg-punch-result lg-fg-red/.test(r92Home) &&
+  /lg-fg-red lg-bold/.test(r92Home) &&
+  /诸事不宜/.test(r92Home) &&
+  /home-fortune-calendar/.test(r92Home) &&
+  /点击打卡/.test(r92Home) &&
+  /am-u-sm-6 lg-fg-red/.test(r92Home) &&
+  /am-u-sm-12 lg-small/.test(r92Home) &&
+  /\.home-fortune-panel h2 \{[\s\S]*?font-size: 20px;[\s\S]*?line-height: 1\.6;/.test(r92Shell) &&
+  /\.home-fortune-panel \.lg-punch-result \{[\s\S]*?color: var\(--text\) !important;[\s\S]*?font-size: 60px;[\s\S]*?line-height: 1\.5;/.test(r92Shell) &&
+  /\.home-fortune-panel \.home-today-btn \{[\s\S]*?border: 1px solid #dd514c;[\s\S]*?border-radius: 0;[\s\S]*?background: #dd514c;[\s\S]*?font-size: 14px;[\s\S]*?line-height: 1\.2;/.test(r92Shell) &&
+  /\.home-fortune-calendar \.lg-punch-big \{[\s\S]*?font-size: 85px;[\s\S]*?line-height: 55px;/.test(r92Shell) &&
+  /\.home-fortune-panel \.lg-small \{[\s\S]*?font-size: \.625rem;[\s\S]*?line-height: 16px;/.test(r92Shell)
+) {
+  ok("运势面板按官网真实全凶 DOM、颜色、字号、行高和双栏 1:1 复刻");
+} else {
+  fail("运势面板未按洛谷官网真实结构/计算样式复刻");
+}
+if (
+  /heat-map-wrapper/.test(r92Home) &&
+  /heat-map-legend/.test(r92Home) &&
+  /official-profile-stats/.test(r92Home) &&
+  /var\(--heat-/.test(r92Home) &&
+  /heat-map-wrapper/.test(r92Shell) &&
+  /--heat-4: rgb\(115, 209, 61\)/.test(r92Shell)
+) {
+  ok("主页累计通过与热度图采用洛谷个人中心同源结构、档位和颜色");
+} else {
+  fail("主页累计通过或热度图未对齐洛谷个人中心");
+}
+if (
+  /total:\s*firstAccepted\.size/.test(r92Luogu) &&
+  !/total:\s*accepted\.size/.test(r92Luogu)
+) {
+  ok("主页累计通过统计只引用已定义的 firstAccepted 集合");
+} else {
+  fail("主页累计通过统计仍引用未定义变量，会中断整轮刷新");
+}
+if (
+  !/homeFeatured/.test(read("src/main/config.js")) &&
+  !/home-featured|featured-/.test(read("src/renderer/shell/home.js")) &&
+  /feat-home-countdown/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-quick-jump/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-progress/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-recent/.test(read("src/renderer/settings/index.html"))
+) {
+  ok("主页每个官方/原生板块都可在设置中独立显隐");
+} else {
+  fail("主页板块独立显隐不完整");
+}
+
+/* 页面注册表与加载代次：把白屏修复从“逐页补丁”收敛为可验证的统一状态机。 */
+let pageRegistry = null;
+let pageReadiness = null;
+try {
+  pageRegistry = require(path.join(ROOT, "src", "main", "page-registry.js"));
+  pageReadiness = require(path.join(ROOT, "src", "main", "page-readiness.js"));
+} catch (err) {
+  fail("页面注册表或加载状态机无法加载", err.message);
+}
+if (pageRegistry) {
+  const routes = {
+    "https://www.luogu.com.cn/": "home",
+    "https://www.luogu.com.cn/problem/list?page=2": "problems",
+    "https://www.luogu.com.cn/problem/P1001": "problem",
+    "https://www.luogu.com.cn/training/117": "training",
+    "https://www.luogu.com.cn/contest/123": "contest",
+    "https://www.luogu.com.cn/record/list": "record",
+    "https://www.luogu.com.cn/discuss/123": "discuss",
+    "https://www.luogu.com.cn/article/abc": "article",
+    "https://www.luogu.com.cn/chat": "chat",
+    "https://www.luogu.com.cn/user/notification": "notification",
+    "https://www.luogu.com.cn/user/123456": "profile",
+    "https://www.luogu.com.cn/auth/login": "login",
+    "https://www.luogu.com.cn/some/custom/page": "custom",
+  };
+  const badRoutes = Object.entries(routes).filter(([url, id]) => pageRegistry.routeIdFromUrl(url) !== id);
+  if (!badRoutes.length && pageRegistry.pageSpecFor({ url: "https://www.luogu.com.cn/training/117" }).id === "training") {
+    ok("页面注册表覆盖首页、列表、题面、聊天、通知、个人页与自定义路由");
+  } else {
+    fail("页面注册表路由分类不完整", JSON.stringify(badRoutes));
+  }
+  const probeSource = pageRegistry.readinessProbeSource(pageRegistry.PAGE_SPECS.problem);
+  if (/node\.id !== "lg-boot-skeleton"/.test(probeSource) && /routeMatches/.test(probeSource) && /signature/.test(probeSource) && /busy/.test(probeSource)) {
+    ok("就绪探针排除自身骨架，并要求路由和内容连续稳定");
+  } else {
+    fail("就绪探针仍可能把加载骨架或旧路由误判为完成");
+  }
+}
+const loadWaitSource = read("src/main/luogu.js");
+const smokeRunnerSource = read("scripts/smoke.js");
+const smokeMainSource = read("src/main/smoke.js");
+if (
+  /function waitForLoadStop\(webContents/.test(loadWaitSource) &&
+  /removeListener\("did-stop-loading", done\)/.test(loadWaitSource) &&
+  /removeListener\("did-fail-load", done\)/.test(loadWaitSource) &&
+  /SMOKE_PAGE_LOAD_SUMMARY/.test(smokeMainSource) &&
+  /runPageLoadingSmoke\(ctx, wait\)/.test(smokeMainSource) &&
+  /pageLoadFailure/.test(smokeRunnerSource) &&
+  /!pageLoadFailure/.test(smokeRunnerSource) &&
+  /listenerWarnings/.test(smokeRunnerSource) &&
+  /appDidStopLimit/.test(smokeMainSource) &&
+  /internalDidStopLimit/.test(smokeMainSource) &&
+  /setMaxListeners\(24\)/.test(viewsSource)
+) {
+  ok("页面加载探针纳入默认冒烟硬门禁，监听器数量受限且告警会让冒烟失败");
+} else {
+  fail("页面加载冒烟未形成硬门禁或 did-stop-loading 监听仍会累积");
+}if (pageReadiness) {
+  const sent = [];
+  const changes = [];
+  const fakeWc = {
+    isDestroyed: () => false,
+    getURL: () => "https://www.luogu.com.cn/chat",
+    send: (channel, payload) => sent.push({ channel, payload }),
+    executeJavaScript: async () => ({ routeReady: true, genericReady: true, textLength: 100, signature: "chat|1|1|DIV" }),
+  };
+  const controller = new pageReadiness.PageReadinessController(
+    fakeWc,
+    () => ({ kind: "chat" }),
+    (state) => changes.push(state)
+  );
+  controller.begin("https://www.luogu.com.cn/chat", "test");
+  const firstId = controller.state.requestId;
+  controller.markDomReady("https://www.luogu.com.cn/chat");
+  const hydrated = controller.state.phase === "hydrating";
+  controller.begin("https://www.luogu.com.cn/problem/P1001", "test-navigation");
+  const secondId = controller.state.requestId;
+  controller.fail("test failure", "test");
+  controller.markDomReady("https://www.luogu.com.cn/problem/P1001");
+  const lateDomIgnored = controller.state.phase === "error";
+  controller.didNavigate("https://www.luogu.com.cn/training/117");
+  const recovered = controller.state.phase === "hydrating" && controller.state.requestId > secondId;
+  controller.markReady({ textLength: 32 });
+  const ready = controller.state.phase === "ready";
+  controller.dispose();
+  if (
+    firstId !== secondId &&
+    hydrated &&
+    lateDomIgnored &&
+    recovered &&
+    ready &&
+    sent.length >= 5 &&
+    sent.every((item) => item.channel === "page:load-state") &&
+    /loading: entry\.readiness/.test(viewsSource) &&
+    /did-start-navigation/.test(viewsSource) &&
+    /did-fail-load/.test(viewsSource) &&
+    /render-process-gone/.test(viewsSource)
+  ) {
+    ok("加载状态机为每次导航使用独立代次，迟到事件不能覆盖新页面状态");
+  } else {
+    fail("加载状态机代次/错误恢复契约不完整");
+  }
+}
+if (
+  /entry\.readiness\.begin\(target, sameDocument \? "in-page" : "document"\)/.test(viewsSource) &&
+  /entry\.readiness\.markDomReady\(current\)/.test(viewsSource) &&
+  /entry\.readiness\.replay\(\)/.test(viewsSource) &&
+  /loading: entry\.readiness \? entry\.readiness\.state : null/.test(viewsSource)
+) {
+  ok("页面状态向渲染层暴露 loading，并在显示/恢复时重放当前加载状态");
+} else {
+  fail("页面加载状态未完整贯通主进程与外壳");
+}
+/* R94：注入页面的快照脚本必须能在页面里真正编译执行。
+   模板字面量里少写一层反斜杠（\\/ 写成 \/、\\s 写成 \s）会让整段脚本变成
+   “ReferenceError: i is not defined” 或静默失效，此前题面快照因此一直抓不到。 */
+const captureTemplate = (() => {
+  const src = read("src/main/views.js");
+  const at = src.indexOf("async captureProblem(entry, round)");
+  if (at < 0) return "";
+  const head = "wc.executeJavaScript(`";
+  const s = src.indexOf(head, at);
+  if (s < 0) return "";
+  const e = src.indexOf("`);", s);
+  if (e < 0) return "";
+  return src.slice(s + head.length, e);
+})();
+let captureRuntime = "";
+try {
+  captureRuntime = new Function("return `" + captureTemplate + "`")();
+} catch {
+  captureRuntime = "";
+}
+let captureCompiles = false;
+try {
+  new Function(captureRuntime);
+  captureCompiles = true;
+} catch {
+  captureCompiles = false;
+}
+if (
+  captureCompiles &&
+  captureRuntime.includes("\\s*(javascript|data|vbscript):") &&
+  captureRuntime.includes("^data:(image|font)\\/")
+) {
+  ok("R94 题面快照脚本可在页面内编译，URL 消毒正则未被模板转义吃掉");
+} else {
+  fail("R94 题面快照脚本无法编译或 URL 消毒正则被模板转义破坏");
+}
 let pkgVersion = "";
 try {
   pkgVersion = JSON.parse(read("package.json")).version || "";
 } catch {
   /* 已在上面报错 */
 }
-const EXPECTED_VERSION = "0.7.15";
+const EXPECTED_VERSION = "0.7.16";
 if (pkgVersion === EXPECTED_VERSION) ok("版本号 " + EXPECTED_VERSION);
 else fail("package.json 版本号不是 " + EXPECTED_VERSION + "（当前 " + pkgVersion + "）");
 

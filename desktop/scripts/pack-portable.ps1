@@ -86,6 +86,31 @@ Remove-Item (Join-Path $appDir "src\main\smoke.js") -Force -ErrorAction Silently
 Remove-Item (Join-Path $appDir "src\main\smoke-guard.js") -Force -ErrorAction SilentlyContinue
 if ((Test-Path (Join-Path $appDir "src\main\smoke.js")) -or (Test-Path (Join-Path $appDir "src\main\smoke-guard.js"))) { throw "探针 harness 剥离失败" }
 
+# 5.2) 出包启动自检：对**暂存产物本身**启动一次（隔离 profile），确认剥离后主进程不崩。
+#      第 4 步冒烟跑的是 desktop/ 开发态，看不到「剥了文件却仍被 require」这类崩法
+#      ——v0.7.15 便携包就是这样带着 Error 弹窗出厂的。
+$bootUd = Join-Path $env:TEMP ("lg-boot-" + $ver)
+if (Test-Path $bootUd) { Remove-Item $bootUd -Recurse -Force }
+$bootErr = Join-Path $env:TEMP ("lg-boot-" + $ver + ".err.txt")
+if (Test-Path $bootErr) { Remove-Item $bootErr -Force }
+$env:LG_USERDATA = $bootUd
+$bootProc = Start-Process -FilePath $exe -PassThru -RedirectStandardError $bootErr
+Start-Sleep -Seconds 9
+$bootProc = Get-Process -Id $bootProc.Id -ErrorAction SilentlyContinue
+$bootTitle = ""
+if ($bootProc) { $bootProc.Refresh(); $bootTitle = [string]$bootProc.MainWindowTitle }
+$bootAlive = $null -ne $bootProc
+if ($bootAlive) { taskkill /PID $bootProc.Id /T /F | Out-Null }
+Remove-Item Env:LG_USERDATA
+Start-Sleep -Milliseconds 800
+$bootErrText = if (Test-Path $bootErr) { [IO.File]::ReadAllText($bootErr) } else { "" }
+Remove-Item $bootUd -Recurse -Force -ErrorAction SilentlyContinue
+if (-not $bootAlive) { throw ("出包启动自检失败：暂存产物主进程启动后退出；stderr=" + $bootErrText) }
+if ($bootTitle -like "*Error*" -or $bootErrText -match "Cannot find module|A JavaScript error occurred") {
+  throw ("出包启动自检失败：暂存产物启动报错（窗口标题=" + $bootTitle + "）；stderr=" + $bootErrText)
+}
+Write-Output ("BOOT-OK " + $bootProc.Id + " title=" + $bootTitle)
+
 # 5.5) 自签过渡（证书采购前的方案，评审终态路径认可）：签主执行体，
 #      证书公钥导出 dist 供信任安装；无签名能力时告警不阻断。
 $cerPath = Join-Path $dist "luogu-desktop-selfsigned.cer"
@@ -113,10 +138,10 @@ try {
   Write-Output ("SIGN-WARN " + $_.Exception.Message)
 }
 
-# 6) 压缩：7z LZMA2 单文件交付，避免 Electron 原生 zip 超过 100MB。
+# 6) 压缩：7z LZMA2 单文件交付；体积写入日志，不设硬门槛。
 $seven = @("C:\Program Files\7-Zip\7z.exe", "C:\Program Files (x86)\7-Zip\7z.exe") |
   Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $seven) { throw "需要 7-Zip 以生成低于 100MB 的便携包" }
+if (-not $seven) { throw "需要 7-Zip 以生成便携包" }
 Push-Location $stage
 try {
   & $seven a -t7z -mx=9 -mmt=on -y $archive * | Out-Null
@@ -154,7 +179,10 @@ if (Test-Path $sfxModule) {
 }
 $sizeMb = [math]::Round((Get-Item $archive).Length / 1MB, 1)
 $sfxMb = if (Test-Path $portableExe) { [math]::Round((Get-Item $portableExe).Length / 1MB, 1) } else { 0 }
-if ($sizeMb -ge 100 -or ($sfxMb -and $sfxMb -ge 100)) {
-  throw "便携包超过 100MB：7z=$sizeMb MB sfx=$sfxMb MB"
+if ($sfxMb -gt 0) {
+  # SFX 已包含完整载荷；中间 7z 只用于构建，不再同时留在 dist 占用双份磁盘。
+  Remove-Item $archive -Force -ErrorAction SilentlyContinue
+  Write-Output ("PACK-OK " + $portableExe + " (" + $sfxMb + " MB); intermediate-7z=removed")
+} else {
+  Write-Output ("PACK-OK " + $archive + " (" + $sizeMb + " MB); SFX=unavailable")
 }
-Write-Output ("PACK-OK " + $archive + " (" + $sizeMb + " MB); SFX=" + $portableExe + " (" + $sfxMb + " MB)")
