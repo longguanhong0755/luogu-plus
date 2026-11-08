@@ -2,7 +2,7 @@
 
 所有显著变更按版本记录于此。日期为交付日。
 
-## 未发布 — R90 官方化可读性、内存与 100MB 便携包
+## v0.7.16 (2026-11-08) — R90–R94 官方化可读性、运行期修复与重出包
 
 - 删除独立 rail WebContentsView/preload/renderer，侧栏收敛为外壳内唯一 DOM。
 - 折叠态 64px、固定态 208px；悬停不再展开或抢焦点，钉子/`Ctrl+B` 显式切换。
@@ -25,6 +25,22 @@
 - 壁纸动画改为合成器 CSS 动画，大表面取消实时 backdrop-filter；私有内存由约 672.5MB 降至 289.4–391.6MB。
 - 便携包改为 7z/SFX 并加入 100MB 硬门禁：73.4MB / 73.6MB。
 - 100MB 运行内存仍未达成；空白 Electron 基线已为 119.4MB，需迁移 Tauri/WebView2 运行时。
+- **题面快照恢复落地**（R94）：注入脚本写在模板字面量里少一层反斜杠，运行期正则塌陷成
+  `i is not defined`，题面 DOM 快照自 R90 起 100% 抓取失败、离线 `lgoff://problem/` 只能走兜底页；
+  同两处塌陷还让 `javascript:`/`data:`/`vbscript:` 消毒失效。修复后真实题面快照首次落盘
+  （store 9 条/69KB → 10 条/139KB），并新增注入脚本编译期契约（故意写回单反斜杠即失败），check 510→511。
+- **通行密钥守卫注入时序**（R94）：页面视图尚无已提交文档时 `Page.enable` /
+  `addScriptToEvaluateOnNewDocument` 会无限挂起（`passkey guard timeout` 每页必现），
+  不启用 Page domain 直接注册则返回标识符但静默失效；改为 attach → 无文档延迟到 dom-ready →
+  有文档才 `Page.enable` 并 `runImmediately` 注入，噪声归零且冒烟 guardChecks 仍 4/4 `blocked`。
+- 门禁复核：静态检查 511/0；冒烟连续 3 次 PASS（rail 40/40、page-load 3/3），日志中
+  `passkey` / `快照抓取` 字样 0 行。已知边界：新页面视图的首个文档只能从 dom-ready 起兜底注入。
+- 重出便携包 v0.7.16（自签终态、无自动更新）；v0.7.15 包因缺上述修复不再分发。
+- **出包启动自检**（R94 复审）：打包剥离 `smoke.js` / `smoke-guard.js` 后，`ipc.js` 仍在顶层
+  `require("./smoke-guard")`，缺模块直接弹 Error，整包无法启动——**v0.7.15 便携包因此是启动即崩的
+  死包**（打包冒烟只跑 `desktop/` 开发态，看不到这一层）。改为容错加载（缺失即降级为无守卫），
+  并在出包流程新增「对暂存产物隔离 profile 启动、按窗口标题/stderr 判定」的自检（`BOOT-OK`）；
+  check 新增「剥离清单内模块不得被顶层裸 require」契约，check 511→514。
 
 ## v0.7.15 (2026-11-01) — R83 parity 增量（9/12 旅程）
 
