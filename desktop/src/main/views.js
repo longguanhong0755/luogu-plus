@@ -12,11 +12,14 @@ const { TITLE_H, RAIL_W, RAIL_COLLAPSED_W, TOOLBAR_H } = require("./window");
 const { safeOpenExternal } = require("./external");
 const { NAV, LIBRARY_IDS, WEB_URLS, FALLBACK_URLS } = require("./sections");
 const { canonicalPid } = require("./sections");
-const { SOURCE: PASSKEY_GUARD } = require("./passkey-guard");
+const { PageReadinessController } = require("./page-readiness");
+const { attachToWebContents: attachPasskeyGuard, injectIntoCurrentDocument: injectPasskeyGuard } = require("./passkey-guard");
 
 const MAX_PROBLEMS = 2;
-const MAX_DETAILS = 4;
-const MAX_TOTAL_ENTRIES = 6;
+const MAX_DETAILS = 3;
+const MAX_TOTAL_ENTRIES = 4;
+const IDE_VERTICAL_BREAKPOINT = 720;
+const IDLE_VIEW_MS = Math.max(5000, Number(process.env.LG_VIEW_IDLE_MS) || 90000);
 
 function acceleratorMatches(input, accelerator) {
   const parts = String(accelerator || "").split("+");
@@ -95,6 +98,9 @@ class ViewManager {
     this.ideOn = false;
     this.ideSplit = 0.5;
     this.overlayOpen = false;
+    this.overlayToken = 0;
+    this.overlayQueue = Promise.resolve();
+    this.lastOverlayBackdrop = null;
     this.railPinned = !!(ctx.cfg && ctx.cfg.get().rail && ctx.cfg.get().rail.pinned);
     this.railCurrentW = this.railPinned ? RAIL_W : RAIL_COLLAPSED_W;
     this.railAnimToken = 0;
@@ -104,6 +110,25 @@ class ViewManager {
     this.clock = 0;
     this.skinTimer = null;
     this.skinSeq = 0;
+    this.disposed = false;
+  }
+
+  dispose() {
+    this.disposed = true;
+    this.overlayToken++;
+    clearTimeout(this.railAnimTimer);
+    clearTimeout(this.skinTimer);
+    this.railAnimTimer = null;
+    this.skinTimer = null;
+    for (const entry of this.entries.values()) {
+      clearTimeout(entry.captureTimer);
+      clearTimeout(entry.sleepTimer);
+      if (entry.readiness) entry.readiness.dispose();
+      if (!entry.view || entry.view.webContents.isDestroyed()) continue;
+      entry.view.webContents.setAudioMuted(true);
+      entry.view.setVisible(false);
+      entry.view.setBackgroundColor(this.ctx.theme.colors.bg);
+    }
   }
 
   setWindow(win) {
@@ -122,17 +147,28 @@ class ViewManager {
     return this.railPinned ? RAIL_W : RAIL_COLLAPSED_W;
   }
 
+  workspaceMetrics(entry, railW, bounds) {
+    const availableWidth = Math.max(1, Math.round(bounds.width - railW));
+    const availableHeight = Math.max(1, Math.round(bounds.height - TITLE_H - TOOLBAR_H));
+    const ide = !!(this.ideOn && entry && entry.kind === "problem");
+    const vertical = ide && availableWidth < IDE_VERTICAL_BREAKPOINT;
+    let width = availableWidth;
+    let height = availableHeight;
+    if (ide && vertical) {
+      height = Math.max(1, Math.floor(availableHeight * (1 - this.ideSplit)));
+    } else if (ide) {
+      width = Math.max(1, Math.floor(availableWidth * (1 - this.ideSplit)));
+    }
+    return { availableWidth, availableHeight, width, height, vertical };
+  }
+
   layoutRailEntry(entry, railW, boundsOverride) {
     if (!entry || !this.win || this.win.isDestroyed()) return;
     if (entry.view.webContents.isDestroyed()) return;
     const bounds = boundsOverride || this.win.getContentBounds();
-    const y = TITLE_H + TOOLBAR_H;
-    const height = Math.max(240, bounds.height - TITLE_H - TOOLBAR_H);
-    let width = Math.max(320, bounds.width - railW);
-    if (this.ideOn && entry.kind === "problem") {
-      width = Math.max(320, Math.floor(width * (1 - this.ideSplit)));
-    }
-    const rect = { x: railW, y, width, height };
+    const metrics = this.workspaceMetrics(entry, railW, bounds);
+    const rect = { x: railW, y: TITLE_H + TOOLBAR_H, width: metrics.width, height: metrics.height };
+    entry.ideVertical = metrics.vertical;
     const serialized = JSON.stringify(rect);
     if (entry.lastRect === serialized) return;
     entry.lastRect = serialized;
@@ -142,11 +178,13 @@ class ViewManager {
 
   applyRailWidth(width, boundsOverride) {
     this.railCurrentW = Math.max(RAIL_COLLAPSED_W, Math.min(RAIL_W, Math.round(Number(width) || 0)));
+    const entry = this.currentEntry();
     if (this.win && !this.win.isDestroyed()) {
-      this.win.webContents.send("rail:layout", { width: this.railCurrentW });
+      const bounds = boundsOverride || this.win.getContentBounds();
+      const metrics = this.workspaceMetrics(entry, this.railCurrentW, bounds);
+      this.win.webContents.send("rail:layout", { width: this.railCurrentW, ideVertical: metrics.vertical });
     }
     if (this.overlayOpen || this.library) return;
-    const entry = this.currentEntry();
     if (entry) this.layoutRailEntry(entry, this.railCurrentW, boundsOverride);
   }
 
@@ -323,8 +361,11 @@ class ViewManager {
       section: sectionOfUrl(url),
       railId,
     });
-    if (entry.view.webContents.getURL() !== url) {
-      entry.view.webContents.loadURL(url);
+    entry.requestedUrl = url;
+    // 新 entry 的 about:blank -> dom-ready -> 首次 loadURL 由 ensureEntry 独占。
+    // 这里再次 loadURL 会与 training/117 的 302 自跳转竞态，导致偶发空壳。
+    if (entry.booted && entry.view.webContents.getURL() !== url) {
+      entry.view.webContents.loadURL(url).catch(() => {});
     }
     this.evictKind("detail", MAX_DETAILS, entry.key);
     this.evictTotal(MAX_TOTAL_ENTRIES, entry.key);
@@ -353,7 +394,7 @@ class ViewManager {
     // 不在登录页就重新加载，否则用户看到的是旧页面、登录按钮像坏了
     try {
       const current = entry.view.webContents.getURL();
-      if (current && !current.includes("auth/login")) {
+      if (current && current !== "about:blank" && !current.includes("auth/login")) {
         entry.view.webContents.loadURL("https://www.luogu.com.cn/auth/login").catch(() => {});
       }
     } catch {
@@ -521,6 +562,7 @@ class ViewManager {
   /* 题面快照：题目页导航停稳后延迟抓取已渲染 DOM（洛谷自己渲染的公式/代码高亮原样保留）。
      SPA 水合慢于首次 paint，抓到空壳时再等一轮；#submit 提交区和离线页不抓。 */
   scheduleProblemCapture(entry, url) {
+    if (process.env.LG_NO_SNAPSHOT === "1") return;
     if (!entry || entry.kind !== "problem") return;
     if (entry.captureTimer) clearTimeout(entry.captureTimer);
     if (!url || url.includes("#") || isOfflineUrl(url)) return;
@@ -533,6 +575,7 @@ class ViewManager {
   }
 
   async captureProblem(entry, round) {
+    if (this.disposed || !entry || !this.win || this.win.isDestroyed()) return;
     const wc = entry.view.webContents;
     if (wc.isDestroyed() || round > 4) return;
     const url = wc.getURL();
@@ -542,6 +585,7 @@ class ViewManager {
     let probe = null;
     try {
       probe = await wc.executeJavaScript(`(() => {
+       try {
         const pick =
           document.querySelector(".main-container") ||
           document.querySelector("main") ||
@@ -568,8 +612,8 @@ class ViewManager {
           for (const attr of [...node.attributes]) {
             const name = attr.name.toLowerCase();
             const isUrlAttr = name === "href" || name === "src" || name === "formaction" || name === "action" || name === "xlink:href";
-            const isSafeData = name === "src" && /^data:(image|font)\//i.test(attr.value);
-            if (name.startsWith("on") || (isUrlAttr && !isSafeData && /^\s*(javascript|data|vbscript):/i.test(attr.value))) {
+            const isSafeData = name === "src" && /^data:(image|font)\\//i.test(attr.value);
+            if (name.startsWith("on") || (isUrlAttr && !isSafeData && /^\\s*(javascript|data|vbscript):/i.test(attr.value))) {
               node.removeAttribute(attr.name);
             }
           }
@@ -581,11 +625,36 @@ class ViewManager {
           title: (document.title || "").split(" - 洛谷")[0],
           html: html.length > 600000 ? html.slice(0, 600000) : html,
         };
+       } catch (err) {
+         // 抓取脚本自身的异常必须在页面内捕获并带回来，否则它会和
+         // “文档已销毁/正在导航”的传输层拒绝共用同一句话术，日志无法区分。
+         return { ok: false, reason: "script-throw", message: String((err && err.message) || err), stack: String((err && err.stack) || "") };
+       }
       })()`);
     } catch (err) {
-      console.log("[views] 快照抓取失败 " + String(err && err.message).slice(0, 100));
+      const msg = String((err && err.message) || err || "");
+      // 能走到这里只剩传输层拒绝：文档已销毁、正在导航、渲染上下文被替换。
+      // 隐藏窗口在 smoke 快速切题/重载时必然命中，属于预期竞态，默认静默；
+      // 排查时设 LG_DEBUG_CAPTURE=1 留一行现场。
+      const ctxGone = /Script failed to execute|Render frame was disposed|WebContents was destroyed|Execution context was destroyed|Cannot find context|ERR_ABORTED/i.test(msg) ||
+        wc.isDestroyed() ||
+        this.disposed;
+      if (process.env.LG_DEBUG_CAPTURE) {
+        console.log("[views] 快照抓取竞态跳过 round=" + round + " " + msg.slice(0, 80));
+      }
+      if (!ctxGone) {
+        console.log("[views] 快照抓取失败 " + msg.slice(0, 100) + " url=" + (wc.isDestroyed() ? "(destroyed)" : wc.getURL().slice(0, 90)));
+      }
       // 导航竞态等瞬时错误也给一次机会（round 上限复用，防循环）
       setTimeout(() => this.captureProblem(entry, round + 1).catch(() => {}), 2500);
+      return;
+    }
+    if (probe && probe.reason === "script-throw") {
+      // 页内脚本真的抛错：这才是需要修的 bug，重试没有意义
+      console.log("[views] 快照抓取脚本异常 " + String(probe.message || "").slice(0, 120));
+      if (process.env.LG_DEBUG_CAPTURE && probe.stack) {
+        console.log("[views] 快照抓取脚本异常栈 " + String(probe.stack).slice(0, 800));
+      }
       return;
     }
     if (probe && probe.ok && this.ctx.luogu) {
@@ -621,10 +690,102 @@ class ViewManager {
     if (this.ideOn) this.layout();
   }
 
+  async captureOverlayBackdrop() {
+    const entry = this.currentEntry();
+    if (!entry || !this.win || this.win.isDestroyed() || entry.view.webContents.isDestroyed()) return "";
+    const bounds = entry.view.getBounds();
+    const fingerprint = [
+      entry.key,
+      entry.view.webContents.getURL(),
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+    ].join("|");
+    const cached = this.lastOverlayBackdrop && this.lastOverlayBackdrop.fingerprint === fingerprint
+      ? this.lastOverlayBackdrop.dataUrl
+      : "";
+    let lastError = null;
+    // 隐藏/透明窗口偶尔会在首帧合成前返回空图；连续重试三次，
+    // 比直接清空覆盖层背景稳定得多。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let timeout = null;
+      try {
+        entry.view.webContents.invalidate();
+        await new Promise((resolve) => setTimeout(resolve, 30 + attempt * 35));
+        let image = await Promise.race([
+          entry.view.webContents.capturePage(undefined, { stayHidden: true }),
+          new Promise((resolve) => {
+            timeout = setTimeout(() => resolve(null), 1500);
+          }),
+        ]);
+        if (!image || image.isEmpty()) continue;
+        const size = image.getSize();
+        if (bounds.width > 0 && bounds.height > 0 && size.width > bounds.width + 1) {
+          image = image.resize({ width: Math.round(bounds.width), height: Math.round(bounds.height), quality: "good" });
+        }
+        const dataUrl = image.toDataURL();
+        this.lastOverlayBackdrop = { fingerprint, dataUrl };
+        return dataUrl;
+      } catch (err) {
+        lastError = err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    if (lastError) console.warn("[views] overlay backdrop:", lastError.message);
+    // 页面刚切换/仍在首帧合成时可能暂时抓不到图；保留最近一张冻结帧，
+    // 也远好于把覆盖层背景直接清空。下一次成功抓图会替换它。
+    return cached || (this.lastOverlayBackdrop && this.lastOverlayBackdrop.dataUrl) || "";
+  }
+
+  /* 覆盖层开关来自渲染进程的异步 IPC。快速关闭再打开时，两个 IPC 会并发抵达；
+     必须串行执行，否则旧的 close 可能在新 open 之后落地并把页面藏掉。 */
   setOverlay(open) {
-    this.overlayOpen = !!open;
-    if (this.overlayOpen) this.hideAll();
-    else this.restoreCurrent();
+    const next = !!open;
+    if (!next) {
+      // Esc/返回是用户可见的即时操作，不能被仍在抓图的 open 排队拖住。
+      // 先失效旧代次并恢复页面；排队的 close 随后只会做幂等收尾。
+      this.overlayToken++;
+      if (this.overlayOpen) {
+        this.overlayOpen = false;
+        if (this.win && !this.win.isDestroyed()) {
+          this.win.webContents.send("page:freeze", { clear: true });
+        }
+        this.restoreCurrent();
+      }
+    }
+    const operation = this.overlayQueue.then(() => this.applyOverlay(next));
+    this.overlayQueue = operation.catch(() => {});
+    return operation;
+  }
+
+  async applyOverlay(next) {
+    if (next) {
+      if (this.overlayOpen) return;
+      this.overlayOpen = true;
+      const token = ++this.overlayToken;
+      const dataUrl = await this.captureOverlayBackdrop();
+      if (this.ctx.smoke) console.log("SMOKE_OVERLAY_BACKDROP " + JSON.stringify({ bytes: dataUrl.length }));
+      // 抓图期间用户可能已经按 Esc；旧代次不能把刚恢复的页面再次隐藏。
+      if (token !== this.overlayToken || !this.overlayOpen) return;
+      if (dataUrl && this.win && !this.win.isDestroyed()) {
+        this.win.webContents.send("page:freeze", { dataUrl });
+        // 让外壳先收到冻结帧，再撤掉 WebContentsView，避免覆盖层打开时内容闪空。
+        await new Promise((resolve) => setTimeout(resolve, 16));
+      } else if (this.win && !this.win.isDestroyed()) {
+        this.win.webContents.send("page:freeze", { clear: true });
+      }
+      if (token !== this.overlayToken || !this.overlayOpen) return;
+      this.hideAll();
+      if (this.win && !this.win.isDestroyed()) this.win.webContents.focus();
+      return;
+    }
+    if (!this.overlayOpen) return;
+    this.overlayOpen = false;
+    this.overlayToken++;
+    if (this.win && !this.win.isDestroyed()) this.win.webContents.send("page:freeze", { clear: true });
+    this.restoreCurrent();
   }
 
   switchTo(key) {
@@ -683,6 +844,7 @@ class ViewManager {
         isProblem: false,
         pid: "",
         ide: false,
+        loading: null,
         layout: { titleH: TITLE_H, railW: this.railWidth(), toolbarH: TOOLBAR_H },
       };
     }
@@ -703,10 +865,12 @@ class ViewManager {
         isProblem: false,
         pid: "",
         ide: false,
+        loading: null,
         layout: { titleH: TITLE_H, railW: this.railWidth(), toolbarH: TOOLBAR_H },
       };
     }
     const wc = entry.view.webContents;
+    const pageUrl = entry.sleeping ? entry.resumeUrl || entry.requestedUrl || "" : wc.getURL();
     let canBack = false;
     let canForward = false;
     try {
@@ -715,7 +879,7 @@ class ViewManager {
     } catch {
       /* ignore */
     }
-    const liveSection = sectionOfUrl(wc.getURL()) || entry.section || "";
+    const liveSection = sectionOfUrl(pageUrl) || entry.section || "";
     const railId = entry.railId !== undefined ? entry.railId : NAV[liveSection] ? liveSection : "";
     return {
       home: false,
@@ -725,13 +889,14 @@ class ViewManager {
       key: entry.key,
       kind: entry.kind,
       title: entry.title,
-      url: wc.getURL(),
+      url: pageUrl,
       canBack: canBack || !!this.returnLib,
       canForward,
       canReopen,
       isProblem: entry.kind === "problem",
-      pid: entry.pid || pidFromUrl(wc.getURL()),
+      pid: entry.pid || pidFromUrl(pageUrl),
       ide: this.ideOn,
+      loading: entry.readiness ? entry.readiness.state : null,
       layout: { titleH: TITLE_H, railW: this.railWidth(), toolbarH: TOOLBAR_H },
     };
   }
@@ -744,6 +909,8 @@ class ViewManager {
       existing.lastUsed = ++this.clock;
       if (title) existing.title = title;
       if (railId !== undefined) existing.railId = String(railId || "");
+      if (url) existing.requestedUrl = url;
+      if (existing.sleeping) this.wakeEntry(existing, url);
       return existing;
     }
     const t = this.ctx.theme;
@@ -760,6 +927,7 @@ class ViewManager {
         backgroundThrottling: !this.ctx.smoke,
         additionalArguments: [
           "--lg-boot-bg=" + encodeURIComponent(t.colors.bg),
+          "--lg-boot-surface=" + encodeURIComponent(t.colors.surface),
           "--lg-view-x=" + this.railWidth(),
           "--lg-view-y=" + (TITLE_H + TOOLBAR_H),
           "--lg-motion=0",
@@ -772,7 +940,7 @@ class ViewManager {
         ],
       },
     });
-    view.setBackgroundColor(t.colors.bg);
+    view.setBackgroundColor("#00000000");
 
     const entry = {
       key,
@@ -789,62 +957,67 @@ class ViewManager {
       varsKey: null,
       varsSig: "",
       varsPending: false,
+      varsDirty: false,
+      guardReady: null,
+      guardPreDoc: false,
+      guardRetry: false,
       attached: false,
       lastRect: "",
       booted: false,
+      requestedUrl: url || "",
+      blankRetries: 0,
+      sleeping: false,
+      sleepPending: false,
+      sleepTimer: null,
+      lifecycleToken: 0,
+      resumeUrl: url || "",
+      resumeScroll: 0,
     };
+    const wc = view.webContents;
+    // Chromium 会为带 iframe 的页面在其内部加载流程中临时注册多个
+    // did-stop-loading 监听（通知页实测 8-12 个）。业务代码始终只注册 1 个；
+    // 给内部实现留出有限空间，并由 smoke 对“业务监听数 + 总数上限”双重门禁。
+    wc.setMaxListeners(24);
+    entry.readiness = new PageReadinessController(
+      wc,
+      () => ({
+        kind: entry.kind,
+        section: entry.section,
+        requestedUrl: entry.requestedUrl,
+        url: entry.sleeping ? entry.resumeUrl : wc.getURL(),
+      }),
+      (loadState) => {
+        entry.loadState = loadState;
+        if (this.currentEntry() === entry) this.emit();
+      }
+    );
+    entry.loadState = entry.readiness.state;
     this.entries.set(key, entry);
     this.wire(entry);
-    const wc = view.webContents;
-    // 先在空白页上装好主世界守卫，再进真实页面：登录页首帧就受保护。
-    wc.once("dom-ready", async () => {
-      if (entry.booted) return;
-      entry.booted = true;
-      await this.attachGuard(wc);
-      if (!wc.isDestroyed() && url) {
-        // 真实页提交后把守卫用的 about:blank 从历史里摘掉：否则第一次
-        // 「后退」会退到空白页而不是应用内的来源列表
-        wc.once("did-navigate", () => {
-          try {
-            const history = wc.navigationHistory;
-            const first = history.getEntryAtIndex(0);
-            if (history.length() > 1 && first && first.url === "about:blank") {
-              history.removeEntryAtIndex(0);
-            }
-          } catch {
-            /* ignore */
-          }
-        });
-        wc.loadURL(url).catch((err) => {
-          // 页面还没加载完就被切走/重载时，Chromium 以 ERR_ABORTED 结束旧请求；
-          // 这不是打开失败，弹出来只会吓人。
-          if (/ERR_ABORTED|\(-3\)/.test(String((err && err.message) || ""))) return;
-          this.ctx.toast && this.ctx.toast("页面打开失败", err.message);
-        });
-      }
-    });
-    wc.loadURL("about:blank").catch(() => {});
+    // 所有页面视图都在首个真实文档创建前安装通行密钥守卫；不能只保护登录视图，
+    // 否则站点后续跳到登录页时仍可能拉起 Windows 安全中心。
+    // 守卫不再阻塞导航：Electron 39 在“还没有已提交文档”的目标上执行 Page 域命令会
+    // 一直挂起，若等它超时，每次开页要多等 1 秒多；首个文档由 dom-ready 兜底，
+    // 文档就绪后再补装 pre-document 注入（见下方 dom-ready）。
+    entry.guardReady = this.attachGuard(wc);
+    entry.guardReady.then((guarded) => {
+      entry.guardPreDoc = !!guarded;
+    }).catch(() => {});
+    if (url) {
+      entry.readiness.begin(url, "open");
+      this.loadEntryURL(entry, url).catch((err) => {
+        // 页面还没加载完就被切走/重载时，Chromium 以 ERR_ABORTED 结束旧请求；
+        // 这不是打开失败，弹出来只会吓人。
+        if (/ERR_ABORTED|\(-3\)/.test(String((err && err.message) || ""))) return;
+        entry.readiness.fail(err.message, "open-failed");
+        this.ctx.toast && this.ctx.toast("页面打开失败", err.message);
+      });
+    }
     return entry;
   }
 
   async attachGuard(wc) {
-    if (!wc || wc.isDestroyed()) return false;
-    try {
-      if (wc.debugger.isAttached()) return true;
-      wc.debugger.attach("1.3");
-      await Promise.race([
-        wc.debugger.sendCommand("Page.enable"),
-        new Promise((_resolve, reject) => setTimeout(() => reject(new Error("Page.enable timeout")), 5000)),
-      ]);
-      await wc.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", {
-        source: PASSKEY_GUARD,
-        runImmediately: true,
-      });
-      return true;
-    } catch (err) {
-      console.error("[views] passkey guard:", err.message);
-      return false;
-    }
+    return attachPasskeyGuard(wc);
   }
 
   reinstallGuard(wc) {
@@ -855,6 +1028,30 @@ class ViewManager {
       /* ignore */
     }
     this.attachGuard(wc).catch(() => {});
+  }
+
+  /* 页面导航统一走 CDP 的 Page.navigate。这样既和普通浏览器导航语义一致，
+     又不会让 Electron 的 loadURL Promise 为同一 WebContents 挂上一组内部
+     did-stop-loading 监听器；带 iframe 的洛谷页面尤其容易触发这些假泄漏告警。
+     CDP 不可用时仍回退到 loadURL，并用 did-fail-load 统一呈现错误。 */
+  async loadEntryURL(entry, url) {
+    const wc = entry && entry.view && entry.view.webContents;
+    const target = String(url || "");
+    if (!wc || wc.isDestroyed() || !target) return false;
+    if (wc.debugger.isAttached()) {
+      try {
+        const result = await Promise.race([
+          wc.debugger.sendCommand("Page.navigate", { url: target }),
+          new Promise((_resolve, reject) => setTimeout(() => reject(new Error("Page.navigate timeout")), 10000)),
+        ]);
+        if (result && result.errorText) throw new Error(result.errorText);
+        return true;
+      } catch (err) {
+        console.warn("[views] Page.navigate fallback:", err.message);
+      }
+    }
+    await wc.loadURL(target);
+    return true;
   }
 
   wire(entry) {
@@ -879,7 +1076,23 @@ class ViewManager {
       if (entry.kind === "problem") this.scheduleProblemCapture(entry, url);
     };
     wc.on("did-navigate", onNavigate);
-    wc.on("did-navigate-in-page", onNavigate);
+    wc.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+      onNavigate(_event, url);
+      if (isMainFrame !== false) entry.readiness.didNavigate(url);
+    });
+    wc.on("did-start-navigation", (details, deprecatedUrl, deprecatedInPlace, deprecatedMainFrame) => {
+      // Electron 39 把导航信息放在第一个 details 参数里；旧签名仍保留，
+      // 两种形式都要兼容，否则所有导航都会漏掉 readiness.begin。
+      const target = (details && details.url) || (typeof deprecatedUrl === "string" ? deprecatedUrl : "");
+      const sameDocument = details && details.isSameDocument !== undefined
+        ? !!details.isSameDocument
+        : !!deprecatedInPlace;
+      const mainFrame = details && details.isMainFrame !== undefined
+        ? details.isMainFrame !== false
+        : deprecatedMainFrame !== false;
+      if (!mainFrame || !target || target === "about:blank") return;
+      entry.readiness.begin(target, sameDocument ? "in-page" : "document");
+    });
 
     wc.on("dom-ready", () => {
       const current = wc.getURL();
@@ -891,9 +1104,24 @@ class ViewManager {
       entry.varsPending = false;
       entry.skinMtime = 0;
       entry.skinPending = false;
-      if (!wc.debugger.isAttached()) this.attachGuard(wc);
+      if (!entry.guardPreDoc && !entry.guardRetry) {
+        // Page 域只能在文档提交之后启用；首个文档到达时补装一次，成功后同一视图
+        // 之后的所有导航（含站点自己跳登录页）都在文档脚本执行前就带守卫。
+        entry.guardRetry = true;
+        this.attachGuard(wc).then((guarded) => {
+          entry.guardPreDoc = !!guarded;
+        }).catch(() => {});
+      } else if (!wc.debugger.isAttached()) {
+        this.attachGuard(wc).catch(() => {});
+      }
       if (!isOfflineUrl(current)) this.injectSkin(entry);
-      entry.view.setBackgroundColor(this.ctx.theme.colors.bg);
+      // CDP 预注入在某些首次 renderer 上会超时；当前文档必须在主世界再兜底一次，
+      // 否则隔离世界 preload 无法覆盖站点自己的 navigator.credentials。
+      injectPasskeyGuard(wc).then((injected) => {
+        entry.passkeyFallback = injected;
+      }).catch(() => {});
+      entry.view.setBackgroundColor("#00000000");
+      entry.readiness.markDomReady(current);
     });
 
     wc.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
@@ -904,10 +1132,21 @@ class ViewManager {
         const offlineUrl = this.ctx.luogu ? this.ctx.luogu.problemSnapshotUrl(pid) : "";
         if (offlineUrl) {
           console.log("[views] 题目加载失败，回退离线快照 " + pid);
+          entry.readiness.begin(offlineUrl, "offline-fallback");
           wc.loadURL(offlineUrl).catch(() => {});
           return;
         }
       }
+      // 题单详情是站点 SPA，偶发首包/路由数据都成功但正文未渲染。
+      // 对训练详情做一次静默重载，不把用户留在空白的 l-card 里。
+      if (entry.section === "training" && entry.requestedUrl && (entry.blankRetries || 0) < 1) {
+        entry.blankRetries = (entry.blankRetries || 0) + 1;
+        setTimeout(() => {
+          if (!wc.isDestroyed()) wc.loadURL(entry.requestedUrl).catch(() => {});
+        }, 450);
+        return;
+      }
+      entry.readiness.fail(`${description}（${code}）`, "did-fail-load");
       this.ctx.toast && this.ctx.toast("页面加载失败", `${description}（${code}）`);
       console.error("[views] did-fail-load", url, code, description);
     });
@@ -923,9 +1162,39 @@ class ViewManager {
     // 加载成功即清零崩溃重载计数（「连续 3 次」语义）
     wc.on("did-finish-load", () => {
       wc.__lgReloadCount = 0;
+      entry.readiness.markDomReady(wc.getURL());
+      if (entry.section !== "training" || !entry.requestedUrl) return;
+      setTimeout(async () => {
+        if (wc.isDestroyed() || wc.getURL() !== entry.requestedUrl) return;
+        let probe = null;
+        try {
+          probe = await wc.executeJavaScript(`(() => {
+            const app = document.querySelector("#app");
+            const text = String((app && app.innerText) || "").replace(/\s+/g, " ").trim();
+            return { ok: !!app && !!app.firstElementChild && text.length >= 20, length: text.length };
+          })()`);
+        } catch {
+          return;
+        }
+        if (probe && probe.ok) {
+          entry.blankRetries = 0;
+          return;
+        }
+        if ((entry.blankRetries || 0) < 1) {
+          entry.blankRetries = (entry.blankRetries || 0) + 1;
+          wc.reload();
+          return;
+        }
+        this.ctx.toast && this.ctx.toast("题单加载失败", "页面没有返回正文，请检查登录状态后重试。");
+      }, 700);
+    });
+
+    wc.on("did-stop-loading", () => {
+      entry.readiness.markDomReady(wc.getURL());
     });
 
     wc.on("render-process-gone", () => {
+      entry.readiness.fail("页面渲染进程已退出", "render-process-gone");
       // 重载上限：确定性崩溃页不能无限循环；连续 3 次后停止并提示
       wc.__lgReloadCount = (wc.__lgReloadCount || 0) + 1;
       if (wc.__lgReloadCount > 3) {
@@ -1049,19 +1318,176 @@ class ViewManager {
     });
   }
 
+  viewStats() {
+    const entries = [...this.entries.values()];
+    return {
+      entries: entries.length,
+      live: entries.filter((entry) => entry.view && !entry.sleeping).length,
+      sleeping: entries.filter((entry) => entry.sleeping).length,
+      idleMs: IDLE_VIEW_MS,
+      limits: { problems: MAX_PROBLEMS, details: MAX_DETAILS, total: MAX_TOTAL_ENTRIES },
+    };
+  }
+
+  cancelSleep(entry) {
+    if (!entry) return;
+    if (entry.sleepTimer) clearTimeout(entry.sleepTimer);
+    entry.sleepTimer = null;
+  }
+
+  cancelAllSleep() {
+    for (const entry of this.entries.values()) this.cancelSleep(entry);
+  }
+
+  scheduleSleep(entry) {
+    if (!entry || this.disposed || entry.sleeping || entry.kind === "login" || entry.key === this.currentKey) return;
+    this.cancelSleep(entry);
+    const perf = !!(this.ctx.cfg && this.ctx.cfg.get().general.performanceMode);
+    const delay = perf ? Math.min(IDLE_VIEW_MS, 30000) : IDLE_VIEW_MS;
+    entry.sleepTimer = setTimeout(() => {
+      entry.sleepTimer = null;
+      if (entry.key === this.currentKey || entry.kind === "login") return;
+      this.sleepEntry(entry).catch(() => {});
+    }, delay);
+  }
+
+  async sleepEntry(entry, force = false) {
+    if (!entry || entry.sleeping || entry.sleepPending || entry.kind === "login") return false;
+    if (!force && entry.key === this.currentKey) return false;
+    if (this.disposed) return false;
+    const wc = entry.view && entry.view.webContents;
+    if (!wc || wc.isDestroyed()) return false;
+    const url = wc.getURL();
+    if (!url || url === "about:blank") return false;
+
+    entry.sleepPending = true;
+    entry.lastSleep = { at: Date.now(), state: "checking" };
+    const token = entry.lifecycleToken;
+    let checkpoint = { scroll: 0, dirty: false, timedOut: false };
+    let probeTimer = null;
+    try {
+      checkpoint = await Promise.race([
+        wc.executeJavaScript(`(() => {
+          const fields = Array.from(document.querySelectorAll('textarea, [contenteditable="true"]'));
+          const dirty = fields.some((node) => {
+            if (!node || node.disabled || node.readOnly) return false;
+            if (node.matches && node.matches('[contenteditable="true"]')) {
+              return String(node.innerText || '').trim().length > 0;
+            }
+            return String(node.value || '').trim().length > 0;
+          });
+          return {
+            scroll: Number(window.scrollY || document.documentElement.scrollTop || 0) || 0,
+            dirty,
+            timedOut: false,
+          };
+        })()`, true),
+        new Promise((resolve) => {
+          probeTimer = setTimeout(() => resolve({ scroll: 0, dirty: false, timedOut: true }), 1200);
+        }),
+      ]);
+    } catch {
+      entry.sleepPending = false;
+      entry.lastSleep = { at: Date.now(), state: "probe-failed", loading: wc.isLoading() };
+      if (wc.isLoading()) {
+        this.scheduleSleep(entry);
+        return false;
+      }
+    } finally {
+      if (probeTimer) clearTimeout(probeTimer);
+    }
+    if (checkpoint.timedOut && wc.isLoading()) {
+      entry.sleepPending = false;
+      entry.lastSleep = { at: Date.now(), state: "probe-timeout-loading" };
+      this.scheduleSleep(entry);
+      return false;
+    }
+    if (token !== entry.lifecycleToken || (!force && entry.key === this.currentKey) || this.disposed) {
+      entry.sleepPending = false;
+      return false;
+    }
+    if (checkpoint.dirty) {
+      entry.sleepPending = false;
+      entry.lastSleep = { at: Date.now(), state: "dirty" };
+      this.scheduleSleep(entry);
+      return false;
+    }
+
+    entry.sleepPending = false;
+    entry.sleeping = true;
+    entry.lastSleep = { at: Date.now(), state: "sleeping", url };
+    entry.resumeUrl = url;
+    entry.resumeScroll = checkpoint.scroll || 0;
+    entry.lastRect = "";
+    if (entry.attached) {
+      try {
+        this.win.contentView.removeChildView(entry.view);
+      } catch {
+        /* ignore */
+      }
+      entry.attached = false;
+    }
+    entry.view.setVisible(false);
+    wc.loadURL("about:blank").catch(() => {});
+    return true;
+  }
+
+  wakeEntry(entry, targetUrl) {
+    if (!entry || !entry.sleeping) return false;
+    const wc = entry.view && entry.view.webContents;
+    if (!wc || wc.isDestroyed()) return false;
+    this.cancelSleep(entry);
+    entry.lifecycleToken += 1;
+    entry.sleepPending = false;
+    entry.sleeping = false;
+    const target = String(targetUrl || entry.resumeUrl || entry.requestedUrl || "").trim();
+    if (!target || target === "about:blank") return false;
+    entry.resumeUrl = target;
+    const scroll = Number(entry.resumeScroll) || 0;
+    const token = entry.lifecycleToken;
+    wc.loadURL(target)
+      .then(() => {
+        if (token !== entry.lifecycleToken || wc.isDestroyed()) return;
+        if (scroll > 0) wc.executeJavaScript(`window.scrollTo(0, ${Math.max(0, Math.round(scroll))});`, true).catch(() => {});
+        try {
+          const history = wc.navigationHistory;
+          const active = history.getActiveIndex();
+          for (let i = history.length() - 1; i >= 0; i--) {
+            const item = history.getEntryAtIndex(i);
+            if (i !== active && item && item.url === "about:blank") history.removeEntryAtIndex(i);
+          }
+        } catch {
+          /* history is best-effort */
+        }
+      })
+      .catch(() => {});
+    return true;
+  }
+
+  async suspendBackground() {
+    const tasks = [];
+    for (const entry of this.entries.values()) {
+      this.cancelSleep(entry);
+      tasks.push(this.sleepEntry(entry, true).catch(() => false));
+    }
+    return Promise.all(tasks);
+  }
+
   showEntry(entry) {
     if (!this.win || this.win.isDestroyed()) return;
+    if (entry.sleeping) this.wakeEntry(entry, entry.resumeUrl || entry.requestedUrl);
+    this.cancelSleep(entry);
     this.currentKey = entry.key;
     this.library = null;
     this.overlayOpen = false;
     for (const other of this.entries.values()) {
-      if (other !== entry) {
-        other.view.setVisible(false);
-        if (!other.view.webContents.isDestroyed()) {
-          other.view.webContents.setAudioMuted(true);
-          other.view.webContents.setBackgroundThrottling(true);
-        }
+      if (other === entry) continue;
+      other.view.setVisible(false);
+      if (!other.view.webContents.isDestroyed()) {
+        other.view.webContents.setAudioMuted(true);
+        other.view.webContents.setBackgroundThrottling(true);
       }
+      this.scheduleSleep(other);
     }
     if (!entry.attached) {
       this.win.contentView.addChildView(entry.view);
@@ -1076,6 +1502,7 @@ class ViewManager {
     }
     this.layout();
     this.injectSkin(entry);
+    entry.readiness.replay();
     entry.view.webContents.focus();
     this.emit();
   }
@@ -1087,6 +1514,7 @@ class ViewManager {
         entry.view.webContents.setAudioMuted(true);
         entry.view.webContents.setBackgroundThrottling(true);
       }
+      this.scheduleSleep(entry);
     }
   }
 
@@ -1097,14 +1525,20 @@ class ViewManager {
     }
     const entry = this.currentEntry();
     if (!entry || !this.win || this.win.isDestroyed()) return;
+    if (entry.sleeping) this.wakeEntry(entry, entry.resumeUrl || entry.requestedUrl);
+    this.cancelSleep(entry);
     if (!entry.attached) {
       this.win.contentView.addChildView(entry.view);
       entry.attached = true;
     }
     entry.view.setVisible(true);
-    if (!entry.view.webContents.isDestroyed()) entry.view.webContents.setAudioMuted(false);
+    if (!entry.view.webContents.isDestroyed()) {
+      entry.view.webContents.setAudioMuted(false);
+      entry.view.webContents.focus();
+    }
     this.layout();
     this.injectSkin(entry);
+    entry.readiness.replay();
   }
 
   currentEntry() {
@@ -1122,8 +1556,9 @@ class ViewManager {
     clearTimeout(this.railAnimTimer);
     this.railAnimTimer = null;
     this.railCurrentW = this.railTargetWidth();
-    this.win.webContents.send("rail:layout", { width: this.railCurrentW });
     const entry = this.currentEntry();
+    const metrics = this.workspaceMetrics(entry, this.railCurrentW, this.win.getContentBounds());
+    this.win.webContents.send("rail:layout", { width: this.railCurrentW, ideVertical: metrics.vertical });
     if (!entry || this.overlayOpen || this.library) {
       this.hideAll();
       return;
@@ -1160,6 +1595,8 @@ class ViewManager {
     }
   }
   destroyEntry(entry) {
+    entry.lifecycleToken += 1;
+    this.cancelSleep(entry);
     if (entry.captureTimer) {
       clearTimeout(entry.captureTimer);
       entry.captureTimer = null;
@@ -1218,7 +1655,7 @@ class ViewManager {
   updateTheme() {
     if (!this.win || this.win.isDestroyed()) return;
     for (const entry of this.entries.values()) {
-      entry.view.setBackgroundColor(this.ctx.theme.colors.bg);
+      entry.view.setBackgroundColor("#00000000");
       this.injectSkin(entry);
     }
     this.layout();
@@ -1271,6 +1708,8 @@ class ViewManager {
       `--lg-text-2:${c.text2}`,
       `--lg-text-3:${c.text3}`,
       `--lg-accent:${c.accent}`,
+      `--lg-glass-tint:${c.glassTint || c.accent}`,
+      `--lg-glass-tint-soft:${c.glassTintSoft || c.accentSoft}`,
       `--lg-accent-text:${c.accentText}`,
       `--lg-accent-soft:${c.accentSoft}`,
       `--lg-accent-fill:${c.accentFill}`,
@@ -1352,12 +1791,16 @@ class ViewManager {
           });
       }
       if (entry.varsPending) {
+        // 保留最后一次主题值；当前 insertCSS 完成后补注入，避免连续拖滑杆
+        // 时页面停在旧透明度而后台窗口已经更新。
+        entry.varsDirty = true;
         if (process.env.LG_SKIN_DEBUG) console.log("[skin] varsPending blocked, url=" + wc.getURL());
         return;
       }
       if (entry.varsKey && entry.varsSig === vars) return;
       const seq = ++this.skinSeq;
       entry.varsPending = true;
+      entry.varsDirty = false;
       const oldVars = entry.varsKey;
       entry.varsKey = null;
       if (oldVars) wc.removeInsertedCSS(oldVars).catch(() => {});
@@ -1379,6 +1822,10 @@ class ViewManager {
         })
         .finally(() => {
           entry.varsPending = false;
+          if (entry.varsDirty && !wc.isDestroyed()) {
+            entry.varsDirty = false;
+            queueMicrotask(() => this.injectSkin(entry));
+          }
         });
     } catch {
       /* 页面还在加载中，dom-ready 会再试 */
