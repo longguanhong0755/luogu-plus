@@ -1,0 +1,118 @@
+/* shell/css/030-toolbar.css — 浏览工具条；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 浏览工具条 ---------- */
+#toolbar {
+  height: var(--toolbar-h);
+  flex: 0 0 var(--toolbar-h);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--title) var(--panel-alpha, 83%), transparent);
+  -webkit-backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
+  backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+.tb-nav,
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.icon-btn {
+  width: var(--h-sm);
+  height: var(--h-sm);
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  flex: 0 0 auto;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.icon-btn:active {
+  background: var(--pressed);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.icon-btn:disabled:hover {
+  background: none;
+  color: var(--text-2);
+}
+
+#crumbs {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tbtn {
+  height: var(--h-md);
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 400;
+  color: var(--text-2);
+  flex: 0 0 auto;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.tbtn svg {
+  width: 16px;
+  height: 16px;
+}
+.tbtn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tbtn:active {
+  background: var(--pressed);
+}
+.tbtn.primary {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.tbtn.primary svg {
+  color: var(--accent);
+}
+.tbtn.primary:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.tb-sep-v {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+  flex: 0 0 auto;
+}

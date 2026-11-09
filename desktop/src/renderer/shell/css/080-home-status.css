@@ -1,0 +1,191 @@
+/* shell/css/080-home-status.css — 主页状态条、卡片网格与签到/登录卡；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.offline-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: 600;
+  color: var(--orange);
+  border: 1px solid color-mix(in srgb, var(--orange) 50%, transparent);
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  border-radius: var(--r-pill);
+  cursor: help;
+}
+.offline-note {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+  padding: 0 2px;
+}
+.home-sync-note {
+  min-height: 36px;
+  padding: 5px 8px 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--orange) 34%, var(--border));
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--orange) 9%, var(--surface));
+  color: var(--text-2);
+}
+.home-sync-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--orange);
+}
+.home-sync-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.home-sync-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.home-sync-copy strong {
+  flex: none;
+  color: var(--text);
+  font-weight: 600;
+}
+.home-sync-copy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-sync-note .btn-quiet {
+  height: 26px;
+  padding-inline: 10px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.home-grid.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+.home-main,
+.home-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.home-main .card,
+.home-side .card {
+  padding: var(--sp-4);
+}
+.home-daily-summary {
+  margin-top: var(--sp-3);
+  min-width: 0;
+}
+.home-daily-summary > .card {
+  padding: var(--sp-4);
+}
+.home-main .list-card,
+.home-side .list-card {
+  padding: 0;
+}
+
+.sign-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.sign-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.sign-title {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.sign-note {
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.sign-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+}
+.sign-state svg {
+  width: 16px;
+  height: 16px;
+}
+.sign-btn {
+  height: var(--h-md);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 600;
+  transition:
+    filter var(--dur-1) var(--ease),
+    opacity var(--dur-1) var(--ease);
+}
+.sign-btn:hover {
+  filter: brightness(1.07);
+}
+.sign-btn:active {
+  filter: brightness(0.94);
+}
+.sign-btn:disabled {
+  opacity: 0.55;
+  filter: none;
+  cursor: default;
+}
+.sign-btn.small {
+  height: var(--h-sm);
+  padding: 0 var(--sp-3);
+}
+
+.login-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.login-card .login-text {
+  flex: 1;
+  min-width: 180px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+}
+.login-card .login-title {
+  display: block;
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 2px;
+}

@@ -1,0 +1,189 @@
+/* shell/css/035-library.css — 题库列表外壳与搜索/筛选条；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 原生列表 ---------- */
+.lib-wrap {
+  width: 100%;
+  /* 题库按网页版阅读宽度收窄；超宽屏不要再把列表拉成一行长表格。 */
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 var(--page-pad) var(--sp-12);
+}
+
+.lib-top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0 calc(var(--page-pad) * -1);
+  padding: var(--sp-6) var(--page-pad) var(--sp-3);
+  background: color-mix(in srgb, var(--bg) 95%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(1.08);
+  backdrop-filter: blur(var(--blur-lg)) saturate(1.08);
+  border-bottom: 1px solid var(--border);
+}
+
+.lib-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--sp-10);
+}
+
+.lib-title {
+  margin: 0;
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lib-count {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.lib-spacer {
+  flex: 1;
+}
+
+.lib-search {
+  width: 260px;
+  height: var(--h-md);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--text-3);
+  transition:
+    border-color var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease);
+}
+.lib-search:hover {
+  border-color: var(--border-strong);
+}
+.lib-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.lib-search svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+.lib-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.lib-search input::placeholder {
+  color: var(--text-3);
+}
+.lib-search-clear {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-xs);
+  display: none;
+  place-items: center;
+  color: var(--text-3);
+  flex: none;
+}
+.lib-search-clear svg {
+  width: 14px;
+  height: 14px;
+}
+.lib-search.has-value .lib-search-clear {
+  display: grid;
+}
+.lib-search-clear:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.lib-icon {
+  width: var(--h-sm);
+  height: var(--h-sm);
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  flex: 0 0 auto;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.lib-icon:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lib-icon:active {
+  background: var(--pressed);
+}
+
+.lib-web {
+  height: var(--h-md);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  flex: 0 0 auto;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-web:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+.lib-web:active {
+  background: var(--pressed);
+}
+
+.lib-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: var(--sp-3);
+}
+
+.lib-chip {
+  height: var(--h-sm);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  border: 1px solid transparent;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lib-chip:active {
+  background: var(--pressed);
+}
+.lib-chip.on {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}

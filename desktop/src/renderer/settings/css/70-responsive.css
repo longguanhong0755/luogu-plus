@@ -1,0 +1,64 @@
+/* ---------- 响应式 ---------- */
+@media (max-width: 820px) {
+  .set-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .set-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 8px;
+  }
+  .snav {
+    flex: none;
+  }
+  .snav.on::before {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 2px;
+  }
+  .setting-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .setting-control {
+    justify-content: flex-start;
+  }
+  .src-grid,
+  .we-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rail-add {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wall-layer {
+    transition: none !important;
+  }
+}
+
+/* ---------- 按压反馈补齐（R69） ---------- */
+.rail-mini:active,
+.rail-eye:active,
+.src:active,
+.we-item:active {
+  background: var(--pressed);
+}
+.sw:active {
+  transform: scale(0.94);
+}
+
+.storage-panel { display: grid; gap: 10px; }
+.storage-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .storage-actions { align-items: flex-start; flex-direction: column; }
+  .storage-actions .btn { width: 100%; }
+}

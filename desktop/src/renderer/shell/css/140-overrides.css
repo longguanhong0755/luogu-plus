@@ -1,0 +1,71 @@
+/* shell/css/140-overrides.css — 按压反馈、首启引导与低高度窗口覆盖；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 按压反馈补齐（R69）：可点的行/按钮都给 :active ---------- */
+.q-row:active,
+.sub-row:active,
+.home-refresh:active,
+.btn-quiet:active,
+.lib-page:active,
+.lib-retry:active,
+.lib-modal-btn:active {
+  background: var(--pressed);
+}
+
+/* 首启引导卡：仅 general.firstRunSeen=false 时出现 */
+.firstrun-card { border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.firstrun-lines { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; }
+.firstrun-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.6; color: var(--text-2); }
+.firstrun-icon { flex: none; width: 15px; height: 15px; color: var(--accent-text); margin-top: 2px; }
+.firstrun-icon svg { width: 100%; height: 100%; }
+.firstrun-btn {
+  width: 100%; height: 30px; border-radius: 8px; border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-text);
+  font-size: 12px; cursor: pointer; transition: background 120ms var(--ease);
+}
+.firstrun-btn:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* 官方化性能档：大表面使用高不透明主题色，不做实时背景模糊。
+   壁纸仍保留在工作区背景，但不再让 GPU 为整个窗口持续重采样。 */
+#titlebar,
+#rail,
+#toolbar,
+.lib-top,
+.overlay-card,
+.toast {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+#titlebar,
+#rail,
+#toolbar {
+  background: color-mix(in srgb, var(--title) var(--panel-alpha, 83%), transparent);
+  contain: layout paint style;
+}
+#rail {
+  background: color-mix(in srgb, var(--rail) var(--panel-alpha, 83%), transparent);
+}
+#content {
+  background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
+}
+/* 低高度窗口：首页不把首屏推给装饰性留白。 */
+@media (max-height: 560px) {
+  .home-wrap {
+    padding-top: var(--sp-3);
+    gap: var(--sp-2);
+  }
+  .home-daily {
+    padding-block: var(--sp-2);
+  }
+}
+
+@media (max-height: 700px) and (min-width: 861px) {
+  .home-wrap {
+    padding-top: var(--sp-4);
+    gap: var(--sp-3);
+  }
+  .home-daily {
+    padding-bottom: var(--sp-2);
+  }
+  .home-quote {
+    margin-top: 3px;
+  }
+}

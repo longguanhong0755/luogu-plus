@@ -1,0 +1,26 @@
+{
+  "src/renderer/skin/luogu-skin.css": [
+    "src/renderer/skin/luogu-skin/10-base.css",
+    "src/renderer/skin/luogu-skin/20-controls.css",
+    "src/renderer/skin/luogu-skin/30-list.css",
+    "src/renderer/skin/luogu-skin/40-page.css",
+    "src/renderer/skin/luogu-skin/50-scroll.css",
+    "src/renderer/skin/luogu-skin/60-adblock.css",
+    "src/renderer/skin/luogu-skin/70-plus.css"
+  ],
+  "src/renderer/settings/settings.css": [
+    "src/renderer/settings/css/10-shell.css",
+    "src/renderer/settings/css/20-layout.css",
+    "src/renderer/settings/css/30-controls.css",
+    "src/renderer/settings/css/35-form.css",
+    "src/renderer/settings/css/40-wallpaper.css",
+    "src/renderer/settings/css/50-rail.css",
+    "src/renderer/settings/css/60-account.css",
+    "src/renderer/settings/css/70-responsive.css"
+  ],
+  "src/renderer/shared/base.css": [
+    "src/renderer/shared/css/10-reset.css",
+    "src/renderer/shared/css/20-components.css",
+    "src/renderer/shared/css/30-utilities.css"
+  ]
+}

@@ -1,0 +1,186 @@
+/* shell/css/100-home-lists.css — 主页提交记录与评测队列；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.list-card {
+  overflow: hidden;
+}
+.list-card .card-head {
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--divider);
+}
+.list-card .card-head .card-title {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px var(--sp-5);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+  border-bottom: 1px solid var(--divider);
+}
+.sub-row {
+  display: grid;
+  grid-template-columns: 48px 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--row-compact);
+  padding: 8px var(--sp-5);
+  border-top: 1px solid var(--divider);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease);
+}
+.sub-row:first-of-type {
+  border-top: 0;
+}
+.sub-row:hover {
+  background: var(--hover);
+}
+.sub-row:active {
+  background: var(--pressed);
+}
+.sub-row:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.res {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: 600;
+  border-radius: var(--r-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.res.ok {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+}
+.res.bad {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+}
+.res.mid {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+}
+.sub-pid {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+}
+.sub-name {
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sub-time {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  white-space: nowrap;
+}
+.empty-line {
+  padding: var(--sp-4) var(--sp-5);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+
+.queue-card .q-row {
+  display: grid;
+  grid-template-columns: 84px 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--row-compact);
+  padding: 8px var(--sp-5);
+  border-top: 1px solid var(--divider);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  cursor: pointer;
+}
+.queue-card .q-row:first-of-type {
+  border-top: 0;
+}
+.queue-card .q-row:hover {
+  background: var(--hover);
+}
+.queue-card .q-row:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.q-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.q-pending {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text-2) 14%, transparent);
+}
+.q-captcha {
+  color: var(--orange);
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+}
+.q-failed {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+}
+.q-done {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+}
+.q-note {
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-note-line {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+  padding: 10px var(--sp-5) var(--sp-3);
+  border-top: 1px solid var(--divider);
+}
+.q-retry {
+  height: var(--h-sm);
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease);
+}
+.q-retry:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}

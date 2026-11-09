@@ -1,0 +1,90 @@
+/* shell/css/150-home-activity.css — 官网同源活动卡与热度图；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.home-activity {
+  overflow: hidden;
+}
+.task-empty {
+  margin: 8px 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+}
+.heat-map-wrapper {
+  margin-top: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  scrollbar-width: thin;
+}
+.heat-map {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.heat-map .week-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.heat-map .hint {
+  height: 16px;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.heat-map .hint-text {
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.heat-map .hint-text.month {
+  font-size: 8px;
+}
+.heat-map-cell {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+.heat-map-cell:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  position: relative;
+}
+.heat-map-cell.empty,
+.heat-map-cell.hidden {
+  background-color: transparent;
+  cursor: default;
+}
+.heat-map-cell.empty:hover,
+.heat-map-cell.hidden:hover {
+  transform: none;
+  box-shadow: none;
+}
+.heat-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 12px;
+  margin-top: 10px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+.heat-map-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.heat-map-legend .heat-map-cell {
+  width: 12px;
+  height: 12px;
+  cursor: default;
+}
+.heat-map-legend .heat-map-cell:hover {
+  transform: none;
+  box-shadow: none;
+}

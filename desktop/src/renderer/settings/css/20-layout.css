@@ -1,0 +1,214 @@
+/* ---------- 布局 ---------- */
+.set-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+}
+
+.set-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  background: color-mix(in srgb, var(--rail) var(--panel-alpha, 83%), transparent);
+  -webkit-backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
+  backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.snav {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  text-align: left;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 400;
+  color: var(--text-2);
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.snav-icon {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.snav-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.snav:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.snav:active {
+  background: var(--pressed);
+}
+.snav.on {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+.snav::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.snav.on::before {
+  opacity: 1;
+}
+.snav.on .snav-icon {
+  color: var(--accent);
+}
+.snav:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.set-pane {
+  min-width: 0;
+  padding: var(--sp-6) var(--page-pad) var(--sp-12);
+  overflow-y: auto;
+  /* 与主窗口 #content 完全同层：只压一层主题纱层，不做整块实时模糊。 */
+  background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
+  scrollbar-gutter: stable;
+}
+
+section[data-panel] {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.pane-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.pane-head h2 {
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+  color: var(--text);
+  outline: none;
+}
+.pane-head p {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+}
+
+.settings-group {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface) var(--card-alpha, 95%), transparent);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--shadow-color) 55%, transparent),
+    0 8px 24px color-mix(in srgb, var(--shadow-color) 40%, transparent);
+  padding: 0 var(--sp-5);
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: var(--row-settings);
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--divider);
+}
+.setting-row:first-child {
+  border-top: 0;
+}
+.setting-row.stacked {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: var(--sp-3) 0;
+}
+.setting-row.hint-row {
+  min-height: 0;
+}
+
+.setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.setting-label > span {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.setting-label small {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  font-weight: 400;
+  color: var(--text-2);
+}
+
+.setting-control {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.shortcut-input {
+  width: 116px;
+  height: var(--h-md);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+}
+.shortcut-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.btn-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.setting-row.stacked .setting-control {
+  justify-content: flex-start;
+  width: 100%;
+}
+.stack-control {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}

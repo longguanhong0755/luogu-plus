@@ -1,0 +1,36 @@
+{
+  "src/renderer/shell/library.js": [
+    "src/renderer/shell/library/constants.js",
+    "src/renderer/shell/library/utils.js",
+    "src/renderer/shell/library/catalog.js",
+    "src/renderer/shell/library/state.js",
+    "src/renderer/shell/library/shell-view.js",
+    "src/renderer/shell/library/problem-bar.js",
+    "src/renderer/shell/library/difficulty.js",
+    "src/renderer/shell/library/tag-modal.js",
+    "src/renderer/shell/library/tag-catalog-view.js",
+    "src/renderer/shell/library/filters.js",
+    "src/renderer/shell/library/rows.js",
+    "src/renderer/shell/library/footer.js",
+    "src/renderer/shell/library/row-view.js",
+    "src/renderer/shell/library/load.js",
+    "src/renderer/shell/library/app.js"
+  ],
+  "src/renderer/shell/home.js": [
+    "src/renderer/shell/home/constants.js",
+    "src/renderer/shell/home/utils.js",
+    "src/renderer/shell/home/daily-header.js",
+    "src/renderer/shell/home/heat.js",
+    "src/renderer/shell/home/quick-jump.js",
+    "src/renderer/shell/home/progress.js",
+    "src/renderer/shell/home/trend.js",
+    "src/renderer/shell/home/contest.js",
+    "src/renderer/shell/home/recent.js",
+    "src/renderer/shell/home/queue.js",
+    "src/renderer/shell/home/first-run.js",
+    "src/renderer/shell/home/sections.js",
+    "src/renderer/shell/home/fortune.js",
+    "src/renderer/shell/home/timer.js",
+    "src/renderer/shell/home/page.js"
+  ]
+}

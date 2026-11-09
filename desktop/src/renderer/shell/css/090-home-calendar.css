@@ -1,0 +1,61 @@
+/* shell/css/090-home-calendar.css — 主页比赛日历；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* 比赛日历：官方倒计时 + 近期比赛列表（0.7.2 主页融合） */
+.cd-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.cd-row .cd-name {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.cd-row .cd-days {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+.cal-divider {
+  height: 1px;
+  margin: var(--sp-2) var(--sp-5);
+  background: var(--divider);
+}
+.cal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease);
+}
+.cal-row:hover {
+  background: var(--hover);
+}
+.cal-row:active {
+  background: var(--pressed);
+}
+.cal-row .cal-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 0 8px;
+  font-size: var(--fs-2xs);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.cal-row .cal-chip.live {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+.cal-row .cal-name {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

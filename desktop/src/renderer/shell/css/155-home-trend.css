@@ -1,0 +1,120 @@
+/* shell/css/155-home-trend.css — 官网同源趋势图与个人主页统计；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.home-trend-card {
+  overflow: hidden;
+}
+.trend-chart {
+  position: relative;
+  margin-top: 4px;
+  padding-top: 2px;
+}
+.trend-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 150px;
+  overflow: visible;
+}
+.trend-grid-line {
+  stroke: var(--divider);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.trend-area {
+  fill: url(#home-trend-fill);
+}
+.trend-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.trend-point {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.trend-point:hover {
+  fill: var(--accent);
+}
+.trend-axis {
+  display: flex;
+  justify-content: space-between;
+  margin: -12px 1px 0;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+}
+.trend-flat-note {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  padding: 3px 8px;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  pointer-events: none;
+}
+.trend-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+.trend-summary-value {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.official-profile-stats .stat.stacked {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 4px;
+  overflow: hidden;
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
+  background: var(--divider);
+}
+.official-profile-stats .field {
+  min-width: 0;
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+.official-profile-stats .stat-text.name {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+}
+.official-profile-stats .stat-text.value {
+  color: var(--text);
+  font-size: var(--fs-2xl);
+  line-height: var(--lh-2xl);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 860px) {
+  .home-fortune-panel {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .heat-map-cell {
+    transition: none;
+  }
+}

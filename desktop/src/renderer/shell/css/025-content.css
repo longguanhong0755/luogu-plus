@@ -1,0 +1,57 @@
+/* shell/css/025-content.css — 内容区纱层与页面容器；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 内容区：唯一可调纱层 ----------
+   这里不再挂 backdrop-filter：整块内容区实时模糊是切栏目/滚动卡顿的大头。
+   页面 WebContentsView 透明后复用这一层，不再叠第二张主题底。 */
+#content {
+  grid-column: 2;
+  grid-row: 2;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
+  isolation: isolate;
+}
+
+.page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 滚动条一出现内容就整体跳 ~12px；预留槽位对齐设置页的做法 */
+  scrollbar-gutter: stable;
+}
+
+#home {
+  padding: 0;
+}
+
+#library {
+  padding: 0;
+}
+
+/* 覆盖层打开时 WebContentsView 必须让位；冻结一张当前页面帧垫在下面，
+   搜索框仍浮在用户刚才的页面上，而不是把整页清空成背景色。 */
+#page-freeze {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--toolbar-h);
+  bottom: 0;
+  z-index: 18;
+  pointer-events: none;
+  background-position: top center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+#page-freeze[hidden] {
+  display: none;
+}
+
+#browse {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

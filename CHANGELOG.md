@@ -4,6 +4,17 @@
 
 ## v0.7.16 (2026-11-08) — R90–R94 官方化可读性、运行期修复与重出包
 
+- **源码结构重构（R96，无行为变更、无版本号变化）**：把 15 个上千行大文件按域拆成
+  「薄入口 + 实现目录」，公开路径、preload、`<script type="module">` 与打包清单全部不变。
+  `src/main/smoke.js` 5016→7 行（`smoke/` 54 个模块）、`renderer/shell/shell.css` 4146→34 行
+  （`shell/css/` 31 个分片）、`scripts/check.js` 2221→42 行（`check/sections/` 15 段）、
+  `views.js` 1848→46、`luogu.js` 1788→6、`library.js` 1439→2、`home.js` 983→3、
+  `index.js` 610→44、`ipc.js` 508→27、`settings.js` 654→7、`overlays.js` 537→3，
+  `luogu-skin.css`/`settings.css`/`base.css` 同样改为 `@import` 列表 + 分片；
+  单文件预算 ≤300 行（硬上限 400）并新增静态门禁，`docs/CODE-LAYOUT.md` 记录拆分规范
+  （唯一豁免 `src/preload/page.js`：沙箱 preload 无法拆分）。静态检查 511→517 项全绿。
+  已发布的 v0.7.16 便携包是拆分前源码所出，两者行为一致；如需重出包直接跑
+  `pack-portable.ps1`，版本号不变。
 - 删除独立 rail WebContentsView/preload/renderer，侧栏收敛为外壳内唯一 DOM。
 - 折叠态 64px、固定态 208px；悬停不再展开或抢焦点，钉子/`Ctrl+B` 显式切换。
 - 主进程单一 `rail:layout` 宽度源同步外壳与页面视图；性能模式/reduced-motion 瞬切。

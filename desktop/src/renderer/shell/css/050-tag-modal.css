@@ -1,0 +1,280 @@
+/* shell/css/050-tag-modal.css — 标签选择弹层；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* 标签选择弹层 */
+.lib-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+}
+.lib-modal[hidden] {
+  display: none;
+}
+.lib-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg) 58%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur-sm));
+  backdrop-filter: blur(var(--blur-sm));
+}
+.lib-modal-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(680px, 88vh);
+  animation: lg-pop-in var(--dur-3) var(--ease);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: 0 24px 64px color-mix(in srgb, var(--shadow-color) 60%, transparent);
+  overflow: hidden;
+}
+.lib-modal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-4) var(--sp-2);
+}
+.lib-modal-title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+.lib-modal-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--h-md);
+  margin: 0 var(--sp-4) var(--sp-2);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--text-3);
+}
+.lib-modal-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.lib-modal-search svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+.lib-modal-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.lib-tag-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 0 var(--sp-4) var(--sp-2);
+}
+.lib-tag-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--h-sm);
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  border: 1px solid transparent;
+}
+.lib-tag-tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lib-tag-tab.on {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.lib-tag-tab-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--fs-2xs);
+  line-height: 16px;
+  text-align: center;
+}
+.lib-tag-status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-4) var(--sp-2);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.lib-tag-status[hidden] {
+  display: none;
+}
+.lib-tag-retry {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  font-size: var(--fs-2xs);
+  color: var(--text-2);
+}
+.lib-tag-retry:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lib-tag-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 208px;
+  gap: var(--sp-3);
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--sp-4);
+}
+.lib-tag-catalog {
+  min-height: 200px;
+  max-height: 46vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+.lib-tag-section {
+  padding: 0 0 var(--sp-3);
+}
+.lib-tag-section.lone {
+  padding-bottom: 0;
+}
+.lib-tag-section-title {
+  margin-bottom: 6px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  font-weight: 600;
+}
+.lib-tag-cloud {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lib-tag-chip {
+  height: var(--h-sm);
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-tag-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lib-tag-chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--text);
+  font-weight: 600;
+}
+.lib-tag-selected {
+  min-height: 0;
+  max-height: 46vh;
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--divider);
+  overflow: auto;
+}
+.lib-tag-selected-title {
+  margin-bottom: 6px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  font-weight: 600;
+}
+.lib-tag-selected-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.lib-tag-selected-list .lib-sel-chip {
+  max-width: 100%;
+}
+.lib-tag-empty {
+  padding: var(--sp-2) 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+}
+.lib-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--divider);
+}
+.lib-tag-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-3);
+}
+.lib-modal-btn {
+  height: var(--h-sm);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+}
+.lib-modal-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lib-modal-btn.quiet {
+  border-color: transparent;
+  color: var(--text-3);
+}
+.lib-modal-btn.primary {
+  border-color: var(--accent-line);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.lib-modal-btn.primary:hover {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+@media (max-width: 760px) {
+  .lib-tag-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lib-tag-selected {
+    max-height: 120px;
+    padding-left: 0;
+    border-left: 0;
+    border-top: 1px solid var(--divider);
+    padding-top: var(--sp-2);
+  }
+}

@@ -1,0 +1,100 @@
+/* shell/css/135-responsive.css — 整体响应式断点；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 响应式 ---------- */
+@media (max-width: 1120px) {
+  :root {
+    --page-pad: 20px;
+  }
+
+  .home-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home-side {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .home-side > * {
+    align-self: start;
+  }
+  /* 卡片数量为奇数时让最后一张贯通两列；否则 CSS Grid 会留下整块空列。 */
+  .home-side > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .home-side .queue-card {
+    grid-column: 1 / -1;
+  }
+  .lib-search {
+    width: 180px;
+  }
+}
+
+@media (max-width: 760px) {
+  #tb-jump {
+    padding: 0 8px;
+  }
+  #tb-jump span,
+  .tb-actions .tbtn span {
+    display: none;
+  }
+  .tb-actions .tbtn {
+    padding: 0 8px;
+  }
+  .lib-title-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .lib-title-row .lib-spacer {
+    display: none;
+  }
+  .lib-search {
+    order: 10;
+    width: 100%;
+  }
+  .lib-problem {
+    grid-template-columns: 56px minmax(0, 1fr) minmax(64px, 90px) 112px;
+    gap: 8px;
+    padding-inline: 12px;
+  }
+  .lib-problem-tags {
+    max-width: 90px;
+  }
+  .home-wrap {
+    padding-inline: var(--sp-4);
+  }
+  .home-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home-side > *,
+  .home-side > :last-child:nth-child(odd) {
+    grid-column: 1;
+  }
+  .quick-jump-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .quick-jump-form .btn-secondary {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 860px) {
+  .home-daily {
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+  .home-today-actions {
+    width: 100%;
+    flex: 1;
+  }
+  .heat-body {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wall-layer,
+  .overlay-card,
+  .toast {
+    transition: none !important;
+    animation: none !important;
+  }
+}

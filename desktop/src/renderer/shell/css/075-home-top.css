@@ -1,0 +1,232 @@
+/* shell/css/075-home-top.css — 主页顶部：问候、今日按钮、倒计时；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 主页 ---------- */
+.home-wrap {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--sp-5) var(--page-pad) var(--sp-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.home-daily {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-5);
+  padding: 0 2px var(--sp-3);
+  border-bottom: 1px solid var(--divider);
+}
+.home-daily-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.home-greeting-row {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+}
+.home-greeting {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xl);
+  line-height: var(--lh-xl);
+  font-weight: 600;
+  color: var(--text);
+}
+.home-greeting strong {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+.home-meta {
+  min-width: 0;
+  min-height: 24px;
+  margin-top: var(--sp-2);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px var(--sp-2);
+}
+.home-date {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.home-date-month,
+.home-date-week {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.home-date-day {
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  color: var(--text);
+  font-weight: 700;
+}
+.home-today-actions {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.home-today-btn {
+  min-width: 132px;
+  min-height: 42px;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) var(--card-alpha, 95%), transparent);
+  color: var(--text);
+  text-align: left;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    transform var(--dur-1) var(--ease);
+}
+.home-today-btn:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+.home-today-btn:active {
+  transform: translateY(1px);
+}
+.home-today-btn:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.home-today-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+.home-today-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.home-today-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.home-today-title {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.home-today-meta {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.home-today-btn.sign .home-today-icon {
+  color: var(--green);
+}
+.home-today-btn.sign.done {
+  border-color: color-mix(in srgb, var(--green) 34%, var(--border));
+}
+.home-today-btn.fortune.drawn {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.home-today-btn.fortune.drawn .home-today-title {
+  color: var(--accent-text);
+}
+.home-today-btn.fortune.shake {
+  animation: today-fortune 220ms var(--ease);
+}
+@keyframes today-fortune {
+  50% { transform: translateY(-2px) scale(1.02); }
+}
+.home-quote {
+  max-width: 100%;
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-countdowns {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+.home-countdown {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+  color: var(--text-2);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  white-space: nowrap;
+}
+.home-countdown-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-countdown-days {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.home-countdown-unit {
+  color: var(--text-3);
+}
+.home-refresh {
+  width: var(--h-sm);
+  height: var(--h-sm);
+  flex: none;
+  margin-top: 1px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  border: 1px solid var(--border);
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.home-refresh svg {
+  width: 16px;
+  height: 16px;
+}
+.home-refresh:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}

@@ -84,7 +84,8 @@ if ($code -ne 0) {
 #    141KB 探针/演示代码）
 Remove-Item (Join-Path $appDir "src\main\smoke.js") -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $appDir "src\main\smoke-guard.js") -Force -ErrorAction SilentlyContinue
-if ((Test-Path (Join-Path $appDir "src\main\smoke.js")) -or (Test-Path (Join-Path $appDir "src\main\smoke-guard.js"))) { throw "探针 harness 剥离失败" }
+Remove-Item (Join-Path $appDir "src\main\smoke") -Recurse -Force -ErrorAction SilentlyContinue
+if ((Test-Path (Join-Path $appDir "src\main\smoke.js")) -or (Test-Path (Join-Path $appDir "src\main\smoke-guard.js")) -or (Test-Path (Join-Path $appDir "src\main\smoke"))) { throw "探针 harness 剥离失败" }
 
 # 5.2) 出包启动自检：对**暂存产物本身**启动一次（隔离 profile），确认剥离后主进程不崩。
 #      第 4 步冒烟跑的是 desktop/ 开发态，看不到「剥了文件却仍被 require」这类崩法

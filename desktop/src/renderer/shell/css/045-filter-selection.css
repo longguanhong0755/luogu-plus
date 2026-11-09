@@ -1,0 +1,148 @@
+/* shell/css/045-filter-selection.css — 标签按钮、已选条与标签云；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.lib-tag-btn,
+.lib-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--h-sm);
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-tag-btn {
+  border-color: var(--border);
+}
+.lib-tag-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.lib-tag-btn:hover,
+.lib-toggle:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lib-tag-btn:active,
+.lib-toggle:active {
+  background: var(--pressed);
+}
+.lib-tag-count {
+  display: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--fs-2xs);
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.lib-tag-count:not(:empty) {
+  display: inline-block;
+}
+.lib-toggle::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  flex: 0 0 auto;
+}
+.lib-toggle.on {
+  color: var(--text);
+}
+.lib-toggle.on::before {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--surface);
+}
+.lib-selected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+.lib-selected[hidden] {
+  display: none;
+}
+.lib-sel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-sel-chip:hover {
+  border-color: var(--accent);
+}
+.lib-sel-x {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+.lib-sel-x svg {
+  width: 10px;
+  height: 10px;
+}
+.lib-sel-chip:hover .lib-sel-x {
+  color: var(--text);
+}
+.lib-clear-filters {
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+.lib-clear-filters:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.lib-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 1px;
+}
+.lib-tag {
+  max-width: 120px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-tag.more {
+  background: transparent;
+}

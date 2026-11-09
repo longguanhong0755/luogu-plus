@@ -1,0 +1,38 @@
+/* shell/css/125-perf.css — 性能优先档：关闭实时模糊与壁纸动画；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 性能优先：去掉实时模糊与壁纸动画 ---------- */
+body.perf #wallpaper {
+  transform: none !important;
+  will-change: auto;
+}
+body.perf #wallpaper::after {
+  opacity: calc(0.92 - var(--mat, 55) * 0.001);
+}
+body.perf #titlebar,
+body.perf #rail,
+body.perf #toolbar,
+body.perf #content,
+body.perf .lib-top,
+body.perf .overlay-card,
+body.perf #scrim {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+body.perf #titlebar,
+body.perf #rail,
+body.perf #toolbar {
+  background: color-mix(in srgb, var(--title) var(--panel-alpha, 83%), transparent);
+}
+body.perf #content {
+  background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
+}
+body.perf .lib-top {
+  background: color-mix(in srgb, var(--bg) var(--page-scrim, 94%), transparent);
+}
+body.perf .wall-layer,
+body.perf #wallpaper,
+body.perf .overlay-card,
+body.perf .toast,
+body.perf #ide-pane {
+  transition: none !important;
+  animation: none !important;
+}

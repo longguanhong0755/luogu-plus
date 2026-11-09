@@ -1,0 +1,105 @@
+/* ---- 滚动条与焦点 ---- */
+::-webkit-scrollbar {
+  width: var(--lg-scrollbar-w, 10px);
+  height: var(--lg-scrollbar-w, 10px);
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: var(--lg-scrollbar-w, 10px);
+  height: var(--lg-scrollbar-w, 10px);
+  background: transparent !important;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--lg-text-3) 35%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--lg-text-3) 35%, transparent) !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--lg-text-3) 60%, transparent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--lg-text-3) 60%, transparent) !important;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+:focus-visible {
+  outline: var(--lg-focus-w, 2px) solid var(--lg-accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* ---- 代码高亮 ----
+   主题条件挂在 html[data-lg-mode]（应用主题，由 page preload 的 --lg-boot-mode
+   在 document-start 置位、主题切换时刷新）。此前跟着操作系统主题走：
+   应用强制亮色 + 系统深色时，token 色板是亮的、代码区却是深色。 */
+html[data-lg-mode="light"] #app .token.comment,
+html[data-lg-mode="light"] #app .token.prolog,
+html[data-lg-mode="light"] #app .token.doctype,
+html[data-lg-mode="light"] #app .token.cdata {
+  /* 站点亮色高亮主题的注释是 #a0a1a7（2.4:1），读不清 */
+  color: var(--lg-text-3) !important;
+}
+html[data-lg-mode="dark"] #app .token.comment,
+html[data-lg-mode="dark"] #app .token.prolog,
+html[data-lg-mode="dark"] #app .token.doctype,
+html[data-lg-mode="dark"] #app .token.cdata {
+  color: var(--lg-text-3) !important;
+}
+html[data-lg-mode="dark"] #app .token.punctuation {
+  color: var(--lg-text-2) !important;
+}
+html[data-lg-mode="dark"] #app .token.property,
+html[data-lg-mode="dark"] #app .token.tag,
+html[data-lg-mode="dark"] #app .token.boolean,
+html[data-lg-mode="dark"] #app .token.number,
+html[data-lg-mode="dark"] #app .token.constant,
+html[data-lg-mode="dark"] #app .token.symbol {
+  color: var(--lg-orange) !important;
+}
+html[data-lg-mode="dark"] #app .token.selector,
+html[data-lg-mode="dark"] #app .token.attr-name,
+html[data-lg-mode="dark"] #app .token.string,
+html[data-lg-mode="dark"] #app .token.char,
+html[data-lg-mode="dark"] #app .token.builtin,
+html[data-lg-mode="dark"] #app .token.inserted {
+  color: var(--lg-green) !important;
+}
+html[data-lg-mode="dark"] #app .token.operator,
+html[data-lg-mode="dark"] #app .token.entity,
+html[data-lg-mode="dark"] #app .token.url,
+html[data-lg-mode="dark"] #app .token.variable {
+  color: var(--lg-text) !important;
+}
+html[data-lg-mode="dark"] #app .token.atrule,
+html[data-lg-mode="dark"] #app .token.attr-value,
+html[data-lg-mode="dark"] #app .token.function,
+html[data-lg-mode="dark"] #app .token.class-name {
+  color: var(--lg-accent) !important;
+}
+html[data-lg-mode="dark"] #app .token.keyword,
+html[data-lg-mode="dark"] #app .token.directive,
+html[data-lg-mode="dark"] #app .token.directive.keyword {
+  color: color-mix(in srgb, var(--lg-accent) 55%, #c792ea) !important;
+}
+html[data-lg-mode="dark"] #app .token.regex,
+html[data-lg-mode="dark"] #app .token.important {
+  color: var(--lg-orange) !important;
+}

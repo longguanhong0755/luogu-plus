@@ -1,0 +1,48 @@
+/* shell/css/010-app.css — 变量、拖拽态与壁纸层；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+:root {
+  color-scheme: dark light;
+}
+
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+body.resizing-y {
+  cursor: row-resize;
+}
+
+/* ---------- 壁纸层：内容区只压一层可调纱层，避免重复遮罩吃掉壁纸 ---------- */
+#wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg);
+}
+.wall-layer {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transform-origin: center;
+}
+body.wall-motion .wall-layer { animation: lg-wall-pan 26s ease-in-out infinite alternate; }
+body.wall-zoom .wall-layer { animation: lg-wall-zoom 19s ease-in-out infinite alternate; }
+body.wall-motion.wall-zoom .wall-layer { animation: lg-wall-pan 26s ease-in-out infinite alternate, lg-wall-zoom 19s ease-in-out infinite alternate; }
+body.wall-paused .wall-layer { animation-play-state: paused; }
+@keyframes lg-wall-pan { from { transform: translate3d(-0.45%, -0.3%, 0) scale(1.035); } to { transform: translate3d(0.45%, 0.3%, 0) scale(1.035); } }
+@keyframes lg-wall-zoom { from { scale: 1.015; } to { scale: 1.055; } }
+/* “切换时淡入”开关的真实开关：勾选才挂 600ms 过渡（body.wall-fade 由
+   shared/theme.js 按配置置位）。此前过渡无条件存在，开关等于失效。 */
+body.wall-fade .wall-layer {
+  transition: opacity 600ms var(--ease);
+}
+.wall-layer video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

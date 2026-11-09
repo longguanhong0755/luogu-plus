@@ -1,0 +1,168 @@
+/* shell/css/145-home-fortune.css — 官网同源运势面板；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 首页官网同源组件：完整运势、累计通过、热度图 ---------- */
+.home-wrap {
+  --heat-0: rgb(232, 232, 232);
+  --heat-1: rgb(217, 247, 190);
+  --heat-2: rgb(183, 235, 143);
+  --heat-3: rgb(149, 222, 100);
+  --heat-4: rgb(115, 209, 61);
+}
+html[data-theme="dark"] .home-wrap {
+  --heat-0: rgb(49, 53, 61);
+  --heat-1: rgb(40, 78, 48);
+  --heat-2: rgb(55, 111, 56);
+  --heat-3: rgb(77, 145, 64);
+  --heat-4: rgb(104, 184, 76);
+}
+
+.home-fortune-panel {
+  width: min(440px, 44vw);
+  flex: 0 1 440px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) var(--card-alpha, 95%), transparent);
+  text-align: center;
+}
+.home-fortune-panel h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1.6;
+  font-weight: 600;
+}
+.home-fortune-panel h2 a.lg-fg-red {
+  color: #e74c3c !important;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+.home-fortune-panel .lg-punch-result {
+  display: inline-block;
+  margin-top: 0;
+  color: var(--text) !important;
+  font-size: 60px;
+  line-height: 1.5;
+  font-weight: 700;
+}
+.home-fortune-panel .am-g {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.home-fortune-panel .am-g::before,
+.home-fortune-panel .am-g::after {
+  content: " ";
+  display: table;
+}
+.home-fortune-panel .am-g::after {
+  clear: both;
+}
+.home-fortune-panel [class*="am-u-"] {
+  position: relative;
+  float: left;
+  width: 100%;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+.home-fortune-panel .am-u-sm-6 {
+  width: 50%;
+}
+.home-fortune-panel .am-u-sm-6 + .am-u-sm-6:last-child {
+  float: right;
+}
+.home-fortune-panel .lg-fg-red,
+.home-fortune-panel .lg-fg-red .lg-small {
+  color: #e74c3c !important;
+}
+.home-fortune-panel .lg-bold {
+  font-weight: 700;
+}
+.home-fortune-panel .lg-small {
+  display: block;
+  height: auto;
+  overflow: visible;
+  color: var(--text-3);
+  font-size: .625rem;
+  line-height: 16px;
+}
+.home-fortune-panel .am-u-sm-12.lg-small {
+  clear: both;
+  float: none;
+  margin-top: 4px;
+  text-align: center;
+}
+.home-fortune-panel .am-u-sm-12.lg-small strong {
+  font-weight: 700;
+}
+.home-fortune-pending {
+  margin: 8px 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.home-fortune-calendar {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  color: #5eb95e;
+  font-weight: 700;
+}
+.home-fortune-calendar .lg-punch-small {
+  display: inline-block;
+  width: 20px;
+  margin: 0 10px;
+  vertical-align: top;
+  font-size: 16px;
+  line-height: 17px;
+  font-weight: 700;
+}
+.home-fortune-calendar .lg-punch-big {
+  display: inline-block;
+  vertical-align: top;
+  font-size: 85px;
+  line-height: 55px;
+  font-weight: bolder;
+}
+/* 直接消费 Amaze UI 的 am-btn / am-btn-sm / am-btn-danger 几何，避免“像官网”但每个尺寸都不同。 */
+.home-fortune-panel .home-today-btn {
+  display: inline-block;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  min-height: 34px;
+  margin-top: 10px;
+  padding: 7px 14px;
+  text-align: center;
+  border: 1px solid #dd514c;
+  border-radius: 0;
+  background: #dd514c;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: background-color 300ms ease-out, border-color 300ms ease-out;
+}
+.home-fortune-panel .home-today-btn:hover {
+  background: #d7342e;
+  border-color: #c62b26;
+  color: #fff;
+}
+.home-fortune-panel .home-today-btn:active {
+  background: #be2924;
+  border-color: #c62b26;
+  box-shadow: inset 0 3px 5px rgba(0, 0, 0, .15);
+  transform: none;
+}
+.home-fortune-panel .home-today-btn:focus {
+  outline: 1px dotted #333;
+  outline-offset: -2px;
+}
+.home-fortune-panel .home-today-btn:disabled {
+  pointer-events: none;
+  opacity: .45;
+}
+.home-fortune-panel .home-today-btn.loading .home-today-icon {
+  animation: fortune-spin 850ms linear infinite;
+}

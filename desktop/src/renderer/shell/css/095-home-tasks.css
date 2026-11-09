@@ -1,0 +1,118 @@
+/* shell/css/095-home-tasks.css — 任务、公告与社区板块；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.announcement-card .welcome-line {
+  padding-top: var(--sp-3);
+  color: var(--text-2);
+}
+
+.task-links {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--sp-2);
+}
+
+.task-row,
+.community-row {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  text-align: left;
+}
+
+.task-row:hover,
+.task-row:focus-visible,
+.community-row:hover,
+.community-row:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+
+.task-title,
+.community-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-action,
+.community-meta {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.task-plan-list {
+  margin-top: 6px;
+}
+.task-plan-row {
+  align-items: flex-start;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+}
+.task-plan-row + .task-plan-row {
+  border-top: 1px solid var(--divider);
+}
+.task-plan-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.task-plan-row .task-title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 18px;
+}
+.task-plan-meta {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  overflow-wrap: anywhere;
+}
+.task-plan-row.done .task-title {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
+.community-row {
+  min-height: 46px;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.community-card .sign-btn {
+  margin-top: var(--sp-2);
+}
+
+#home.plain-home .home-wrap {
+  max-width: 920px;
+  gap: var(--sp-3);
+}
+
+#home.plain-home .card {
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--surface);
+}
+
+#home.plain-home .home-greeting {
+  font-size: var(--fs-xl);
+}
+
+#home.smooth-home .card {
+  border-radius: var(--r-lg);
+}
+
+#home:not(.smooth-home) .card {
+  border-radius: var(--r-xs);
+}

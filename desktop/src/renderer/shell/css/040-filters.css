@@ -1,0 +1,208 @@
+/* shell/css/040-filters.css — 题库筛选：类型、难度下拉与筛选工具；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 题库筛选（对齐网页版） ---------- */
+.lib-problem-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: var(--sp-3);
+}
+.lib-filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  min-height: var(--h-sm);
+}
+.lib-filter-caption {
+  min-width: 52px;
+  flex: 0 0 auto;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-2);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.lib-type-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.lib-type {
+  height: var(--h-sm);
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  border: 1px solid transparent;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-type:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lib-type.on {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.lib-diff-wrap {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+}
+.lib-diff-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 300px;
+  height: var(--h-sm);
+  padding: 0 8px 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 52%, transparent);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-diff-btn.empty {
+  color: var(--text-2);
+}
+.lib-diff-btn:hover {
+  background: var(--hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.lib-diff-btn.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.lib-diff-btn-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-diff-caret {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+.lib-diff-caret svg {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--dur-1) var(--ease);
+}
+.lib-diff-btn[aria-expanded="true"] .lib-diff-caret svg {
+  transform: rotate(180deg);
+}
+.lib-diff-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: 248px;
+  max-height: min(360px, calc(100vh - 220px));
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--shadow-color) 60%, transparent);
+  animation: lg-pop-in var(--dur-3) var(--ease);
+}
+.lib-diff-menu[hidden] {
+  display: none;
+}
+.lib-diff-item {
+  position: relative;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+}
+.lib-diff-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.lib-diff-item:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.lib-diff-item.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.lib-diff-item[data-level="0"] {
+  margin-bottom: 5px;
+}
+.lib-diff-item[data-level="0"]::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -3px;
+  height: 1px;
+  background: var(--divider);
+}
+.lib-diff-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+.lib-diff-dot.any {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+.lib-diff-item-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lib-diff-check {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  opacity: 0;
+}
+.lib-diff-check svg {
+  width: 14px;
+  height: 14px;
+}
+.lib-diff-item.on .lib-diff-check {
+  opacity: 1;
+}
+.lib-filter-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}

@@ -1,0 +1,9 @@
+{
+  "src/main/wallpaper.js": [
+    "src/main/wallpaper/constants.js",
+    "src/main/wallpaper/files.js",
+    "src/main/wallpaper/cache.js",
+    "src/main/wallpaper/wengine.js",
+    "src/main/wallpaper/resolve.js"
+  ]
+}

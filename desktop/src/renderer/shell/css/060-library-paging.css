@@ -1,0 +1,213 @@
+/* shell/css/060-library-paging.css — 分页、跳转、空态与骨架屏；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.lib-page {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.lib-page.edge {
+  min-width: 58px;
+}
+.lib-page:hover:not(:disabled):not(.current) {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+.lib-page.current {
+  color: var(--on-accent);
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+}
+.lib-page:disabled {
+  opacity: 0.42;
+}
+.lib-page-gap {
+  width: 18px;
+  text-align: center;
+  color: var(--text-3);
+}
+.lib-page-total {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lib-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.lib-jump-input {
+  width: 56px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) var(--card-alpha, 95%), transparent);
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  appearance: textfield;
+}
+.lib-jump-input::-webkit-inner-spin-button,
+.lib-jump-input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.lib-jump-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.lib-jump-input[aria-invalid="true"] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 18%, transparent);
+}
+.lib-jump-go {
+  min-width: 38px;
+  padding: 0 7px;
+  text-transform: uppercase;
+}
+.lib-loading {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.lib-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 220px;
+  padding: var(--sp-8) var(--sp-4);
+  text-align: center;
+  color: var(--text-3);
+}
+.lib-state svg {
+  width: 24px;
+  height: 24px;
+}
+.lib-state strong {
+  font-size: var(--fs-md);
+  line-height: var(--lh-md);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.lib-state span {
+  max-width: 360px;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+}
+.lib-retry {
+  height: var(--h-md);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  margin-top: var(--sp-1);
+}
+.lib-retry:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--border-strong);
+}
+
+.lib-login {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-8);
+}
+.lib-login-title {
+  font-size: var(--fs-lg);
+  line-height: var(--lh-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+.lib-login-text {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+}
+.lib-login .sign-btn {
+  margin-top: var(--sp-1);
+}
+
+.lib-stale {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 8px var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--orange) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--orange) 24%, transparent);
+}
+.lib-stale svg {
+  width: 16px;
+  height: 16px;
+  color: var(--orange);
+  flex: none;
+}
+.lib-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 8px var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--red) 24%, transparent);
+}
+.lib-banner svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.lib-row.skeleton-row {
+  grid-template-columns: 64px minmax(0, 1fr) 136px;
+  pointer-events: none;
+}
+.lib-row.skeleton-row:hover {
+  background: none;
+}
+.sk-pid {
+  width: 44px;
+  height: 12px;
+}
+.sk-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sk-title {
+  width: 52%;
+  height: 12px;
+}
+.sk-meta {
+  width: 34%;
+  height: 10px;
+}
+.sk-tail {
+  width: 44px;
+  height: 12px;
+  margin-left: auto;
+}

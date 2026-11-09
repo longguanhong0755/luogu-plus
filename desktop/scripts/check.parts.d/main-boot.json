@@ -1,0 +1,32 @@
+{
+  "src/main/index.js": [
+    "src/main/boot/constants.js",
+    "src/main/boot/cache.js",
+    "src/main/boot/startup.js",
+    "src/main/boot/offline.js",
+    "src/main/boot/context.js",
+    "src/main/boot/core.js",
+    "src/main/boot/session.js",
+    "src/main/boot/shell.js",
+    "src/main/boot/messaging.js",
+    "src/main/boot/appearance.js",
+    "src/main/boot/commands.js",
+    "src/main/boot/window-events.js",
+    "src/main/boot/tasks.js",
+    "src/main/boot/lifecycle.js",
+    "src/main/boot/crash.js"
+  ],
+  "src/main/ipc.js": [
+    "src/main/ipc/guard.js",
+    "src/main/ipc/state.js",
+    "src/main/ipc/palette.js",
+    "src/main/ipc/app.js",
+    "src/main/ipc/appearance.js",
+    "src/main/ipc/settings.js",
+    "src/main/ipc/nav.js",
+    "src/main/ipc/library.js",
+    "src/main/ipc/page.js",
+    "src/main/ipc/submit.js",
+    "src/main/ipc/account.js"
+  ]
+}

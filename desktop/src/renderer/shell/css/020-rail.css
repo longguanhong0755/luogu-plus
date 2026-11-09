@@ -1,0 +1,208 @@
+/* shell/css/020-rail.css — 左侧导航轨（208/64px）；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 左侧导航 ----------
+   单一实例：64px 图标轨、40×32 热区；显式固定后展开为 208px。
+   宽度由主进程 rail:layout 驱动，外壳与页面视图共享同一数值。 */
+#rail {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 12px;
+  background: color-mix(in srgb, var(--rail) var(--panel-alpha, 83%), transparent);
+  -webkit-backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
+  backdrop-filter: blur(var(--blur, 19px)) saturate(1.2);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+  overflow: hidden;
+}
+#rail-top,
+#rail-bottom {
+  /* 内部始终按 208px 轨道排版，外层 #rail 只负责裁切。
+     展开时只露出右侧文字，图标、分组和纵向位置都不参与重排。 */
+  width: 184px;
+  min-width: 184px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 0 0 auto;
+}
+#rail-top {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+#rail-top {
+  scrollbar-gutter: stable;
+}
+body:not(.rail-visual-wide) #rail-top::-webkit-scrollbar {
+  width: 0;
+}
+#rail-top::-webkit-scrollbar {
+  width: 6px;
+}
+#rail-top::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 35%, transparent);
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+#rail-top:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 60%, transparent);
+  background-clip: padding-box;
+}
+#rail-head {
+  width: 184px;
+  min-width: 184px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+#rail-head .rail-btn {
+  margin-block: 0;
+}
+#rail-bottom {
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.rail-btn {
+  width: 100%;
+  height: 32px;
+  margin: 4px 0;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  flex: 0 0 auto;
+  position: relative;
+  text-align: left;
+  overflow: hidden;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.rail-glyph {
+  width: 24px;
+  height: 20px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+}
+
+.rail-glyph svg,
+.rail-btn > svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  shape-rendering: geometricPrecision;
+}
+
+.rail-glyph svg * {
+  vector-effect: non-scaling-stroke;
+}
+
+.rail-glyph-custom {
+  border: 1px solid hsl(var(--rail-glyph-hue, 216) 58% 56% / 0.42);
+  border-radius: var(--r-sm);
+  background: hsl(var(--rail-glyph-hue, 216) 62% 46% / 0.14);
+  color: hsl(var(--rail-glyph-hue, 216) 68% 44%);
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  text-transform: uppercase;
+}
+
+html[data-theme="dark"] .rail-glyph-custom {
+  border-color: hsl(var(--rail-glyph-hue, 216) 72% 67% / 0.46);
+  background: hsl(var(--rail-glyph-hue, 216) 68% 58% / 0.18);
+  color: hsl(var(--rail-glyph-hue, 216) 82% 76%);
+}
+.rail-label {
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail-group {
+  display: flex;
+  align-items: flex-end;
+  min-height: 26px;
+  padding: 7px 8px 3px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-top: 1px solid transparent;
+}
+.rail-group-label {
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-2);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.rail-btn {
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  justify-content: flex-start;
+}
+.rail-label,
+.rail-group-label {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 90ms var(--ease), visibility 0s linear 90ms;
+}
+body.rail-visual-wide .rail-label,
+body.rail-visual-wide .rail-group-label {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+body:not(.rail-visual-wide) .rail-group {
+  border-top-color: var(--border);
+}
+body:not(.rail-visual-wide) #rail-top > .rail-group:first-child,
+body:not(.rail-visual-wide) #rail-bottom > .rail-group:first-child {
+  border-top-color: transparent;
+}
+.rail-btn:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  color: var(--text);
+}
+.rail-btn:active {
+  background: var(--pressed);
+}
+.rail-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--focus-w) var(--accent);
+}
+.rail-btn.active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-text);
+}
+.rail-btn.active svg {
+  color: var(--accent);
+}
+.rail-btn.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+.rail-pin.on {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}

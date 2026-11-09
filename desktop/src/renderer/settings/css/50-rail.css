@@ -1,0 +1,112 @@
+/* ---------- 侧边栏 ---------- */
+.rail-editor {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-2) 40%, transparent);
+}
+.rail-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--row-compact);
+  padding: 4px 8px 4px 12px;
+  border-top: 1px solid var(--divider);
+}
+.rail-row:first-child {
+  border-top: 0;
+}
+.rail-row.off {
+  opacity: 0.55;
+}
+.rail-name {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text);
+  min-width: 58px;
+}
+.rail-kind {
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 0 4px;
+}
+.rail-kind.url {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.rail-spacer-mini {
+  flex: 1;
+}
+.rail-mini {
+  width: var(--h-sm);
+  height: var(--h-sm);
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  border: 1px solid var(--border);
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.rail-mini:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.rail-mini:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.rail-mini svg {
+  width: 14px;
+  height: 14px;
+}
+.rail-mini.wide {
+  width: auto;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-2xs);
+}
+.rail-eye {
+  height: var(--h-sm);
+  width: 52px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  font-size: var(--fs-2xs);
+  color: var(--text-2);
+  transition: background-color var(--dur-1) var(--ease);
+}
+.rail-eye.off {
+  color: var(--text-3);
+  border-style: dashed;
+}
+.rail-eye:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rail-add {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  width: 100%;
+}
+.rail-add .input {
+  width: 100%;
+}
+.rail-add input.bad {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 14%, transparent);
+}

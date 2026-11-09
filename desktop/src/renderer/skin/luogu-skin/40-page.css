@@ -1,0 +1,187 @@
+/* ---- 站点页头 / 用户页 ---- */
+#app .header-card,
+#app .top-row,
+#app .bottom-row {
+  color: var(--lg-text) !important;
+}
+#app .user-header-bottom,
+#app .profile-header {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
+  border-color: var(--lg-border) !important;
+  color: var(--lg-text) !important;
+}
+/* 旧版布局的提示卡（“该页面未找到”）官方把文字写死成 rgba(0,0,0,.75) */
+#app .card.message,
+#app .message.padding-default {
+  color: var(--lg-text) !important;
+}
+#app .main-wrapper,
+#app .lcolor-bg-background,
+#app .lcolor-bg-background.main,
+#app .bg,
+#app .background,
+#app .page-background {
+  background: transparent !important;
+}
+/* 旧版布局（搜索/出错页）：官方用内联 style 写死浅灰底与白色顶卡，
+   内联样式只有 !important 能压过；0.7.2 同层透出，亮暗都清。 */
+#app main.wrapped.lfe-body.mobile-body {
+  background-color: transparent !important;
+}
+#app .wrapper.wrapped .background {
+  background: transparent !important;
+}
+
+/* ---- 旧版首页 #app-old（官方 2015 布局，主页融合数据源）----
+   AmazeUI 面板/促销轮播官方写死白底，深色下是整片亮块；只清色不动布局。
+   轮播轨道按设计横向溢出（overflow 裁切），不算版式问题。 */
+#app main {
+  background: transparent !important;
+}
+#app .lg-index-content .am-panel,
+#app .lg-index-content .am-panel-hd,
+#app .lg-index-content .am-panel-bd {
+  background: transparent !important;
+}
+#app .lg-index-content .am-panel {
+  border-color: var(--lg-divider) !important;
+}
+#app .lg-index-content .am-panel-bd {
+  color: var(--lg-text-2) !important;
+}
+#app .lg-index-content .am-panel-hd {
+  color: var(--lg-text) !important;
+}
+#app .lg-index-content .am-slider {
+  background: transparent !important;
+}
+/* 日历与倒计时文字官方写死深绿/深灰，面板透明后在暗底上不可读 */
+#app .lg-index-content .lg-punch [class*="lg-fg-"],
+#app .lg-index-content .lg-punch strong,
+#app .lg-index-content .lg-fg-greendark {
+  color: var(--lg-text-2) !important;
+}
+/* 比赛状态徽标（进行中/已结束）与页脚栏目：官方写死深蓝/暗红/深灰 */
+#app .lg-index-content .lg-fg-bluedark {
+  color: var(--lg-accent-text) !important;
+}
+#app .lg-index-content .lg-fg-red {
+  color: var(--lg-red) !important;
+}
+#app .lg-index-content .lg-article.am-hide-sm p,
+#app .lg-index-content .lg-article.am-hide-sm strong {
+  color: var(--lg-text-3) !important;
+}
+/* 官方徽标白字压黄/绿底对比不足（1.66/2.45:1），换深字保读 */
+#app .lg-index-content .am-badge.lg-bg-yellow,
+#app .lg-index-content .am-badge.lg-bg-green {
+  color: #101218 !important;
+}
+#app .main-wrapper::before,
+#app .main-wrapper::after,
+#app .lcolor-bg-background::before,
+#app .lcolor-bg-background::after {
+  background-image: none !important;
+}
+#app footer,
+#app .footer {
+  background: transparent !important;
+  color: var(--lg-text-3) !important;
+}
+#app .stat-text,
+#app .stat-text.name,
+#app .stat-name {
+  color: var(--lg-text-2) !important;
+}
+#app .stat-text.value,
+#app .stat-value {
+  color: var(--lg-text) !important;
+}
+/* 深色可读性（R63 实测审计）：站点写死的 #333/#404040 灰字在暗底上只有 1.5:1 */
+#app .l-flex-info-row,
+#app .l-flex-info-row .right,
+#app .l-flex-info-row time {
+  color: var(--lg-text-2) !important;
+}
+#app .colored-link-selector .name,
+#app .colored-link-selector a {
+  color: var(--lg-text) !important;
+}
+/* 站点灰色说明文字（如“暂无筛选条件”提示）在亮色下只有 1.8:1 */
+#app .lcolor--grey-3,
+#app .lcolor-var-grey-3 {
+  color: var(--lg-text-3) !important;
+}
+/* 站点把灰色按钮的文字写死成 #595959，深色卡片上只有 1.5:1：
+   登录页“通过通行密钥登录”因此像消失了。禁用态也要能读出来。 */
+#app button.lcolor-var-grey-4:not(.solid):not(.primary),
+#app a.lcolor-var-grey-4:not(.solid):not(.primary),
+#app .lauth-container button[class*="lcolor-var-grey"]:not(.solid):not(.primary),
+#app .lauth-container a[class*="lcolor-var-grey"]:not(.solid):not(.primary) {
+  color: var(--lg-text-3) !important;
+  border-color: var(--lg-border) !important;
+}
+/* 洛谷“自测”同时带 solid 和 grey 类；实心按钮必须由 accent 规则接管，
+   不能被灰色按钮补丁改成深灰字。图标使用 currentColor 一并恢复。 */
+#app button.solid :is(svg, i, .fa),
+#app a.solid :is(svg, i, .fa) {
+  color: inherit !important;
+}
+
+/* ---- 列表标题/摘要 ---- */
+#app .l-card .row.title a,
+#app .l-card .title a,
+#app .l-card .row.title,
+#app .article-list a,
+#app .article-item a,
+#app .lfe-card a[href*="/article/"],
+#app .lfe-card .name,
+#app .lfe-card .title {
+  color: var(--lg-text) !important;
+}
+#app .l-card .content,
+#app .article-list .content,
+#app .article-item .content,
+#app .lfe-card .content,
+#app .lfe-card .excerpt {
+  color: var(--lg-text-2) !important;
+}
+#app .l-card .row.info > span {
+  background: transparent !important;
+  color: var(--lg-text-2) !important;
+  border-color: var(--lg-border) !important;
+}
+
+/* ---- 标签 / 热力图 ---- */
+#app .lfe-tag:not([class*="difficulty"]):not([class*="color"]):not([class*="level"]),
+#app .tag:not([class*="difficulty"]):not([class*="color"]),
+#app .badge:not([class*="difficulty"]):not([class*="color"]) {
+  background: color-mix(in srgb, var(--lg-text) 7%, transparent) !important;
+  color: var(--lg-text-2) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: 4px !important;
+  padding: 1px 6px !important;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+#app .heat-map-cell {
+  background: color-mix(in srgb, var(--lg-text) 7%, transparent) !important;
+  border-radius: 3px !important;
+}
+#app .heat-map-cell.level-1,
+#app .heat-map-cell[class*="level-1"] {
+  background: color-mix(in srgb, var(--lg-accent) 24%, transparent) !important;
+}
+#app .heat-map-cell.level-2,
+#app .heat-map-cell[class*="level-2"] {
+  background: color-mix(in srgb, var(--lg-accent) 44%, transparent) !important;
+}
+#app .heat-map-cell.level-3,
+#app .heat-map-cell[class*="level-3"] {
+  background: color-mix(in srgb, var(--lg-accent) 66%, transparent) !important;
+}
+#app .heat-map-cell.level-4,
+#app .heat-map-cell[class*="level-4"] {
+  background: var(--lg-accent) !important;
+}

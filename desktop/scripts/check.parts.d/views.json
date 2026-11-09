@@ -1,0 +1,20 @@
+{
+  "src/main/views.js": [
+    "src/main/views/util.js",
+    "src/main/views/manager.js",
+    "src/main/views/rail.js",
+    "src/main/views/navigation.js",
+    "src/main/views/submit.js",
+    "src/main/views/capture.js",
+    "src/main/views/overlay.js",
+    "src/main/views/info.js",
+    "src/main/views/entry.js",
+    "src/main/views/wire.js",
+    "src/main/views/input.js",
+    "src/main/views/context.js",
+    "src/main/views/lifecycle.js",
+    "src/main/views/evict.js",
+    "src/main/views/skin.js",
+    "src/main/views/adblock.js"
+  ]
+}

@@ -1,0 +1,90 @@
+/* shell/css/120-toast.css — 轻提示；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 轻提示 ---------- */
+#toasts {
+  position: fixed;
+  top: calc(var(--title-h) + 12px);
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  align-items: flex-end;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  width: 360px;
+  max-width: calc(100vw - 40px);
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) 99%, transparent);
+  -webkit-backdrop-filter: blur(var(--blur-lg));
+  backdrop-filter: blur(var(--blur-lg));
+  border: 1px solid var(--border);
+  box-shadow:
+    0 2px 6px color-mix(in srgb, var(--shadow-color) 45%, transparent),
+    0 16px 40px color-mix(in srgb, var(--shadow-color) 70%, transparent);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text);
+  animation: lg-toast-in var(--dur-3) var(--ease);
+  transition:
+    opacity var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
+}
+.toast.removing {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.toast-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+  color: var(--text-3);
+}
+.toast-body-wrap {
+  min-width: 0;
+}
+.toast-title {
+  font-weight: 600;
+}
+.toast-body {
+  color: var(--text-2);
+  margin-top: 1px;
+  overflow-wrap: anywhere;
+}
+.toast.success {
+  border-color: color-mix(in srgb, var(--green) 34%, transparent);
+}
+.toast.success .toast-icon {
+  color: var(--green);
+}
+.toast.error {
+  border-color: color-mix(in srgb, var(--red) 38%, transparent);
+}
+.toast.error .toast-icon {
+  color: var(--red);
+}
+.toast.warning {
+  border-color: color-mix(in srgb, var(--orange) 38%, transparent);
+}
+.toast.warning .toast-icon {
+  color: var(--orange);
+}
+.toast.info .toast-icon {
+  color: var(--accent);
+}
+
+@keyframes lg-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

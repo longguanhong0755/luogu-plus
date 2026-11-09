@@ -1,0 +1,139 @@
+/* shell/css/108-jump.css — 跳题面板与用户搜索；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.jump-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border);
+}
+.jump-options[hidden] {
+  display: none;
+}
+.jump-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+.jump-options select,
+#user-search-input {
+  height: 34px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+  color: var(--text);
+  font: inherit;
+}
+.jump-options select:focus-visible,
+#user-search-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.jump-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+#jump-status {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+#jump-status.bad {
+  color: var(--red);
+}
+.jump-actions button,
+.jump-submit {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
+}
+.jump-actions button:hover,
+.jump-submit:hover {
+  border-color: var(--accent);
+}
+.jump-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.jump-actions button.secondary {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-2);
+}
+#user-search-form {
+  gap: 8px;
+}
+#user-search-input {
+  flex: 1;
+}
+.user-search-list {
+  max-height: 440px;
+  overflow-y: auto;
+  padding: 8px;
+}
+.user-search-row {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.user-search-row:hover,
+.user-search-row:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.user-search-row strong {
+  display: block;
+  font-weight: 600;
+}
+.user-search-avatar {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-weight: 600;
+  overflow: hidden;
+}
+.user-search-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.user-search-row small {
+  display: block;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+.user-search-empty {
+  padding: 24px;
+  color: var(--text-3);
+  text-align: center;
+}

@@ -1,0 +1,117 @@
+/* shell/css/130-official-home.css — 官方主页板块：跳题、任务与链接；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+/* ---------- 官方主页板块：跳题 / 累计通过 ---------- */
+.quick-jump-card {
+  background: color-mix(in srgb, var(--surface) var(--overlay-alpha, 97%), transparent);
+}
+.quick-jump-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  margin-top: var(--sp-2);
+}
+.quick-jump-input {
+  width: 100%;
+  min-width: 0;
+  height: var(--h-md);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface-2) var(--card-alpha, 95%), transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+.quick-jump-input::placeholder { color: var(--text-3); }
+.quick-jump-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.quick-jump-form .btn {
+  height: var(--h-md);
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+/* 任务卡使用高不透明度遮罩，避免官方长文本与壁纸重叠后不可读。 */
+.tasks-card,
+.announcement-card,
+.links-card {
+  background: color-mix(in srgb, var(--surface) var(--overlay-alpha, 97%), transparent);
+}
+.announcement-links {
+  max-height: 340px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.official-text-details {
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.65;
+}
+.official-text-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--accent-text);
+}
+.official-text-details p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+.official-fallback-note {
+  margin: 0 0 8px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: 1.5;
+}
+.link-group {
+  padding-top: var(--sp-3);
+}
+.link-group:first-of-type {
+  padding-top: 0;
+}
+.link-group-title {
+  margin-bottom: 5px;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  font-weight: 600;
+}
+.link-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.link-item {
+  min-height: 26px;
+  padding: 3px 7px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  text-align: left;
+  transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.link-item:hover {
+  color: var(--accent-text);
+  background: var(--hover);
+}
+
+.home-today-btn.daily {
+  min-width: 202px;
+  max-width: 300px;
+}
+.home-today-btn.daily.drawn {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.home-today-btn.daily.done {
+  border-color: color-mix(in srgb, var(--green) 34%, var(--border));
+}
+.home-today-btn.daily.loading .home-today-icon {
+  animation: fortune-spin 850ms linear infinite;
+}
+@keyframes fortune-spin {
+  to { transform: rotate(360deg); }
+}

@@ -1,0 +1,25 @@
+/* ---- 广告拦截（默认关闭；html[data-lg-adblock="1"] 才生效） ----
+   请求级已在主进程按 /qiafan/ 直接 cancel；这里只处理取消后可能留下的
+   推广卡空壳和第三方广告 iframe。:has() 按链接域名静态判断，不误伤正常卡片。 */
+html[data-lg-adblock="1"] ins.adsbygoogle,
+html[data-lg-adblock="1"] iframe[src*="googlesyndication"],
+html[data-lg-adblock="1"] iframe[src*="doubleclick"],
+html[data-lg-adblock="1"] iframe[src*="adsserver"],
+html[data-lg-adblock="1"] [id*="qiafan" i],
+html[data-lg-adblock="1"] [class*="qiafan" i],
+html[data-lg-adblock="1"] .lg-right .lg-article:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-adblock="1"] .lg-right .card:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-adblock="1"] .am-u-lg-3 .lg-article:has(a[href*="class.luogu.com.cn"]),
+html[data-lg-adblock="1"] .am-u-lg-3 .card:has(a[href*="class.luogu.com.cn"]) {
+  display: none !important;
+}
+
+/* 用户页右栏「近期赛程」轮播（Vue 作用域滑件 data-v-12b24cc3）在窄窗越界：
+   链接收敛到容器宽度（省略号截断），审计 over 项转正（v0.8 票清偿） */
+#app .main-container .right a[data-v-12b24cc3] {
+  max-width: 100%;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

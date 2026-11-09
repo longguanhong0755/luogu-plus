@@ -1,0 +1,21 @@
+{
+  "src/main/luogu.js": [
+    "src/main/luogu/service.js",
+    "src/main/luogu/consts.js",
+    "src/main/luogu/util.js",
+    "src/main/luogu/window.js",
+    "src/main/luogu/http.js",
+    "src/main/luogu/offline.js",
+    "src/main/luogu/account.js",
+    "src/main/luogu/parse.js",
+    "src/main/luogu/library.js",
+    "src/main/luogu/random.js",
+    "src/main/luogu/lists.js",
+    "src/main/luogu/home.js",
+    "src/main/luogu/refresh.js",
+    "src/main/luogu/snapshot.js",
+    "src/main/luogu/official.js",
+    "src/main/luogu/punch.js",
+    "src/main/luogu/submit.js"
+  ]
+}

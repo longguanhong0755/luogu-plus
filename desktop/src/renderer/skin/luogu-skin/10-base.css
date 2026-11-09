@@ -1,0 +1,190 @@
+/* ---- 文章详情：站点允许作者自定义文章底色 ----
+   作者选的浅色主题会把内联 background-color 写在文章外层 div 上，
+   深色模式下就会变成一块白板。这里只清底色，不动正文/代码块自身配色。 */
+#app main.lcolor-bg-background,
+#app main.lcolor-bg-background > div:has(> .article-content),
+#app .article-content {
+  background-color: transparent !important;
+}
+#app main.lcolor-bg-background {
+  color: var(--lg-text) !important;
+}
+#app main.lcolor-bg-background :is(time, .metas, .meta, .comment-filter-line) {
+  color: var(--lg-text-2) !important;
+}
+#app .article-content .actions {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+}
+#app .article-content .actions :is(.text, .button-2line, .count) {
+  color: var(--lg-text-2) !important;
+}
+#app .article-content .actions svg {
+  color: var(--lg-text-2);
+}
+
+/* 讨论列表右侧的板块名默认是 #333，深色下几乎看不见 */
+#app span.name {
+  color: var(--lg-text-2) !important;
+}
+
+/* 评论区每条回复的头部是站点写死的浅灰条，深色下会变成一条亮带 */
+#app .reply-item .meta {
+  background: transparent !important;
+}
+
+/* ---- 讨论帖详情（R69 实测）：回复头 .author 同样写死浅灰底；
+     时间戳 time 元素是站点深灰字，深色底上几乎看不见；
+     富文本编辑器 .casket 整块纯白。都只清色，不动布局。 ---- */
+#app .comment .author,
+#app .reply-item .author {
+  background: transparent !important;
+}
+#app time {
+  color: var(--lg-text-3) !important;
+}
+#app .casket,
+#app .cs-main,
+#app .cs-header,
+#app .cs-footer {
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-code-alpha, 66%), transparent) !important;
+  color: var(--lg-text) !important;
+}
+#app .cs-toolbar,
+#app .cs-footer {
+  color: var(--lg-text-2) !important;
+}
+#app .cs-toolbar {
+  border-color: var(--lg-divider) !important;
+}
+#app .cs-toolbar svg {
+  color: inherit;
+}
+/* 编辑器内的 CodeMirror 行号槽官方写死浅灰底深灰字 */
+#app .casket .cm-gutters {
+  background: transparent !important;
+  color: var(--lg-text-3) !important;
+  border-color: var(--lg-divider) !important;
+}
+/* 右下角“编辑回复”悬浮按钮官方写死白底 */
+#app .btn-float-container .btn-float-open,
+#app .btn-float-container .btn-float-close {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-overlay-alpha, 97%), transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent) !important;
+}
+
+#app .lfe-marked ul,
+#app .lfe-marked ol,
+#app .markdown ul,
+#app .markdown ol {
+  padding-left: 24px;
+  margin: 0 0 12px;
+}
+
+::selection {
+  background: var(--lg-accent-soft);
+  color: var(--lg-text);
+}
+
+/* ---- 承载面：只给实测确认的顶层卡片 ----
+   不要收 .side / .list / .box / .panel / .comment 这类结构容器：
+   它们本来只是布局壳，加边框和阴影就会变成大片空框。 */
+/* 承载面统一浮起档：卡片与 chips/输入框/分页同深度（0.7.2 同层透出） */
+#app .l-card,
+#app .lfe-card,
+#app .card,
+#app .lg-article {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow:
+    0 1px 2px var(--lg-shadow),
+    0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent),
+    inset 0 1px 0 var(--lg-highlight) !important;
+}
+
+/* 用户页头图是站点自己铺的装饰面（图片/渐变），文字是白色：
+   皮肤不碰它的底色，只补边框与圆角，否则亮色下会变成白字白底。 */
+#app .user-header-top {
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow:
+    0 1px 2px var(--lg-shadow),
+    0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent),
+    inset 0 1px 0 var(--lg-highlight) !important;
+}
+
+#app .l-card::before,
+#app .lfe-card::before,
+#app .l-card::after {
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+#app .lfe-card-header,
+#app .card-header,
+#app .lfe-card-head {
+  background: color-mix(in srgb, var(--lg-text) 4%, transparent) !important;
+  border-bottom: 1px solid var(--lg-divider) !important;
+  color: var(--lg-text) !important;
+}
+
+/* ---- 表格 ---- */
+#app table,
+#app .cute-table,
+#app .mtable {
+  background: transparent !important;
+  border-color: var(--lg-border) !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+#app thead,
+#app thead tr,
+#app th,
+#app .cute-table th,
+#app .mtable th {
+  background: color-mix(in srgb, var(--lg-text) 5%, transparent) !important;
+  color: var(--lg-text-2) !important;
+  border-color: var(--lg-divider) !important;
+}
+
+#app th,
+#app .cute-table th,
+#app .mtable th {
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+#app tbody,
+#app tr,
+#app td,
+#app .cute-table td,
+#app .mtable td {
+  background: transparent !important;
+  color: var(--lg-text) !important;
+  border-color: var(--lg-divider) !important;
+}
+
+#app td,
+#app .cute-table td,
+#app .mtable td {
+  vertical-align: middle;
+}
+
+#app tbody tr {
+  transition: background-color var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+#app tbody tr:hover {
+  background: var(--lg-hover) !important;
+}
+
+/* 表格的 <col> 列底色（如题库“算法标签”列的灰带）矩形是 0×0，
+   审计量不出来，深色下却是一整条亮带；0.7.2 起同层透出亮暗通用。 */
+#app col {
+  background: transparent !important;
+}

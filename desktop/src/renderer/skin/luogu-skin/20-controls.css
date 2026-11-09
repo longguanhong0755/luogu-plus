@@ -1,0 +1,219 @@
+/* ---- 表单 ---- */
+/* 原生控件只上主题色，不改盒模型 */
+#app input[type="checkbox"],
+#app input[type="radio"],
+#app input[type="range"],
+#app progress {
+  accent-color: var(--lg-accent);
+}
+#app input:not([type="checkbox"]):not([type="radio"]),
+#app textarea,
+#app select {
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-raise, 12%), transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+  box-shadow: none !important;
+  outline: none;
+  transition:
+    border-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    box-shadow var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+
+#app textarea {
+  resize: vertical;
+}
+
+#app input:not([type="checkbox"]):not([type="radio"]):hover,
+#app textarea:hover,
+#app select:hover {
+  border-color: var(--lg-border-strong) !important;
+}
+
+#app input:focus,
+#app textarea:focus,
+#app select:focus {
+  border-color: var(--lg-accent) !important;
+  box-shadow: 0 0 0 3px var(--lg-accent-soft) !important;
+}
+
+#app input:focus-visible,
+#app textarea:focus-visible,
+#app select:focus-visible {
+  /* 文本输入框的 :focus-visible 连鼠标聚焦也恒匹配，再叠 outline 就是双环；
+     焦点已由 border + ring 表达，这里关掉 outline。全局 :focus-visible 环保留。 */
+  outline: none !important;
+}
+
+#app input::placeholder,
+#app textarea::placeholder {
+  color: var(--lg-text-3) !important;
+}
+
+#app .refined-input,
+#app .refined-input.text,
+#app .lfe-search,
+#app .search-input {
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-raise, 12%), transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+}
+#app .refined-input input,
+#app .refined-input textarea {
+  color: var(--lg-text) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* ---- 按钮 ----
+   只改配色，不改官方盒模型：官方按钮的 padding/line-height 已经负责垂直居中，
+   这里再写 min-height + line-height 会把文字顶到上沿（“返回题目”偏上的根因）。
+   边框用内阴影而不是 border，避免改变元素尺寸。 */
+#app .l-button,
+#app [class*="l-button"],
+#app .lfe-button,
+#app .btn,
+#app .am-btn,
+#app button.solid,
+#app button.lg-plain {
+  border-radius: var(--lg-radius-sm, 6px) !important;
+  box-shadow: inset 0 0 0 1px var(--lg-border);
+  color: var(--lg-text);
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-raise, 12%), transparent);
+  transition:
+    background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    box-shadow var(--lg-dur, 120ms) var(--lg-ease, ease),
+    color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    opacity var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+
+/* 官方用 <a> 做按钮时默认是 block/inline-block，文字会贴顶；
+   只对锚点补 flex 居中，不动 <button> 的官方布局。 */
+#app a.l-button,
+#app a[class*="l-button"],
+#app a.lfe-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#app .l-button:hover,
+#app .lfe-button:hover,
+#app .btn:hover,
+#app .am-btn:hover {
+  background: var(--lg-hover) !important;
+  box-shadow: inset 0 0 0 1px var(--lg-border-strong) !important;
+}
+
+#app .l-button:active,
+#app .lfe-button:active,
+#app .btn:active,
+#app .am-btn:active {
+  background: var(--lg-pressed) !important;
+}
+
+#app .lfe-button.primary,
+#app .am-btn-primary,
+#app .btn-primary,
+#app .l-button.primary,
+#app button.solid {
+  background: var(--lg-accent-fill, var(--lg-accent)) !important;
+  box-shadow: inset 0 0 0 1px var(--lg-accent-fill, var(--lg-accent)) !important;
+  color: var(--lg-on-accent, #fff) !important;
+}
+
+#app .lfe-button.primary:hover,
+#app .am-btn-primary:hover,
+#app .btn-primary:hover,
+#app .l-button.primary:hover,
+#app button.solid:hover {
+  /* 用主题 token 而不是 brightness 滤镜：滤镜不在过渡列表里，悬停会突变 */
+  background: var(--lg-accent-hover, var(--lg-accent-fill, var(--lg-accent))) !important;
+  box-shadow: inset 0 0 0 1px var(--lg-accent-hover, var(--lg-accent-fill, var(--lg-accent))) !important;
+}
+
+/* ---- 代码 ---- */
+#app pre,
+#app pre code,
+#app .lfe-code,
+#app [class*="code-block"],
+#app .code-container,
+#app .cm-editor {
+  background: color-mix(in srgb, var(--lg-surface-2) var(--lg-code-alpha, 66%), transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-md, 8px) !important;
+  font-family: var(--lg-font-mono) !important;
+}
+
+#app pre {
+  padding: 12px 14px !important;
+  overflow: auto !important;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+#app code:not(pre code) {
+  background: color-mix(in srgb, var(--lg-text) 8%, transparent) !important;
+  color: var(--lg-text) !important;
+  border-radius: 4px !important;
+  padding: 1px 5px !important;
+  font-family: var(--lg-font-mono) !important;
+  font-size: 0.94em;
+}
+
+#app pre code {
+  border: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+#app blockquote {
+  border-left: 2px solid var(--lg-accent-line, var(--lg-accent)) !important;
+  background: color-mix(in srgb, var(--lg-accent) 8%, transparent) !important;
+  color: var(--lg-text-2) !important;
+  margin-left: 0 !important;
+  padding: 8px 14px !important;
+  border-radius: 0 var(--lg-radius-sm, 6px) var(--lg-radius-sm, 6px) 0;
+}
+
+/* ---- 下拉、弹层、提示 ---- */
+#app .dropdown,
+#app .dropdown-menu,
+#app .lfe-dropdown,
+#app .popup,
+#app .lfe-popup,
+#app .modal,
+#app .lfe-modal,
+#app .am-popover,
+#app .am-dropdown,
+#app .tooltip,
+#app .lfe-tooltip,
+#app [role="dialog"],
+#app [role="menu"] {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-overlay-alpha, 97%), transparent) !important;
+  color: var(--lg-text) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow:
+    0 2px 6px color-mix(in srgb, var(--lg-shadow) 45%, transparent),
+    0 24px 64px color-mix(in srgb, var(--lg-shadow) 80%, transparent) !important;
+}
+
+#app .dropdown-item,
+#app .lfe-dropdown-item,
+#app .am-dropdown-content > li,
+#app [role="menuitem"] {
+  transition:
+    background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    color var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+#app .dropdown-item:hover,
+#app .lfe-dropdown-item:hover,
+#app .am-dropdown-content > li:hover,
+#app [role="menuitem"]:hover {
+  background: var(--lg-accent-soft) !important;
+  color: var(--lg-text) !important;
+}

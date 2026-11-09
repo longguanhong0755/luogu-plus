@@ -1,0 +1,81 @@
+/* shell/css/115-switcher.css — 页面切换器；拆分自 shell.css（R96），加载顺序见 shell.css 的 @import 列表。 */
+.sw-head {
+  height: var(--h-bar);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-3);
+  border-bottom: 1px solid var(--border);
+}
+.sw-list {
+  max-height: 440px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.sw-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 36px;
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  scroll-margin: 4px;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.sw-row .sw-ico {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.sw-row .sw-ico svg {
+  width: 14px;
+  height: 14px;
+}
+.sw-row .sw-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sw-row .sw-kind {
+  margin-left: auto;
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-3);
+}
+.sw-row.on {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+.sw-row.on .sw-ico {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+.sw-row.empty {
+  cursor: default;
+  color: var(--text-3);
+}
+.sw-foot {
+  height: var(--h-md);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-2xs);
+  line-height: var(--lh-2xs);
+  color: var(--text-3);
+}

@@ -1,0 +1,27 @@
+{
+  "src/renderer/settings/settings.js": [
+    "src/renderer/settings/settings/utils.js",
+    "src/renderer/settings/settings/storage.js",
+    "src/renderer/settings/settings/nav.js",
+    "src/renderer/settings/settings/apply.js",
+    "src/renderer/settings/settings/features.js",
+    "src/renderer/settings/settings/appearance.js",
+    "src/renderer/settings/settings/wallpaper.js",
+    "src/renderer/settings/settings/general.js",
+    "src/renderer/settings/settings/rail.js",
+    "src/renderer/settings/settings/bind.js",
+    "src/renderer/settings/settings/boot.js",
+    "src/renderer/settings/settings/store.js"
+  ],
+  "src/renderer/shell/overlays.js": [
+    "src/renderer/shell/overlays/ui.js",
+    "src/renderer/shell/overlays/jump.js",
+    "src/renderer/shell/overlays/palette.js",
+    "src/renderer/shell/overlays/switcher.js",
+    "src/renderer/shell/overlays/user.js",
+    "src/renderer/shell/overlays/bind.js",
+    "src/renderer/shell/overlays/context.js",
+    "src/renderer/shell/overlays/init.js",
+    "src/renderer/shell/overlays/session.js"
+  ]
+}

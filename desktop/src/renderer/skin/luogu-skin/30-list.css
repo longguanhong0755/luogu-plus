@@ -1,0 +1,137 @@
+/* ---- 分页 ---- */
+#app .pagination,
+#app .lfe-pagination {
+  background: transparent !important;
+}
+#app .pagination > *,
+#app .lfe-pagination > * {
+  min-width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
+  color: var(--lg-text-2) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+  transition:
+    background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    border-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    color var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+/* 悬停态此前完全缺失，深色下官方悬停样式会露出原生白 */
+#app .pagination > *:hover:not(.active),
+#app .lfe-pagination > *:hover:not(.active) {
+  background: var(--lg-hover) !important;
+  border-color: var(--lg-border-strong) !important;
+  color: var(--lg-text) !important;
+}
+#app .pagination > .active,
+#app .lfe-pagination > .active {
+  background: var(--lg-accent-fill, var(--lg-accent)) !important;
+  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
+  color: var(--lg-on-accent, #fff) !important;
+}
+
+/* ---- 题库 / 比赛筛选条 ----
+   站点把筛选标签、下拉框和底部分页条写死成白底黑字，深色下整块看不见。 */
+#app .filter-section .title,
+#app .tag-select-area .title,
+#app .l-card > section .title,
+#app .filter-label,
+#app .filter .title {
+  color: var(--lg-text-2) !important;
+}
+#app .filter-section .count .number,
+#app .filter-result-count .number,
+#app .count .number {
+  color: var(--lg-text) !important;
+}
+#app .filter-section .text,
+#app .filter-section .tag-button,
+#app .tag-select-area .toggle-tag,
+#app .combo-wrapper .text,
+#app .combo-wrapper .tag-button,
+#app .filter .text,
+#app .filter .tag-button,
+#app .filter .toggle-tag {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
+  border-color: var(--lg-border) !important;
+  color: var(--lg-text-2) !important;
+  transition:
+    background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    border-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    color var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+/* 悬停/选中此前无任何主题化反馈（深色下官方悬停是原生白） */
+#app .filter-section .text:hover,
+#app .filter-section .tag-button:hover,
+#app .tag-select-area .toggle-tag:hover,
+#app .combo-wrapper .text:hover,
+#app .combo-wrapper .tag-button:hover,
+#app .filter .text:hover,
+#app .filter .tag-button:hover,
+#app .filter .toggle-tag:hover {
+  background: var(--lg-hover) !important;
+  border-color: var(--lg-border-strong) !important;
+  color: var(--lg-text) !important;
+}
+#app .filter-section .selected,
+#app .tag-select-area .selected,
+#app .combo-wrapper .selected,
+#app .tag-select-area .toggle-tag[aria-pressed="true"],
+#app .filter-section .tag-button[aria-pressed="true"] {
+  background: var(--lg-accent-soft) !important;
+  border-color: var(--lg-accent) !important;
+  color: var(--lg-text) !important;
+}
+#app ul.luogu {
+  background: transparent !important;
+}
+/* 筛选下拉的占位文字官方写死 #404040,深色底上读不清 */
+#app .filter-tags .placeholder,
+#app .combo-wrapper .placeholder {
+  color: var(--lg-text-3) !important;
+}
+#app ul.luogu li {
+  color: var(--lg-text-2) !important;
+}
+#app .l-options .option {
+  color: var(--lg-text-2) !important;
+}
+#app .l-options .option.active,
+#app .l-options .option[aria-checked="true"] {
+  color: var(--lg-text) !important;
+}
+#app .bottom-wrap.float {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-lg, 12px) !important;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--lg-shadow) 55%, transparent) !important;
+}
+#app .bottom-wrap .toolbar,
+#app .bottom-wrap .pagination {
+  color: var(--lg-text-2) !important;
+}
+#app .page-bar button {
+  background: color-mix(in srgb, var(--lg-surface) var(--lg-raise, 12%), transparent) !important;
+  border: 1px solid var(--lg-border) !important;
+  border-radius: var(--lg-radius-sm, 6px) !important;
+  color: var(--lg-text-2) !important;
+  transition:
+    background-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    border-color var(--lg-dur, 120ms) var(--lg-ease, ease),
+    color var(--lg-dur, 120ms) var(--lg-ease, ease);
+}
+#app .page-bar button:hover:not(.active):not(.selected):not([aria-current="page"]) {
+  background: var(--lg-hover) !important;
+  border-color: var(--lg-border-strong) !important;
+  color: var(--lg-text) !important;
+}
+#app .page-bar button.active,
+#app .page-bar button.selected,
+#app .page-bar button[aria-current="page"] {
+  background: var(--lg-accent-fill, var(--lg-accent)) !important;
+  border-color: var(--lg-accent-fill, var(--lg-accent)) !important;
+  color: var(--lg-on-accent, #fff) !important;
+}
