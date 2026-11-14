@@ -5,10 +5,12 @@ name: CI
 #   legacy  —— 归档旧版的 9 项静态检查（防止归档后腐化）
 # 两者都跑在 windows-latest，与本地环境一致。
 
+# 自动门禁已按 owner 要求关闭（2026-11-14）：push / pull_request 不再自动触发。
+# GitHub 的 windows-latest 跑冒烟不稳定（3 次连续红在同一「冒烟启动」步骤），
+# 质量门禁改为本地 `npm run check` + `npm run smoke`。需要在 CI 上验证时手动触发本工作流。
+# 想恢复自动跑，把下面的 workflow_dispatch 换回 push / pull_request 触发即可。
+
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
