@@ -28,14 +28,26 @@ async function runSearchCases({ ctx, wait, shot, shotView, shell, waitFor, appro
   // 先完整排空上一轮覆盖层队列，避免复用上一张冻结帧把新打开的抓图误判为成功。
   await ctx.views.setOverlay(false);
   await waitFor(() => shell(`document.getElementById("page-freeze").hidden`), 2500);
-  ctx.command("userSearch");
-  await waitFor(() => shell(`(() => {
+  const overlayWithFreezeReady = () => shell(`(() => {
     const overlay = document.getElementById("overlay");
     const userSearch = document.getElementById("user-search");
     const freeze = document.getElementById("page-freeze");
     return !!overlay && !overlay.hidden && !!userSearch && !userSearch.hidden &&
       !!freeze && !freeze.hidden && String(freeze.style.backgroundImage || "").startsWith('url("data:image/');
-  })()`), 8000);
+  })()`);
+  const openUserSearchOverlay = async () => {
+    ctx.command("userSearch");
+    return waitFor(overlayWithFreezeReady, 8000);
+  };
+  let overlayReady = await openUserSearchOverlay();
+  // 隐藏+透明窗口在 Windows 上仍可能抓不到页面首帧（同 smoke/capture.js 注释）。
+  // 重开一次让覆盖层重新抓图；仍拿不到冻结帧才算真回归。
+  for (let retry = 0; !overlayReady && retry < 2; retry++) {
+    console.log("SMOKE_OVERLAY_FREEZE_RETRY " + JSON.stringify({ retry: retry + 1 }));
+    ctx.views.setOverlay(false);
+    await wait(260);
+    overlayReady = await openUserSearchOverlay();
+  }
   await shell(`(() => {
     const input = document.getElementById("user-search-input");
     input.value = "测试";
@@ -61,7 +73,7 @@ async function runSearchCases({ ctx, wait, shot, shotView, shell, waitFor, appro
   const userOverlayHidden = await shell(`document.getElementById("overlay").hidden`);
   addCase(
     "user-search",
-    { searchedKeyword, userSearchDom, openedUid, overlayHidden: userOverlayHidden },
+    { searchedKeyword, userSearchDom, openedUid, overlayHidden: userOverlayHidden, overlayReady },
     {
       querySent: searchedKeyword === "测试",
       oneResult: userSearchDom.rows === 1,

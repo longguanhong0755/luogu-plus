@@ -3,7 +3,13 @@
 module.exports = {
   async captureOverlayBackdrop() {
     const entry = this.currentEntry();
-    if (!entry || !this.win || this.win.isDestroyed() || entry.view.webContents.isDestroyed()) return "";
+    if (!entry || !this.win || this.win.isDestroyed() || entry.view.webContents.isDestroyed()) {
+      // 原生主页/资源库没有页面视图，这时覆盖层本来就没有可冻结的内容。
+      if (this.ctx.smoke) {
+        console.log("SMOKE_OVERLAY_CAPTURE " + JSON.stringify({ skipped: entry ? "unavailable" : "no-entry" }));
+      }
+      return "";
+    }
     const bounds = entry.view.getBounds();
     const fingerprint = [
       entry.key,
@@ -30,6 +36,9 @@ module.exports = {
             timeout = setTimeout(() => resolve(null), 1500);
           }),
         ]);
+        if (this.ctx.smoke) {
+          console.log("SMOKE_OVERLAY_CAPTURE " + JSON.stringify({ key: entry.key, attempt: attempt + 1, empty: !image || image.isEmpty() }));
+        }
         if (!image || image.isEmpty()) continue;
         const size = image.getSize();
         if (bounds.width > 0 && bounds.height > 0 && size.width > bounds.width + 1) {
