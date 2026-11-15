@@ -65,6 +65,26 @@ function seedDemo(ctx) {
         advice: ["诸事不宜", "忌：发朋友圈\n会被当做卖面膜的", "忌：写洛谷日报\n发现还差得远"],
         text: "§ 大凶 §\n诸事不宜\n\n忌：发朋友圈\n会被当做卖面膜的\n忌：写洛谷日报\n发现还差得远\n你已经在洛谷连续打卡了 7 天",
       },
+      charts: [
+        {
+          index: 0,
+          categories: Array.from({ length: 12 }, (_, i) => ((i + 1) % 12) + 1 + "月"),
+          axes: [{ min: 0, max: 2400 }, { min: 0, max: 240 }],
+          series: [
+            { name: "累积通过数", type: "area", yAxis: 0, data: Array.from({ length: 12 }, (_, i) => 120 + i * 190) },
+            { name: "通过数", type: "column", yAxis: 1, data: Array.from({ length: 12 }, (_, i) => (i * 37 + 12) % 220) },
+          ],
+        },
+        {
+          index: 1,
+          categories: Array.from({ length: 30 }, (_, i) => i + 1 + "日"),
+          axes: [{ min: 1920, max: 2160 }, { min: 0, max: 3.2 }],
+          series: [
+            { name: "累积通过数", type: "area", yAxis: 0, data: Array.from({ length: 30 }, (_, i) => 2020 + Math.floor(i / 3)) },
+            { name: "通过数", type: "column", yAxis: 1, data: Array.from({ length: 30 }, (_, i) => (i * 7) % 4) },
+          ],
+        },
+      ],
       sections: {
         announcement: { text: "本站公告与站内动态会同步显示在这里。", links: [] },
         tasks: {

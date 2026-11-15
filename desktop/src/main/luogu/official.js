@@ -1,9 +1,9 @@
 /* 洛谷数据服务 · 官方主页老版 DOM 抓取（拆分自 src/main/luogu.js）。 */
 const officialMethods = {
-  /* 0.7.2 官方主页融合：只抓结构化倒计时与可识别的运势片段。
+  /* 官方主页融合：结构化倒计时/运势/比赛/讨论/任务/双联曲线图。
      昵称统一使用登录资料；无法识别的打卡容器文本必须丢弃，禁止整块文本回填。 */
   async fetchOfficialHome() {
-    const data = await this.exec(`(() => {
+    const data = await this.exec(`(async () => {
       const root = document.querySelector("#app-old .lg-index-content") || document.querySelector("#app-old");
       if (!root) return { ok: false };
       const text = (el) => ((el && el.textContent) || "").replace(/\\s+/g, " ").trim();
@@ -12,7 +12,10 @@ const officialMethods = {
       };
       const articles = Array.from(root.querySelectorAll(".lg-article"));
       const headingOf = (article) => text(article && article.querySelector("h2, h3, .panel-title"));
-      const findSection = (wanted) => articles.find((article) => headingOf(article) === wanted) || null;
+      const findSection = (wanted) => articles.find((article) => {
+        const heading = headingOf(article);
+        return heading === wanted || heading.indexOf(wanted) === 0;
+      }) || null;
       const uniqueLinks = (node, limit = 40, pattern = "") => {
         if (!node) return [];
         const re = pattern ? new RegExp(pattern) : null;
@@ -22,6 +25,20 @@ const officialMethods = {
           .filter((item, index, list) => list.findIndex((x) => x.url === item.url) === index)
           .slice(0, limit);
       };
+      const toneOf = (className) => {
+        const value = String(className || "");
+        if (/lg-bg-red|am-badge-danger/.test(value)) return "red";
+        if (/lg-bg-green|am-badge-success/.test(value)) return "green";
+        if (/lg-bg-orange/.test(value)) return "orange";
+        if (/lg-bg-yellow|am-badge-warning/.test(value)) return "yellow";
+        if (/lg-bg-blue|am-badge-primary/.test(value)) return "blue";
+        if (/lg-bg-purple/.test(value)) return "purple";
+        return "gray";
+      };
+      const readBadge = (node) => ({ text: text(node).slice(0, 24), tone: toneOf(node.className) });
+      const readBadges = (node) => node
+        ? Array.from(node.querySelectorAll(".am-badge")).map(readBadge).filter((item) => item.text).slice(0, 6)
+        : [];
 
       const countdowns = [];
       const countdownText = String((root.querySelector(".lg-punch") && root.querySelector(".lg-punch").innerText) || "");
@@ -74,17 +91,53 @@ const officialMethods = {
       const announcementNode = findSection("本站公告");
       const discussionNode = findSection("最近讨论");
       const contestNode = findSection("近期比赛");
-      const contestItems = contestNode
-        ? Array.from(contestNode.querySelectorAll("section.am-panel, [class*='contest']"))
+
+      const contests = contestNode
+        ? Array.from(contestNode.querySelectorAll("section.am-panel"))
             .map((node) => {
-              const titleLink = node.querySelector("h3 a[href], h2 a[href], a[href]");
+              const titleLink = node.querySelector(".am-panel-hd a[href], h3 a[href], h2 a[href]");
               const title = text(titleLink);
               if (!title) return null;
+              const panelClass = String(node.className || "");
+              const tone = /am-panel-success/.test(panelClass)
+                ? "success"
+                : /am-panel-danger/.test(panelClass)
+                  ? "danger"
+                  : "primary";
+              const body = node.querySelector(".am-panel-bd");
+              const cols = body ? Array.from(body.children).filter((child) => child.tagName === "SPAN") : [];
+              const statusNode = body && body.querySelector("strong");
+              const statusText = text(statusNode);
+              const statusTone = /lg-fg-green/.test(String((statusNode && statusNode.className) || ""))
+                ? "success"
+                : /lg-fg-gray/.test(String((statusNode && statusNode.className) || ""))
+                  ? "danger"
+                  : "primary";
+              const statusLine = cols[1] ? text(cols[1]) : "";
+              const rest = statusText && statusLine.indexOf(statusText) === 0
+                ? statusLine.slice(statusText.length)
+                : statusLine;
+              const remainingMatch = rest.match(/(剩[^\\s]+|\\d[^\\s]*后)/);
+              const teamLink = body && body.querySelector("a.colored, a[href*='team/show']");
+              const timeCol = cols.length > 2 ? cols[cols.length - 1] : null;
+              const timeLines = timeCol && timeCol.innerText
+                ? String(timeCol.innerText).split("\\n").map((line) => line.trim()).filter(Boolean)
+                : (text(timeCol) ? [text(timeCol)] : []);
               return {
-                title,
+                title: title.slice(0, 120),
                 url: absolute(titleLink.getAttribute("href")),
-                badges: Array.from(node.querySelectorAll(".am-badge")).map(text).filter(Boolean).slice(0, 4),
-                meta: text(node.querySelector(".am-panel-bd, [class*='body']")).slice(0, 260),
+                tone,
+                rated: readBadges(node.querySelector(".am-panel-hd")),
+                badges: cols[0]
+                  ? readBadges(cols[0])
+                  : readBadges(node),
+                statusText: statusText.slice(0, 20),
+                statusTone,
+                remaining: remainingMatch ? remainingMatch[1].replace(/\\s+/g, "") : "",
+                team: text(teamLink).slice(0, 40),
+                teamUrl: teamLink ? absolute(teamLink.getAttribute("href")) : "",
+                start: String(timeLines[0] || "").slice(0, 20),
+                end: String(timeLines[1] || "").slice(0, 20),
               };
             })
             .filter(Boolean)
@@ -92,52 +145,100 @@ const officialMethods = {
             .slice(0, 8)
         : [];
 
-      const tasksFor = (wanted) => {
-        const node = findSection(wanted);
-        if (!node) return { title: wanted, text: "", items: [] };
-        const itemMap = new Map();
-        const candidates = Array.from(node.querySelectorAll("li, a[href], button, [role='button'], [class*='task'], [class*='mission'], [class*='todo']"));
-        const push = (element) => {
-          if (!element || element === node) return;
-          const lines = String(element.innerText || "")
-            .split("\\n")
-            .map((line) => line.replace(/\\s+/g, " ").trim())
+      const discussions = discussionNode
+        ? Array.from(discussionNode.querySelectorAll("section.am-panel"))
+            .map((node) => {
+              const anchors = Array.from(node.querySelectorAll("a[href]"));
+              const titleLink = anchors
+                .filter((a) => /\\/discuss\\//.test(a.getAttribute("href") || "") && text(a))
+                .sort((a, b) => text(b).length - text(a).length)[0];
+              const title = text(titleLink);
+              if (!title) return null;
+              const avatar = node.querySelector("img[src]");
+              const authorLink = anchors.find((a) => {
+                const href = a.getAttribute("href") || "";
+                return /\\/user\\//.test(href) && text(a) && !a.querySelector("img");
+              });
+              const forumLink = anchors.find((a) => {
+                const href = a.getAttribute("href") || "";
+                return a !== titleLink && a !== authorLink && text(a) && !a.querySelector("svg") && !/\\/user\\//.test(href);
+              });
+              const metaText = text(node.querySelector(".am-panel-bd, .lg-small"));
+              const dateMatch = metaText.match(/@\\s*(\\d{2}-\\d{2}\\s+\\d{2}:\\d{2})/);
+              const replyMatch = metaText.match(/(\\d+)\\s*回复/);
+              return {
+                title: title.slice(0, 120),
+                url: absolute(titleLink.getAttribute("href")),
+                avatar: avatar ? absolute(avatar.getAttribute("src")) : "",
+                author: text(authorLink).slice(0, 40),
+                authorUrl: authorLink ? absolute(authorLink.getAttribute("href")) : "",
+                forum: text(forumLink).slice(0, 60),
+                forumUrl: forumLink ? absolute(forumLink.getAttribute("href")) : "",
+                date: dateMatch ? dateMatch[1] : "",
+                replies: replyMatch ? Number(replyMatch[1]) : 0,
+                badges: readBadges(node),
+              };
+            })
             .filter(Boolean)
-            .filter((line) => line !== wanted);
-          if (!lines.length) return;
-          const title = lines[0].slice(0, 180);
-          if (!title || title.length < 2) return;
-          const all = lines.join(" ");
-          const link = element.matches("a[href]") ? element : element.querySelector("a[href]");
-          const url = link ? absolute(link.getAttribute("href")) : "";
-          const meta = lines.slice(1, 5).join(" · ").slice(0, 260);
-          const progressMatch = all.match(/(\\d+\\s*\\/\\s*\\d+|\\d+\\s*%)/);
-          const item = {
-            title,
-            meta,
-            url,
-            progress: progressMatch ? progressMatch[1].replace(/\\s+/g, "") : "",
-            done: /已完成|已领取|已打卡/.test(all),
-          };
-          const key = [url, title, meta].join("|");
-          if (!itemMap.has(key)) itemMap.set(key, item);
-        };
-        for (const element of candidates.slice(0, 160)) push(element);
-        let items = Array.from(itemMap.values());
-        if (!items.length) {
-          const lines = String(node.innerText || "")
-            .split("\\n")
-            .map((line) => line.replace(/\\s+/g, " ").trim())
-            .filter(Boolean)
-            .filter((line) => line !== wanted);
-          items = lines.slice(0, 60).map((line) => ({ title: line.slice(0, 180), meta: "", url: "", progress: "", done: /已完成|已领取|已打卡/.test(line) }));
-        }
-        return { title: wanted, text: text(node).slice(0, 6000), items: items.slice(0, 60) };
-      };
-      const taskPlan = tasksFor("任务计划");
-      const taskData = taskPlan.items.length ? taskPlan : tasksFor("智能推荐");
+            .filter((item, index, list) => list.findIndex((x) => x.url === item.url && x.title === item.title) === index)
+            .slice(0, 20)
+        : [];
 
-      const discussionLinks = uniqueLinks(discussionNode, 12, "/discuss/");
+      const taskNode = findSection("任务计划");
+      const taskItems = taskNode
+        ? Array.from(taskNode.querySelectorAll(".tasklist-item")).map((node) => {
+            const pid = String(node.getAttribute("data-pid") || "").trim();
+            const link = node.querySelector("a[href*='/problem/']") || node.querySelector("a.colored[href]");
+            const title = text(link);
+            if (!pid && !title) return null;
+            const state = node.querySelector("strong");
+            const stateClass = String((state && state.className) || "");
+            const done = /lg-fg-green/.test(stateClass) || !!node.querySelector(".am-icon-check");
+            return { pid, title: title.slice(0, 160), url: link ? absolute(link.getAttribute("href")) : "", done };
+          }).filter(Boolean).slice(0, 40)
+        : [];
+      const taskText = taskNode ? String(taskNode.innerText || "") : "";
+      const recommendIndex = taskText.indexOf("智能推荐");
+      const recommendText = recommendIndex >= 0 ? taskText.slice(recommendIndex + "智能推荐".length) : "";
+      const recommend = recommendIndex >= 0
+        ? {
+            empty: /暂无推荐/.test(recommendText),
+            note: (recommendText.match(/洛谷根据[^\\n]*/) || [""])[0].trim().slice(0, 160),
+            text: recommendText.replace(/\\s+/g, " ").trim().slice(0, 400),
+          }
+        : null;
+
+      const taskPlan = { title: "任务计划", text: taskText.replace(/\\s+/g, " ").trim().slice(0, 6000), items: taskItems, recommend };
+
+      /* 官方双联曲线图：Highcharts 实例就挂在主页，DOM 里取不到数据。
+         隐藏数据窗的视口只有 520×400，图表渲染比正文晚，最多轮询 4 秒。 */
+      const readCharts = async () => {
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const live = window.Highcharts && Array.isArray(window.Highcharts.charts)
+            ? window.Highcharts.charts.filter((chart) => chart && chart.xAxis && chart.xAxis[0] && Array.isArray(chart.xAxis[0].categories) && chart.xAxis[0].categories.length && chart.series && chart.series.length)
+            : [];
+          if (live.length) {
+            return live.map((chart, index) => ({
+              index,
+              categories: chart.xAxis[0].categories.map(String),
+              axes: (chart.yAxis || []).map((axis) => ({ min: Number(axis.min), max: Number(axis.max) })),
+              series: chart.series.map((series) => ({
+                name: String(series.name || ""),
+                type: String(series.type || ""),
+                yAxis: Number((series.options && series.options.yAxis) || 0),
+                data: (series.options && Array.isArray(series.options.data) ? series.options.data : []).map((value) => {
+                  const num = typeof value === "object" && value !== null ? value.y : value;
+                  return num === null || num === undefined || !Number.isFinite(Number(num)) ? null : Number(num);
+                }),
+              })),
+            }));
+          }
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return [];
+      };
+      const charts = await readCharts();
+
       return {
         ok: true,
         countdowns: countdowns.slice(0, 4),
@@ -147,12 +248,13 @@ const officialMethods = {
           streak: streakMatch ? Number(streakMatch[1]) : 0,
           text: punchText,
         },
+        charts,
         sections: {
           announcement: { title: "本站公告", text: text(announcementNode).slice(0, 6000), links: uniqueLinks(announcementNode, 40) },
-          tasks: taskData,
+          tasks: taskPlan,
           links: { title: "友情链接", text: text(linksNode).slice(0, 6000), groups: linkGroups },
-          discussions: { title: "最近讨论", items: discussionLinks },
-          contests: { title: "近期比赛", items: contestItems },
+          discussions: { title: "最近讨论", items: discussions },
+          contests: { title: "近期比赛", items: contests },
           quickJump: { title: "问题跳转", text: text(findSection("问题跳转")).slice(0, 500) },
         },
       };

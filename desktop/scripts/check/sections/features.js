@@ -10,8 +10,8 @@ const featureKeys = [
   "problemDetect", "showUserIntro", "problemDifficultyColor", "userSearch",
   "shortcuts", "dynamicDetection", "changeFortune", "supportPrompt",
   "betterSearch", "beautifyUI", "smoothHome", "autoRefresh", "customSections",
-  "homeRecent", "homeOfficial", "homeContest", "homeHeat", "homeFirstRun",
-  "homeAnnouncement", "homeTasks", "homeLinks", "homeCommunity",
+  "homeOfficial", "homeQuickJump", "homeFeedCompose", "homeFeedEmpty",
+  "homeContest", "homeAnnouncement", "homeTasks", "homeLinks", "homeCommunity",
 ];
 if (featureKeys.every((key) => new RegExp(key + ":").test(config87)) && /function setFeatures/.test(config87)) {
   ok("R87 增强配置与持久化齐备（22 个开关）");
@@ -61,12 +61,12 @@ if (
 } else {
   fail("R87 页面增强功能缺项");
 }
-if (/feat-problem-detect/.test(read("src/renderer/settings/index.html")) && /feat-home-recent/.test(read("src/renderer/settings/index.html")) && /FEATURE_CONTROLS/.test(read("src/renderer/settings/settings.js"))) {
+if (/feat-problem-detect/.test(read("src/renderer/settings/index.html")) && /feat-home-feed-compose/.test(read("src/renderer/settings/index.html")) && /FEATURE_CONTROLS/.test(read("src/renderer/settings/settings.js"))) {
   ok("R87 设置页集中管理增强与主页板块");
 } else {
   fail("R87 设置页增强分区缺失");
 }
-if (/homeRecent !== false/.test(read("src/renderer/shell/home.js")) && /homeContest !== false/.test(read("src/renderer/shell/home.js")) && /supportPrompt/.test(read("src/renderer/shell/home.js"))) {
+if (/homeFeedCompose/.test(read("src/renderer/shell/home.js")) && /homeContest/.test(read("src/renderer/shell/home.js")) && /supportPrompt/.test(read("src/renderer/shell/home.js"))) {
   ok("R87 主页板块显隐与支持入口接入");
 } else {
   fail("R87 主页板块配置未接入");
@@ -110,13 +110,13 @@ if (
   /buildAnnouncement/.test(read("src/renderer/shell/home.js")) &&
   /buildTasks/.test(read("src/renderer/shell/home.js")) &&
   /buildLinks/.test(read("src/renderer/shell/home.js")) &&
-  /buildCommunity/.test(read("src/renderer/shell/home.js")) &&
+  /buildDiscussions/.test(read("src/renderer/shell/home.js")) &&
   /beautifyUI/.test(read("src/renderer/shell/home.js")) &&
   /smoothHome/.test(read("src/renderer/shell/home.js")) &&
   /customSections/.test(read("src/renderer/shell/home.js")) &&
-  /sections:\s*\{/.test(luogu87) &&
-  /announcement:\s*\{/.test(luogu87) &&
-  /discussionLinks/.test(luogu87)
+  /sections:\s*\{/.test(read("src/main/luogu/official.js")) &&
+  /announcement:\s*\{/.test(read("src/main/luogu/official.js")) &&
+  /discussions:\s*\{/.test(read("src/main/luogu/official.js"))
 ) {
   ok("R89 主页美化/圆滑/板块总控/公告/任务/链接/讨论齐备");
 } else {

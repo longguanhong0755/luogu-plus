@@ -139,7 +139,7 @@ async function runSettingsStep({ ctx, wait, shot, shotView, outDir }) {
       importButton: !!document.getElementById("settings-import"),
       exportButton: !!document.getElementById("settings-export"),
       resetButton: !!document.getElementById("settings-reset"),
-      sectionToggles: ["feat-home-quick-jump", "feat-home-progress", "feat-home-recent"].every((id) => !!document.getElementById(id))
+      sectionToggles: ["feat-home-contest", "feat-home-announcement", "feat-home-tasks", "feat-home-community", "feat-home-feed-compose", "feat-home-feed-empty"].every((id) => !!document.getElementById(id))
     }))()`);
     console.log("SMOKE_SETTINGS_ENHANCE " + JSON.stringify(enhanceSettings));
     if (!enhanceSettings.panelVisible || enhanceSettings.toggles < 22 || !enhanceSettings.importButton || !enhanceSettings.exportButton || !enhanceSettings.resetButton || !enhanceSettings.sectionToggles) {

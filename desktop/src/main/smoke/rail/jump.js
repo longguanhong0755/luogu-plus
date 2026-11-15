@@ -4,8 +4,8 @@ async function runJumpCases({ ctx, wait, shot, shotView, shell, waitFor, approx,
   ctx.win.setContentSize(originalBounds.width, originalBounds.height);
   await wait(260);
   ctx.views.showHome();
-  await waitFor(() => shell(`!document.getElementById("home").hidden && !!document.querySelector(".quick-jump-card .btn-secondary")`), 1800);
-  await shell(`document.querySelector(".quick-jump-card .btn-secondary").click(); true`);
+  await waitFor(() => shell(`!document.getElementById("home").hidden && !!document.querySelector(".home-jump-card .home-jump-random")`), 1800);
+  await shell(`document.querySelector(".home-jump-card .home-jump-random").click(); true`);
   await waitFor(() => shell(`!document.getElementById("overlay").hidden && !document.getElementById("jump-options").hidden`), 1500);
   await wait(360);
   const jumpPanel = await shell(`(() => ({

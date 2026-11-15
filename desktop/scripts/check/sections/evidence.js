@@ -95,7 +95,7 @@ const skin82 = read("src/renderer/skin/luogu-skin.css");
 const config82 = read("src/main/config.js");
 if (/a\[data-v-12b24cc3\]/.test(skin82) && /text-overflow: ellipsis/.test(skin82)) ok("R82 user 页轮播溢出皮肤收敛（转正）");
 else fail("R82 缺溢出收敛皮肤规则");
-if (/firstRunSeen/.test(config82) && /buildFirstRun/.test(read("src/renderer/shell/home.js"))) ok("R82 首启引导卡（firstRunSeen + buildFirstRun）");
+if (/firstRunSeen/.test(config82) && /welcome-card/.test(read("src/renderer/shell/home.js"))) ok("R82 首启引导并入官方欢迎卡（firstRunSeen + welcome-card）");
 else fail("R82 缺首启引导");
 if (/console-message/.test(read("src/main/index.js"))) ok("R82 冒烟模式渲染端 console 中继（可观测性）");
 else fail("R82 缺渲染端 console 中继");

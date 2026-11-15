@@ -40,9 +40,9 @@ async function runLayoutCases({ ctx, wait, shot, shotView, shell, waitFor, appro
     aspectTrail.push(await shell(`(() => {
       const home = document.getElementById("home");
       const app = document.getElementById("app");
-      const daily = document.querySelector(".home-daily-main");
-      const actions = document.querySelector(".home-today-actions");
-      const mr = daily ? daily.getBoundingClientRect() : null;
+      const head = document.querySelector(".wc-head");
+      const actions = document.querySelector(".wc-actions");
+      const mr = head ? head.getBoundingClientRect() : null;
       const ar = actions ? actions.getBoundingClientRect() : null;
       const overlap = !!(mr && ar && ar.right > mr.left + 1 && ar.left < mr.right - 1 && ar.bottom > mr.top + 1 && ar.top < mr.bottom - 1);
       return {

@@ -1,0 +1,198 @@
+/* shell/css/162-home-hero.css — 官方首页第一行：Luogu Plus 欢迎卡与洛谷运势面板。 */
+/* ---------- 第一行：欢迎卡 + 运势 ---------- */
+#home .home-hero-grid {
+  display: flex;
+  align-items: stretch;
+  min-height: 290px;
+}
+#home .home-hero-main { flex: 0 0 66.6667%; min-width: 0; display: flex; }
+#home .home-hero-side { flex: 0 0 33.3333%; min-width: 0; display: flex; padding-left: 26px; border-left: 1px solid var(--border); }
+#home .home-hero-grid.single .home-hero-main { flex-basis: 100%; }
+
+#home .welcome-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 18px 12px 18px 2px;
+}
+#home .wc-head { display: flex; align-items: center; gap: 20px; margin-bottom: 15px; }
+#home .wc-avatar-box { flex: none; width: 80px; height: 80px; }
+#home .wc-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  object-fit: cover;
+}
+#home .wc-avatar-guest {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 30px;
+  font-weight: 600;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+#home .wc-content { flex: 1; min-width: 0; text-align: left; }
+#home .wc-content h2 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+#home .wc-content p { margin: 0 0 10px; color: var(--text-2); font-size: 16px; line-height: 1.6; }
+#home .wc-name { color: inherit; text-decoration: none; }
+#home .wc-name:hover { text-decoration: none; }
+#home .wc-name.lg-fg-red { color: var(--home-red); }
+
+#home .wc-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#home .wc-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 4px;
+  background: #4a7bd9;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+#home .wc-btn-blue { background: #4a7bd9; }
+#home .wc-btn-green { background: #5cb85c; }
+#home .wc-btn-orange { background: #f0ad4e; }
+#home .wc-btn:hover { color: #fff; filter: brightness(0.94); }
+#home .wc-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- 运势面板 ---------- */
+#home .home-punch {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 18px 2px;
+  color: var(--text);
+  text-align: center;
+}
+#home .home-punch h2 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 26px;
+  font-weight: 400;
+}
+#home .home-punch h2 a { color: var(--text); font-weight: 600; text-decoration: none; }
+#home .home-punch h2 a:hover { text-decoration: none; }
+#home .home-punch h2 a.lg-fg-red { color: var(--home-red); }
+#home .punch-check { display: inline-block; margin-left: 3px; line-height: 0; vertical-align: 0; }
+#home .punch-check svg { margin-bottom: -3px; width: 14px; height: 14px; }
+
+#home .punch-result {
+  display: block;
+  margin: 4px 0 10px;
+  color: var(--home-red);
+  font-size: 46px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+#home .punch-result.lg-fg-gray { color: var(--text-2); }
+#home .punch-cols { display: flex; flex-wrap: wrap; font-size: 14px; line-height: 1.7; }
+#home .punch-col { width: 50%; padding: 0 8px; color: var(--text); text-align: center; }
+#home .punch-col:first-child { color: var(--home-green); }
+#home .punch-col .lg-bold { color: inherit; font-weight: 600; }
+#home .punch-col .lg-small { color: var(--text-3); font-size: 11px; }
+#home .punch-streak {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px 0;
+  color: var(--text-3);
+  font-size: 12px;
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+#home .punch-streak strong { color: var(--text); font-weight: 600; }
+
+#home .punch-calendar {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+  margin: 12px 0 4px;
+}
+#home .punch-calendar-month,
+#home .punch-calendar-week { color: var(--text-3); font-size: 12px; line-height: 1.6; }
+#home .punch-calendar-day { color: var(--text); font-size: 34px; line-height: 1.15; font-weight: 600; font-variant-numeric: tabular-nums; }
+#home .punch-countdowns { margin: 4px 0 10px; color: var(--text-2); font-size: 12px; line-height: 1.85; }
+#home .punch-countdown strong { color: var(--text); font-weight: 600; }
+#home .punch-checkin {
+  align-self: center;
+  height: 34px;
+  margin-top: 2px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 4px;
+  background: #dd514c;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+#home .punch-checkin:hover { filter: brightness(0.94); }
+#home .punch-checkin.loading { opacity: 0.65; cursor: default; }
+#home .punch-pending { margin: 8px 0 0; color: var(--home-red); font-size: 12px; line-height: 1.6; }
+
+#home .punch-guest-panel { padding: 0; }
+#home .punch-guest { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+#home .punch-orb { display: grid; place-items: center; margin-bottom: 8px; color: var(--text-3); }
+#home .punch-orb svg {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#home .punch-guest h2 { color: var(--text); font-size: 20px; font-weight: 600; }
+#home .punch-guest p { margin: 6px 0 14px; color: var(--text-3); font-size: 13px; line-height: 1.7; }
+#home .punch-login {
+  height: 34px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent-fill);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+#home .punch-login:hover { filter: brightness(1.08); }
+

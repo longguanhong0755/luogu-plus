@@ -229,9 +229,9 @@ if (/class="pane-head"/.test(settingsHtml) && /class="settings-group"/.test(sett
 const homeSrc2 = read("src/renderer/shell/home.js");
 for (const [name, needle] of [
   ["两栏仪表盘", /home-grid/],
-  ["官方累计通过", /official-profile-stats/],
-  ["热力图图例", /heat-map-legend/],
-  ["空寄语不渲染", /if \(home\.quote\)/],
+  ["官方通过曲线", /buildChartCard/],
+  ["双图表结构", /chart-pane/],
+  ["空板块提示", /home-empty-note/],
 ]) {
   if (needle.test(homeSrc2)) ok("home.js " + name);
   else fail("home.js 缺少" + name);

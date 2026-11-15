@@ -1,9 +1,9 @@
-/* 侧栏冒烟：环境隔离 / 单侧栏 / 首页层级 / 首页今日动作。 */
+/* 侧栏冒烟：环境隔离 / 单侧栏 / 官方主页欢迎行 / 运势面板。 */
 const fs = require("node:fs");
 const path = require("node:path");
 const { app } = require("electron");
 
-async function runHomeCases({ ctx, wait, shot, shotView, shell, waitFor, approx, addCase, originalBounds }) {
+async function runHomeCases({ ctx, wait, shot, shell, addCase, originalBounds }) {
   ctx.views.showHome();
   ctx.views.setRailPinned(false);
   await wait(260);
@@ -44,118 +44,105 @@ async function runHomeCases({ ctx, wait, shot, shotView, shell, waitFor, approx,
     }
   );
 
-  const homeDaily = await shell(`(() => {
-    const daily = document.querySelector(".home-daily");
-    const name = (window.lg.getState().user || {}).name || "";
-    const text = daily ? daily.innerText : "";
-    const fortune = document.querySelector(".home-fortune-panel");
-    const refresh = document.querySelector(".home-refresh");
-    const meta = document.querySelector(".home-meta");
+  const homeHero = await shell(`(async () => {
+    const hero = document.querySelector(".home-top-card");
+    const welcome = document.querySelector(".welcome-card");
+    const state = await window.lg.getState();
+    const name = (state.user || {}).name || "";
+    const avatar = document.querySelector(".wc-avatar");
+    const avatarStyle = avatar ? getComputedStyle(avatar) : null;
+    const buttons = Array.from(document.querySelectorAll(".wc-btn"));
     return {
-      greetingCount: document.querySelectorAll(".home-greeting").length,
-      dateCount: document.querySelectorAll(".home-date").length,
-      countdownCount: document.querySelectorAll(".home-countdown").length,
-      fortuneCount: document.querySelectorAll(".home-fortune-panel").length,
-      refreshCount: document.querySelectorAll(".home-refresh").length,
-      mainCount: document.querySelectorAll(".home-daily-main").length,
-      greetingRowCount: document.querySelectorAll(".home-greeting-row").length,
-      legacySideCount: document.querySelectorAll(".home-daily-side").length,
-      refreshInHeading: !!refresh && !!refresh.closest(".home-greeting-row"),
-      countdownsInMeta: document.querySelectorAll(".home-countdown").length > 0 && !!meta && !!meta.querySelector(".home-countdowns"),
-      nameCount: name ? text.split(name).length - 1 : 0,
-      legacyCard: !!document.querySelector(".welcome-card"),
-      fortuneContaminated: !!fortune && /(距|还剩|星期)/.test(fortune.innerText || "")
+      heroCount: document.querySelectorAll(".home-top-card").length,
+      welcomeCount: document.querySelectorAll(".welcome-card").length,
+      nameCount: welcome && name ? welcome.innerText.split(name).length - 1 : 0,
+      avatarSize: avatarStyle ? Math.round(parseFloat(avatarStyle.width)) : 0,
+      buttonCount: buttons.length,
+      buttonTexts: buttons.map((node) => node.innerText.trim()),
+      buttonColors: buttons.map((node) => getComputedStyle(node).backgroundColor),
+      heroGrid: document.querySelectorAll(".home-hero-grid").length,
+      heroMain: document.querySelectorAll(".home-hero-main").length,
+      heroSide: document.querySelectorAll(".home-hero-side").length,
+      fortuneCount: document.querySelectorAll(".home-punch").length,
+      fortuneInHero: !!document.querySelector(".home-top-card .home-punch"),
+      legacyDaily: document.querySelectorAll(".home-daily, .home-fortune-panel").length,
+      footer: !!document.querySelector(".lg-footer"),
     };
   })()`);
+  await shot("home-hero", ctx.win);
   addCase(
     "home-daily-hierarchy",
-    { homeDaily },
+    { homeHero },
     {
-      singleGreeting: homeDaily.greetingCount === 1,
-      singleDate: homeDaily.dateCount === 1,
-      singleMain: homeDaily.mainCount === 1 && homeDaily.greetingRowCount === 1,
-      stableRefresh: homeDaily.refreshCount === 1 && homeDaily.refreshInHeading,
-      countdownsInHeader: process.env.LG_SMOKE_NET === "1" || (homeDaily.countdownCount > 0 && homeDaily.countdownsInMeta),
-      noLegacySide: homeDaily.legacySideCount === 0,
-      noLegacyCard: homeDaily.legacyCard === false,
-      structuredFortune: homeDaily.fortuneContaminated === false,
+      singleGreeting: homeHero.heroCount === 1 && homeHero.welcomeCount === 1 && homeHero.nameCount === 1,
+      officialGrid: homeHero.heroGrid === 1 && homeHero.heroMain === 1 && homeHero.heroSide === 1,
+      avatarSize: homeHero.avatarSize === 80,
+      threeActions: homeHero.buttonCount === 3 && homeHero.buttonTexts.join("|") === "今日推荐|算法笔记|社区讨论",
+      officialButtonColors: homeHero.buttonColors.join("|") === "rgb(74, 123, 217)|rgb(92, 184, 92)|rgb(240, 173, 78)",
+      fortuneInline: homeHero.fortuneCount === 1 && homeHero.fortuneInHero,
+      noLegacyDaily: homeHero.legacyDaily === 0,
+      officialFooter: homeHero.footer,
     }
   );
 
   const today = await shell(`(() => {
-    const panel = document.querySelector(".home-fortune-panel");
-    const content = document.querySelector(".home-fortune-panel");
-    const action = document.querySelector(".home-today-btn.daily");
-    const style = panel ? getComputedStyle(panel) : null;
+    const panel = document.querySelector(".home-punch");
+    const result = document.querySelector(".punch-result");
+    const cols = Array.from(document.querySelectorAll(".punch-cols .punch-col"));
+    const panelStyle = panel ? getComputedStyle(panel) : null;
+    const resultStyle = result ? getComputedStyle(result) : null;
+    const text = panel ? panel.innerText : "";
     return {
       panel: !!panel,
       drawn: !!panel && panel.classList.contains("drawn"),
-      fortuneText: content ? content.innerText : "",
-      fortuneVisible: !!panel && !!style && style.display !== "none" && style.visibility !== "hidden",
-      actionCount: document.querySelectorAll(".home-today-btn.daily").length,
-      visibleActionCount: Array.from(document.querySelectorAll(".home-today-btn.daily")).filter((node) => !node.hidden).length,
-      signCount: document.querySelectorAll(".home-today-btn.sign").length,
-      fortuneCount: document.querySelectorAll(".home-today-btn.fortune").length,
-      legacySignCount: document.querySelectorAll(".sign-card").length,
-      guest: !!action && action.classList.contains("guest"),
-      text: action ? action.innerText : "",
+      fortuneText: text,
+      fortuneVisible: !!panel && !!panelStyle && panelStyle.display !== "none" && panelStyle.visibility !== "hidden",
+      heading: !!document.querySelector(".home-punch h2"),
+      accountRed: !!document.querySelector(".home-punch h2 a.lg-fg-red.lg-bold"),
+      officialResult: !!result,
+      resultFont: resultStyle ? parseFloat(resultStyle.fontSize) || 0 : 0,
+      resultLineHeight: resultStyle ? parseFloat(resultStyle.lineHeight) || 0 : 0,
+      resultColor: resultStyle ? resultStyle.color : "",
+      panelColor: panelStyle ? panelStyle.color : "",
+      adviceColumns: cols.length,
+      goodColumnText: cols[0] ? cols[0].innerText : "",
+      badActionCount: cols[1] ? cols[1].querySelectorAll(".lg-bold").length : 0,
+      streak: !!document.querySelector(".home-punch .punch-streak"),
+      checkinCount: document.querySelectorAll(".home-punch .punch-checkin").length,
       dialogCount: document.querySelectorAll(".fortune-dialog, #fortune-dialog").length,
-      officialHeading: !!document.querySelector(".home-fortune-panel h2"),
-      officialResult: !!document.querySelector(".home-fortune-panel .lg-punch-result"),
-      officialColumn: !!panel && panel.classList.contains("am-u-md-4") && panel.classList.contains("lg-punch"),
-      adviceColumns: document.querySelectorAll(".home-fortune-panel .am-u-sm-6").length,
-      headingAccountRed: !!document.querySelector(".home-fortune-panel h2 a.lg-fg-red.lg-bold"),
-      goodColumnText: (document.querySelector(".home-fortune-panel .am-u-sm-6") || {}).innerText || "",
-      badActionCount: (document.querySelectorAll(".home-fortune-panel .am-u-sm-6")[1] || document.createElement("div")).querySelectorAll(".lg-bold").length,
-      resultColor: getComputedStyle(document.querySelector(".home-fortune-panel .lg-punch-result") || panel).color,
-      panelTextColor: getComputedStyle(panel).color,
-      resultFont: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-punch-result") || panel).fontSize) || 0,
-      resultLineHeight: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-punch-result") || panel).lineHeight) || 0,
-      headingFont: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel h2") || panel).fontSize) || 0,
-      headingLineHeight: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel h2") || panel).lineHeight) || 0,
-      smallFont: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-small") || panel).fontSize) || 0,
-      smallLineHeight: parseFloat(getComputedStyle(document.querySelector(".home-fortune-panel .lg-small") || panel).lineHeight) || 0,
-      progressInDaily: !!document.querySelector(".home-daily .official-profile-card"),
-      clippedLines: Array.from(document.querySelectorAll(".home-fortune-panel .lg-small")).filter((node) => node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1).length,
       localFortuneKeys: Object.keys(localStorage).filter((key) => key.startsWith("lg.daily-fortune.v1:")),
+      clippedLines: Array.from(document.querySelectorAll(".home-punch .lg-small")).filter((node) => node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1).length,
+      legacyProgress: document.querySelectorAll(".official-profile-card, .heat-map-wrapper, .home-trend-card").length,
     };
   })()`);
+  await shot("home-fortune", ctx.win);
   addCase(
     "home-today-actions",
     { today },
     {
-      singleDailyAction: today.actionCount <= 1 && today.signCount === 0 && today.fortuneCount === 0,
-      noLegacyAction: today.legacySignCount === 0,
-      inlinePanel: today.panel,
+      singleDailyAction: today.drawn ? today.checkinCount === 0 : today.checkinCount === 1,
+      noLegacyAction: today.legacyProgress === 0,
+      inlinePanel: today.fortuneVisible,
       officialOnlyState: today.localFortuneKeys.length === 0,
       inlineFortune: !today.drawn || (
-        today.fortuneVisible &&
         /大吉|中吉|小吉|末吉|凶|吉/.test(today.fortuneText) &&
         /(宜|诸事不宜)/.test(today.fortuneText) &&
         /忌/.test(today.fortuneText)
       ),
       officialFortuneLayout: !today.drawn || (
-        today.officialHeading &&
+        today.heading &&
         today.officialResult &&
-        today.officialColumn &&
+        today.accountRed &&
         today.adviceColumns === 2 &&
-        today.headingAccountRed &&
         /诸事不宜/.test(today.goodColumnText) &&
         today.badActionCount >= 2 &&
-        today.resultColor === today.panelTextColor &&
-        Math.abs(today.resultFont - 60) < 1 &&
-        Math.abs(today.resultLineHeight - 90) < 1 &&
-        Math.abs(today.headingFont - 20) < 1 &&
-        Math.abs(today.headingLineHeight - 32) < 1 &&
-        Math.abs(today.smallFont - 10) < 1 &&
-        Math.abs(today.smallLineHeight - 16) < 1 &&
+        today.resultColor !== today.panelColor &&
+        Math.abs(today.resultFont - 46) < 1 &&
+        Math.abs(today.resultLineHeight - 59.8) < 1 &&
+        today.streak &&
         today.clippedLines === 0
       ),
-      noDailyDeadSpace: today.progressInDaily,
       noConfirmationDialog: today.dialogCount === 0,
-      actionCopy: today.guest
-        ? /登录洛谷/.test(today.text)
-        : today.drawn || /签到|运势/.test(today.text),
     }
   );
 }

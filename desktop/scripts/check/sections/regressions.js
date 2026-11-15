@@ -42,14 +42,14 @@ if (
   fail("R93 窄窗口主页仍可能出现整块空白");
 }
 if (
-  /home-today-actions/.test(r92Home) &&
+  /buildFortunePanel/.test(r92Home) &&
   /normalizeFortune/.test(r92Home) &&
-  /lg-punch-result/.test(r92Home) &&
-  /am-u-sm-6/.test(r92Home) &&
-  /lg-fg-red/.test(r92Home) &&
+  /punch-result/.test(r92Home) &&
+  /punch-cols/.test(r92Home) &&
+  /punch-checkin/.test(r92Home) &&
   /fortuneText\(fortune\)/.test(r92Home) &&
   /actions\.checkin\(\)/.test(r92Home) &&
-  /home\.official\.fortune/.test(r92Home) &&
+  /official\.fortune/.test(r92Home) &&
   !/function openFortuneDialog/.test(r92Home) &&
   !/DAILY_FORTUNES/.test(r92Home)
 ) {
@@ -57,7 +57,8 @@ if (
 } else {
   fail("R92 主页完整运势内联链路不完整");
 }
-if (/tasksFor/.test(r92Luogu) && /items: items\.slice\(0, 60\)/.test(r92Luogu) && /tasks: taskData/.test(r92Luogu)) {
+const r92Official = read("src/main/luogu/official.js");
+if (/tasklist-item/.test(r92Official) && /items: taskItems/.test(r92Official) && /slice\(0, 40\)/.test(r92Official) && /tasks: taskPlan/.test(r92Official)) {
   ok("R92 官方任务计划抓取完整条目而非 180 字截断");
 } else {
   fail("R92 官方任务计划仍为截断文本");
@@ -140,60 +141,58 @@ if (
   fail("主页官方统计字段、热度解析或广告过滤不完整");
 }
 if (
-  !/if \(!total\)[\s\S]{0,120}?return card;/.test(r92Home) &&
-  /for \(let i = 0; i < 26 \* 7; i\+\+\)/.test(r92Home) &&
+  /chart-empty/.test(r92Home) &&
+  /home-empty-note/.test(r92Home) &&
+  /if \(main\.childElementCount\) grid\.appendChild\(main\)/.test(r92Home) &&
   /if \(side\.childElementCount\) grid\.appendChild\(side\)/.test(r92Home) &&
   /grid\.childElementCount === 1/.test(r92Home) &&
-  /\.home-grid\.single/.test(r92Shell) &&
-  /if \(!items\.length\)[\s\S]*?fallbackLines/.test(r92Home)
+  /\.home-grid\.single/.test(r92Shell)
 ) {
-  ok("首页空数据仍绘制完整热度网格，空任务和单侧内容不会留下空白区域");
+  ok("首页空数据保留空态卡与单列布局，空侧栏不会留下空白区域");
 } else {
   fail("首页空数据图表、重复任务或空列仍有缺口");
 }
 if (
-  /function buildTrend\(home, user\)/.test(r92Home) &&
-  /home-trend-card/.test(r92Home) &&
-  /trend-chart-svg/.test(r92Home) &&
-  /trend-line/.test(r92Home) &&
-  /\(home\.acProgress \|\| \[\]\)/.test(r92Home) &&
-  /\.trend-chart-svg/.test(r92Shell) &&
-  /\.trend-line/.test(r92Shell) &&
-  /\.trend-flat-note/.test(r92Shell)
+  /function buildChartCard/.test(r92Home) &&
+  /home-chart-card/.test(r92Home) &&
+  /chart-pane/.test(r92Home) &&
+  /chart-svg/.test(r92Home) &&
+  /Array\.isArray\(official\.charts\)/.test(r92Home) &&
+  /chart-empty/.test(r92Home) &&
+  /--home-chart-blue/.test(r92Shell) &&
+  /\.chart-svg/.test(r92Shell)
 ) {
-  ok("首页累计通过折线图始终渲染，空数据保留坐标与零线");
+  ok("首页双联通过曲线始终渲染，空数据保留提示而非整卡消失");
 } else {
   fail("首页累计通过折线图缺失或空数据会被隐藏");
 }
 if (
-  /am-u-md-4 lg-punch am-text-center home-fortune-panel/.test(r92Home) &&
-  /lg-punch-result/.test(r92Home) &&
-  !/lg-punch-result lg-fg-red/.test(r92Home) &&
+  /buildFortunePanel/.test(r92Home) &&
+  /punch-result/.test(r92Home) &&
+  /punch-result lg-punch-result lg-fg-red/.test(r92Home) &&
   /lg-fg-red lg-bold/.test(r92Home) &&
   /诸事不宜/.test(r92Home) &&
-  /home-fortune-calendar/.test(r92Home) &&
   /点击打卡/.test(r92Home) &&
-  /am-u-sm-6 lg-fg-red/.test(r92Home) &&
-  /am-u-sm-12 lg-small/.test(r92Home) &&
-  /\.home-fortune-panel h2 \{[\s\S]*?font-size: 20px;[\s\S]*?line-height: 1\.6;/.test(r92Shell) &&
-  /\.home-fortune-panel \.lg-punch-result \{[\s\S]*?color: var\(--text\) !important;[\s\S]*?font-size: 60px;[\s\S]*?line-height: 1\.5;/.test(r92Shell) &&
-  /\.home-fortune-panel \.home-today-btn \{[\s\S]*?border: 1px solid #dd514c;[\s\S]*?border-radius: 0;[\s\S]*?background: #dd514c;[\s\S]*?font-size: 14px;[\s\S]*?line-height: 1\.2;/.test(r92Shell) &&
-  /\.home-fortune-calendar \.lg-punch-big \{[\s\S]*?font-size: 85px;[\s\S]*?line-height: 55px;/.test(r92Shell) &&
-  /\.home-fortune-panel \.lg-small \{[\s\S]*?font-size: \.625rem;[\s\S]*?line-height: 16px;/.test(r92Shell)
+  /punch-cols/.test(r92Home) &&
+  /punch-streak/.test(r92Home) &&
+  /\.punch-result \{[\s\S]*?font-size: 46px;[\s\S]*?line-height: 1\.3;/.test(r92Shell) &&
+  /\.punch-col:first-child \{ color: var\(--home-green\); \}/.test(r92Shell) &&
+  /\.punch-streak strong \{ color: var\(--text\); font-weight: 600; \}/.test(r92Shell)
 ) {
-  ok("运势面板按官网真实全凶 DOM、颜色、字号、行高和双栏 1:1 复刻");
+  ok("运势面板按官网真实结构、红色结果字与宜忌双栏复刻");
 } else {
   fail("运势面板未按洛谷官网真实结构/计算样式复刻");
 }
 if (
-  /heat-map-wrapper/.test(r92Home) &&
-  /heat-map-legend/.test(r92Home) &&
-  /official-profile-stats/.test(r92Home) &&
-  /var\(--heat-/.test(r92Home) &&
-  /heat-map-wrapper/.test(r92Shell) &&
-  /--heat-4: rgb\(115, 209, 61\)/.test(r92Shell)
+  /home-stat-grid/.test(r92Home) &&
+  /buildQuickJump/.test(r92Home) &&
+  /buildChartCard/.test(r92Home) &&
+  /home-chart-card/.test(r92Home) &&
+  /--home-chart-blue/.test(r92Shell) &&
+  /\.home-stat-grid \{ display: flex; align-items: stretch; gap: 10px; \}/.test(r92Shell) &&
+  /\.home-jump-card \{[\s\S]*?height: 190px/.test(r92Shell)
 ) {
-  ok("主页累计通过与热度图采用洛谷个人中心同源结构、档位和颜色");
+  ok("主页统计行按官方 25/75 栅格，跳转卡与双曲线同高 190px");
 } else {
   fail("主页累计通过或热度图未对齐洛谷个人中心");
 }
@@ -208,12 +207,15 @@ if (
 if (
   !/homeFeatured/.test(read("src/main/config.js")) &&
   !/home-featured|featured-/.test(read("src/renderer/shell/home.js")) &&
-  /feat-home-countdown/.test(read("src/renderer/settings/index.html")) &&
-  /feat-home-quick-jump/.test(read("src/renderer/settings/index.html")) &&
-  /feat-home-progress/.test(read("src/renderer/settings/index.html")) &&
-  /feat-home-recent/.test(read("src/renderer/settings/index.html"))
+  /feat-home-contest/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-announcement/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-tasks/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-community/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-feed-compose/.test(read("src/renderer/settings/index.html")) &&
+  /feat-home-feed-empty/.test(read("src/renderer/settings/index.html")) &&
+  !/feat-home-countdown|feat-home-progress|feat-home-recent|feat-home-heat|feat-home-first-run/.test(read("src/renderer/settings/index.html"))
 ) {
-  ok("主页每个官方/原生板块都可在设置中独立显隐");
+  ok("近期比赛/本站公告/任务计划/最近讨论/动态发布/动态空态均可独立显隐");
 } else {
   fail("主页板块独立显隐不完整");
 }

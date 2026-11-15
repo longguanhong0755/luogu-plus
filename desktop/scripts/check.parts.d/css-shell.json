@@ -30,6 +30,9 @@
     "src/renderer/shell/css/140-overrides.css",
     "src/renderer/shell/css/145-home-fortune.css",
     "src/renderer/shell/css/150-home-activity.css",
-    "src/renderer/shell/css/155-home-trend.css"
+    "src/renderer/shell/css/155-home-trend.css",
+    "src/renderer/shell/css/160-home-official.css",
+    "src/renderer/shell/css/162-home-hero.css",
+    "src/renderer/shell/css/165-home-sections.css"
   ]
 }

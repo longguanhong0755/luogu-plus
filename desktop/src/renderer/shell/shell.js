@@ -135,9 +135,11 @@ async function boot() {
     nav: (target) => window.lg.nav(target),
     openProblem: (pid) => window.lg.openProblem(pid),
     openDetail: (payload) => window.lg.openDetail(payload),
+    openUser: (uid) => window.lg.openUser(uid),
     openRandomJump: () => overlays.openRandomJump(),
     queueAction: (payload) => window.lg.queueAction(payload),
     setGeneral: (patch) => window.lg.setGeneral(patch),
+    toast: (payload) => toast(payload),
   };
 
   const library = initLibrary({

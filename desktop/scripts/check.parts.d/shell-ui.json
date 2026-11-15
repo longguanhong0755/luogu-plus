@@ -19,18 +19,14 @@
   "src/renderer/shell/home.js": [
     "src/renderer/shell/home/constants.js",
     "src/renderer/shell/home/utils.js",
-    "src/renderer/shell/home/daily-header.js",
-    "src/renderer/shell/home/heat.js",
-    "src/renderer/shell/home/quick-jump.js",
-    "src/renderer/shell/home/progress.js",
-    "src/renderer/shell/home/trend.js",
-    "src/renderer/shell/home/contest.js",
-    "src/renderer/shell/home/recent.js",
-    "src/renderer/shell/home/queue.js",
-    "src/renderer/shell/home/first-run.js",
-    "src/renderer/shell/home/sections.js",
-    "src/renderer/shell/home/fortune.js",
     "src/renderer/shell/home/timer.js",
+    "src/renderer/shell/home/hero.js",
+    "src/renderer/shell/home/charts.js",
+    "src/renderer/shell/home/fortune.js",
+    "src/renderer/shell/home/quick-jump.js",
+    "src/renderer/shell/home/contest.js",
+    "src/renderer/shell/home/queue.js",
+    "src/renderer/shell/home/sections.js",
     "src/renderer/shell/home/page.js"
   ]
 }

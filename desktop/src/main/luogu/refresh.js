@@ -5,6 +5,8 @@ const refreshMethods = {
   /* ---------- 主刷新 ---------- */
 
   async refresh(force = false) {
+    // 演示/冒烟数据由 seedDemo 注入，再联网刷新会用真实游客数据覆盖它
+    if (process.env.LG_DEMO === "1") return this.state();
     if (this.refreshing) {
       await new Promise((resolve) => this.refreshWaiters.push(resolve));
       return this.state();

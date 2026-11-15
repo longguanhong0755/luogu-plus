@@ -1,38 +1,33 @@
-/* 侧栏冒烟：打卡按钮 / 首页图表 / 官方任务 / 官方板块。 */
+/* 侧栏冒烟：打卡按钮 / 首页双曲线 / 官方任务 / 官方板块。 */
 
-async function runHomePanelCases({ ctx, wait, shot, shotView, shell, waitFor, approx, addCase, originalBounds }) {
+async function runHomePanelCases({ ctx, wait, shot, shell, addCase }) {
   const drawnHomeBackup = JSON.parse(JSON.stringify(ctx.luogu.home));
   ctx.luogu.home.official.fortune = null;
   ctx.luogu.home.punched = false;
   ctx.views.showHome();
   await wait(320);
   const fortuneButton = await shell(`(() => {
-    const button = document.querySelector(".home-fortune-panel .home-today-btn.daily");
+    const button = document.querySelector(".home-punch .punch-checkin");
     if (!button) return null;
     const style = getComputedStyle(button);
     return {
       text: button.innerText.trim(),
       display: style.display,
+      height: parseFloat(style.height) || 0,
       fontSize: parseFloat(style.fontSize) || 0,
-      lineHeight: parseFloat(style.lineHeight) || 0,
-      paddingTop: parseFloat(style.paddingTop) || 0,
       paddingRight: parseFloat(style.paddingRight) || 0,
       borderTopWidth: parseFloat(style.borderTopWidth) || 0,
       borderRadius: parseFloat(style.borderRadius) || 0,
       background: style.backgroundColor,
-      borderColor: style.borderTopColor,
       color: style.color,
-      count: document.querySelectorAll(".home-fortune-panel .home-today-btn.daily").length,
-      calendar: !!document.querySelector(".home-fortune-panel .home-fortune-calendar"),
-      calendarBig: (document.querySelector(".home-fortune-panel .lg-punch-big") || {}).innerText || "",
-      calendarSmallCount: document.querySelectorAll(".home-fortune-panel .lg-punch-small").length,
-      countdownDays: document.querySelectorAll(".home-fortune-panel .am-u-sm-12.lg-small strong").length,
+      count: document.querySelectorAll(".home-punch .punch-checkin").length,
+      calendar: !!document.querySelector(".home-punch .punch-calendar"),
+      calendarDay: (document.querySelector(".home-punch .punch-calendar-day") || {}).innerText || "",
+      calendarParts: document.querySelectorAll(".home-punch .punch-calendar > span").length,
+      countdownDays: document.querySelectorAll(".home-punch .punch-countdown strong").length,
     };
   })()`);
   await shot("fortune-button", ctx.win);
-  ctx.luogu.home = drawnHomeBackup;
-  ctx.views.showHome();
-  await wait(320);
   addCase(
     "home-fortune-button-official",
     { fortuneButton },
@@ -41,59 +36,65 @@ async function runHomePanelCases({ ctx, wait, shot, shotView, shell, waitFor, ap
       copy: !!fortuneButton && fortuneButton.text === "点击打卡",
       amazeGeometry: !!fortuneButton &&
         fortuneButton.display === "inline-block" &&
-        Math.abs(fortuneButton.fontSize - 14) < 1 &&
-        Math.abs(fortuneButton.lineHeight - 16.8) < 0.2 &&
-        Math.abs(fortuneButton.paddingTop - 7) < 1 &&
-        Math.abs(fortuneButton.paddingRight - 14) < 1 &&
-        Math.abs(fortuneButton.borderTopWidth - 1) < 1 &&
-        Math.abs(fortuneButton.borderRadius) < 1,
+        Math.abs(fortuneButton.height - 34) < 1 &&
+        Math.abs(fortuneButton.fontSize - 13) < 1 &&
+        Math.abs(fortuneButton.paddingRight - 20) < 1 &&
+        Math.abs(fortuneButton.borderTopWidth) < 1 &&
+        Math.abs(fortuneButton.borderRadius - 4) < 1,
       amazeDanger: !!fortuneButton &&
         fortuneButton.background === "rgb(221, 81, 76)" &&
-        fortuneButton.borderColor === "rgb(221, 81, 76)" &&
         fortuneButton.color === "rgb(255, 255, 255)",
       officialCalendar: !!fortuneButton &&
         fortuneButton.calendar &&
-        /^\d{2}$/.test(fortuneButton.calendarBig) &&
-        fortuneButton.calendarSmallCount === 2 &&
+        /^\d{2}$/.test(fortuneButton.calendarDay) &&
+        fortuneButton.calendarParts === 3 &&
         fortuneButton.countdownDays >= 2,
     }
   );
 
+  ctx.views.showHome();
+  await wait(420);
   const homeCharts = await shell(`(() => {
-    const heat = document.querySelector(".heat-map-wrapper .heat-map");
-    const trend = document.querySelector(".home-trend-card");
-    const svg = document.querySelector(".trend-chart-svg");
-    const line = document.querySelector(".trend-line");
-    const heatRect = heat ? heat.getBoundingClientRect() : null;
-    const trendRect = trend ? trend.getBoundingClientRect() : null;
+    const card = document.querySelector(".home-chart-card");
+    const panes = Array.from(document.querySelectorAll(".home-chart-card .chart-pane"));
+    const svgs = Array.from(document.querySelectorAll(".home-chart-card .chart-svg"));
+    const rect = card ? card.getBoundingClientRect() : null;
     return {
-      heatCells: document.querySelectorAll(".heat-map-wrapper .heat-map-cell").length,
-      heatVisible: !!heatRect && heatRect.width > 300 && heatRect.height > 100,
-      heatLegend: !!document.querySelector(".heat-map-legend"),
-      trendVisible: !!trendRect && trendRect.width > 300 && trendRect.height > 140,
-      trendSvg: !!svg && svg.tagName.toLowerCase() === "svg",
-      trendLine: !!line && String(line.getAttribute("d") || "").length > 20,
-      trendPoints: document.querySelectorAll(".trend-point").length,
-      trendLabel: (document.querySelector(".trend-summary-label") || {}).textContent || "",
-      trendValue: (document.querySelector(".trend-summary-value") || {}).textContent || "",
+      card: !!card,
+      visible: !!rect && rect.width > 500 && rect.height >= 180,
+      panes: panes.length,
+      svgs: svgs.length,
+      svgSizes: svgs.map((node) => {
+        const box = node.getBoundingClientRect();
+        return { width: Math.round(box.width), height: Math.round(box.height) };
+      }),
+      areas: document.querySelectorAll(".home-chart-card .chart-svg path").length,
+      bars: document.querySelectorAll(".home-chart-card .chart-svg rect").length,
+      points: document.querySelectorAll(".home-chart-card .chart-svg circle").length,
+      titles: Array.from(document.querySelectorAll(".home-chart-card .chart-svg text")).map((node) => node.textContent),
+      tips: document.querySelectorAll(".home-chart-card .chart-tip").length,
+      empty: !!document.querySelector(".home-chart-card .chart-empty"),
     };
   })()`);
   addCase(
     "home-charts",
     { homeCharts },
     {
-      completeHeatGrid: homeCharts.heatCells === 26 * 7 && homeCharts.heatVisible && homeCharts.heatLegend,
-      cumulativeCurve: homeCharts.trendVisible && homeCharts.trendSvg && homeCharts.trendLine && homeCharts.trendPoints === 30,
-      curveSource: /累计通过/.test(homeCharts.trendLabel) && Number(homeCharts.trendValue) >= 0,
+      dualPane: homeCharts.card && homeCharts.visible && homeCharts.panes === 2 && homeCharts.svgs === 2,
+      officialGeometry: homeCharts.svgSizes.length === 2 && homeCharts.svgSizes.every((item) => item.width > 300 && item.height === 180),
+      curvesAndBars: homeCharts.areas >= 4 && homeCharts.bars >= 10 && homeCharts.points >= 10,
+      axisTitles: homeCharts.titles.includes("累积通过") && homeCharts.titles.includes("新通过"),
+      emptyFallback: !homeCharts.empty && homeCharts.tips === 2,
     }
   );
 
   const taskDom = await shell(`(() => {
-    const card = document.querySelector(".tasks-card");
+    const card = document.querySelector(".task-card");
     return {
       exists: !!card,
-      rows: document.querySelectorAll(".tasks-card .task-plan-row").length,
-      uniqueTitles: new Set(Array.from(document.querySelectorAll(".tasks-card .task-title")).map((node) => node.textContent.trim())).size,
+      rows: document.querySelectorAll(".task-card .tasklist-item").length,
+      states: document.querySelectorAll(".task-card .task-state").length,
+      uniqueTitles: new Set(Array.from(document.querySelectorAll(".task-card .task-item-link")).map((node) => node.textContent.trim())).size,
       text: card ? card.innerText : "",
     };
   })()`);
@@ -101,33 +102,41 @@ async function runHomePanelCases({ ctx, wait, shot, shotView, shell, waitFor, ap
     "official-task-list",
     { taskDom },
     {
-      rendered: process.env.LG_SMOKE_NET === "1" || (taskDom.exists && taskDom.rows >= 3),
-      fullItems: process.env.LG_SMOKE_NET === "1" || (/每日一题/.test(taskDom.text) && /训练题单/.test(taskDom.text) && /比赛/.test(taskDom.text)),
-      noDuplicateRows: process.env.LG_SMOKE_NET === "1" || taskDom.rows === taskDom.uniqueTitles,
+      rendered: taskDom.exists && taskDom.rows >= 3 && taskDom.states === taskDom.rows,
+      fullItems: /每日一题/.test(taskDom.text) && /训练题单/.test(taskDom.text) && /比赛/.test(taskDom.text),
+      noDuplicateRows: taskDom.rows === taskDom.uniqueTitles,
     }
   );
 
-
   const officialSections = await shell(`(() => ({
-    quickJump: !!document.querySelector(".quick-jump-card"),
-    progress: !!document.querySelector(".official-profile-card .official-profile-stats"),
-    recent: !!document.querySelector(".list-card"),
-    linkGroups: document.querySelectorAll(".links-card .link-group").length,
-    links: document.querySelectorAll(".links-card .link-item").length,
-    announcement: !!document.querySelector(".announcement-card"),
-    community: !!document.querySelector(".community-card")
+    hero: !!document.querySelector(".home-top-card .welcome-card"),
+    fortune: !!document.querySelector(".home-punch"),
+    quickJump: !!document.querySelector(".home-jump-card"),
+    contests: document.querySelectorAll(".home-contest").length,
+    discussions: document.querySelectorAll(".discuss-card .disc").length,
+    feedCompose: !!document.querySelector(".feed-compose"),
+    feedEmpty: !!document.querySelector(".feed-empty"),
+    tasks: !!document.querySelector(".task-card"),
+    announcement: !!document.querySelector(".notice-card"),
+    links: !!document.querySelector(".links-card"),
+    footer: !!document.querySelector(".lg-footer"),
   }))()`);
   addCase(
     "official-home-sections",
     { officialSections },
     {
+      heroAndFortune: officialSections.hero && officialSections.fortune,
       problemJump: officialSections.quickJump,
-      cumulativeProgress: process.env.LG_SMOKE_NET === "1" || officialSections.progress,
-      recentSubmissionsKept: process.env.LG_SMOKE_NET === "1" || officialSections.recent,
-      fullFriendLinks: officialSections.linkGroups >= 3 && officialSections.links >= 9,
-      announcementsAndCommunity: officialSections.announcement && officialSections.community,
+      contestsAndDiscussions: officialSections.contests >= 2 && officialSections.discussions >= 2,
+      feedBlocks: officialSections.feedCompose && officialSections.feedEmpty,
+      announcementsAndCommunity: officialSections.announcement && officialSections.tasks && officialSections.links,
+      officialFooter: officialSections.footer,
     }
   );
+
+  ctx.luogu.home = drawnHomeBackup;
+  ctx.views.showHome();
+  await wait(240);
 }
 
 module.exports = { runHomePanelCases };

@@ -119,7 +119,7 @@ if (/editorPrefs/.test(ipcSrc)) ok("语言/O2 记为全局偏好（本题无草�
 else fail("语言偏好未持久化");
 
 const homeSrc = read("src/renderer/shell/home.js");
-if (/offline-chip/.test(homeSrc) && /queue-card/.test(homeSrc) && /buildQueue/.test(homeSrc)) {
+if (/offline-note/.test(homeSrc) && /queue-card/.test(homeSrc) && /buildQueue/.test(homeSrc)) {
   ok("主页离线徽标与队列卡片");
 } else {
   fail("主页缺少离线徽标或队列卡片");

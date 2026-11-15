@@ -15,18 +15,15 @@ export const FEATURE_CONTROLS = {
   "feat-smooth-home": "smoothHome",
   "feat-auto-refresh": "autoRefresh",
   "feat-custom-sections": "customSections",
-  "feat-home-recent": "homeRecent",
   "feat-home-official": "homeOfficial",
-  "feat-home-countdown": "homeCountdown",
   "feat-home-quick-jump": "homeQuickJump",
-  "feat-home-progress": "homeProgress",
   "feat-home-contest": "homeContest",
-  "feat-home-heat": "homeHeat",
-  "feat-home-first-run": "homeFirstRun",
   "feat-home-announcement": "homeAnnouncement",
   "feat-home-tasks": "homeTasks",
   "feat-home-links": "homeLinks",
   "feat-home-community": "homeCommunity",
+  "feat-home-feed-compose": "homeFeedCompose",
+  "feat-home-feed-empty": "homeFeedEmpty",
 };
 
 export function applyFeatures(state) {

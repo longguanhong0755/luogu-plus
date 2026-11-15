@@ -5,7 +5,8 @@ module.exports = function display(ctx) {
   /* 前序段落留下的共享中间变量 */
   const { homeSrc2, indexSrc, viewsSource } = store;
 /* R59 显示修复 */
-if (/actions\.openDetail\(\{ url: "\/contest\/" \+ contest\.id/.test(homeSrc2)) ok("主页比赛卡点击进比赛本身（而非列表）");
+const contestSrc59 = read("src/renderer/shell/home/contest.js");
+if (/item\.url/.test(contestSrc59) && /luogu\.com\.cn\/contest\//.test(contestSrc59) && /actions\.openDetail/.test(contestSrc59)) ok("主页比赛卡点击进比赛本身（而非列表）");
 else fail("主页比赛卡仍跳比赛列表");
 if (/openDetail: \(payload\) => window\.lg\.openDetail\(payload\)/.test(read("src/renderer/shell/shell.js"))) ok("主页动作具备 openDetail 通道");
 else fail("homeActions 缺少 openDetail");
